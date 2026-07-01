@@ -1,0 +1,124 @@
+export type DiscoveryMode = "online" | "in-person" | "hybrid" | "unknown";
+
+export type SourceName =
+  | "hacklist"
+  | "hakku"
+  | "devpost"
+  | "mlh"
+  | "luma"
+  | "web"
+  | "x"
+  | "mock";
+
+export type RawLead = {
+  id: string;
+  source: SourceName;
+  title?: string;
+  url?: string;
+  text?: string;
+  links: string[];
+  postedAt: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type HackathonEvidence = {
+  type:
+    | "official_page"
+    | "apply_page"
+    | "x_post"
+    | "manual_lead"
+    | "search_result"
+    | "source_card";
+  url?: string;
+  title?: string;
+  snippet?: string;
+  raw?: Record<string, unknown>;
+};
+
+export type HackathonEvent = {
+  name: string;
+  source: SourceName;
+  officialUrl?: string;
+  applyUrl?: string;
+  socialUrl?: string;
+  startDate?: string;
+  endDate?: string;
+  deadline?: string;
+  location?: string;
+  mode?: DiscoveryMode;
+  city?: string;
+  country?: string;
+  prize?: string;
+  themes: string[];
+  eligibility?: string;
+  description?: string;
+  sourceIds?: Record<string, unknown>;
+  evidence: HackathonEvidence[];
+};
+
+export type DiscoveryPreferences = {
+  rawCommand: string;
+  locations: string[];
+  dateFrom?: string;
+  dateTo?: string;
+  themes: string[];
+  modes: DiscoveryMode[];
+  sources: SourceName[];
+  includeRemote: boolean;
+  includeInPerson: boolean;
+  maxResults: number;
+};
+
+export type ScoringResult = {
+  score: number;
+  whyMatch: string[];
+  redFlags: string[];
+  rejected: boolean;
+  rejectionReason?: string;
+};
+
+export type VerificationResult = {
+  valid: boolean;
+  confidence: "low" | "medium" | "high";
+  status: "accepted" | "rejected" | "needs_review";
+  reasons: string[];
+  redFlags: string[];
+};
+
+export type RejectedCandidate = {
+  name: string;
+  source: SourceName;
+  stage: "verification" | "scoring";
+  reason: string;
+};
+
+export type AcceptedCandidate = {
+  event: HackathonEvent;
+  score: ScoringResult;
+  fingerprint: string;
+  status: "NEW" | "NEEDS_REVIEW";
+};
+
+export type AgentRunSummary = {
+  rawCommand: string;
+  preferences: DiscoveryPreferences;
+  dryRun: boolean;
+  rawLeads: number;
+  extracted: number;
+  accepted: number;
+  rejected: number;
+  stored: number;
+  duplicatesUpdated: number;
+  needsReview: number;
+  durationMs: number;
+  acceptedCandidates: Array<{
+    name: string;
+    score: number;
+    location: string;
+    deadline: string;
+    status: string;
+  }>;
+  rejectedCandidates: RejectedCandidate[];
+  warnings: string[];
+  errors: string[];
+};
