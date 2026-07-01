@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 
+import { loadLocalEnv } from "@/cli/loadEnv";
+import { runAgent } from "@/agent/runAgent";
+
+loadLocalEnv();
+
 function parseArgs(argv: string[]): { command: string; dryRun: boolean } {
   const args = argv.slice(2);
   const dryRun = args.includes("--dry-run");
@@ -15,29 +20,15 @@ function parseArgs(argv: string[]): { command: string; dryRun: boolean } {
   return { command, dryRun };
 }
 
-function printPlaceholderSummary(command: string, dryRun: boolean): void {
-  console.log("Hackathon Approval Agent");
-  console.log("========================");
-  console.log(`Raw command: ${command}`);
-  if (dryRun) {
-    console.log("Mode: dry-run (no database writes)");
-  }
-  console.log("");
-  console.log("Agent run complete (placeholder)");
-  console.log("Raw leads: 0");
-  console.log("Parsed events: 0");
-  console.log("Duplicates updated: 0");
-  console.log("New candidates: 0");
-  console.log("Rejected: 0");
-  console.log("Needs review: 0");
-  console.log("Duration: 0.0s");
-  console.log("");
-  console.log("Discovery pipeline not wired yet — collectors land in later steps.");
-}
-
-function main(): void {
+async function main(): Promise<void> {
   const { command, dryRun } = parseArgs(process.argv);
-  printPlaceholderSummary(command, dryRun);
+
+  try {
+    await runAgent(command, dryRun);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "Agent run failed");
+    process.exit(1);
+  }
 }
 
-main();
+void main();
