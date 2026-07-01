@@ -11,11 +11,17 @@ const optionalString = z
   .optional()
   .or(z.literal("").transform(() => undefined));
 
+const emptyToUndefined = z.literal("").transform(() => undefined);
+
 const searchProviderSchema = z
   .enum(["tavily", "brave", "exa", "serpapi", "mock"])
-  .optional();
+  .optional()
+  .or(emptyToUndefined);
 
-const llmProviderSchema = z.enum(["openai", "anthropic", "mock"]).optional();
+const llmProviderSchema = z
+  .enum(["openai", "anthropic", "mock"])
+  .optional()
+  .or(emptyToUndefined);
 
 export const serverEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

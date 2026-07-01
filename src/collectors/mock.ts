@@ -9,7 +9,7 @@ const MOCK_POSTED_AT = "2026-07-01T12:00:00Z";
 
 export const mockCollector: Collector = {
   name: "mock",
-  async collect(_preferences) {
+  async collect() {
     return [
       {
         id: "mock-hackto-ai",

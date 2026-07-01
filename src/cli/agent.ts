@@ -8,7 +8,7 @@ loadLocalEnv();
 function parseArgs(argv: string[]): { command: string; dryRun: boolean } {
   const args = argv.slice(2);
   const dryRun = args.includes("--dry-run");
-  const commandParts = args.filter((arg) => arg !== "--dry-run");
+  const commandParts = args.filter((arg) => arg !== "--dry-run" && arg !== "--");
 
   const command = commandParts.join(" ").trim();
 

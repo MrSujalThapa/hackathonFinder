@@ -1,7 +1,5 @@
-import "server-only";
-
 import type { CandidateStatus, Database } from "@/lib/supabase/database.types";
-import { createServiceSupabaseClient } from "@/lib/supabase/service";
+import { createServiceSupabaseClient } from "@/lib/supabase/createServiceClient";
 import type {
   AddActionInput,
   AddEvidenceInput,

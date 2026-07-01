@@ -1,13 +1,13 @@
 import type { CandidateStatus } from "@/lib/supabase/database.types";
 import type { UpsertCandidateInput } from "@/core/candidates/types";
 import { createCandidateFingerprint } from "@/core/dedupe";
+import type { Json } from "@/lib/supabase/database.types";
 import type {
   AcceptedCandidate,
   AgentRunSummary,
   DiscoveryPreferences,
   HackathonEvent,
   HackathonEvidence,
-  RejectedCandidate,
   ScoringResult,
   VerificationResult,
 } from "@/core/discovery/types";
@@ -84,7 +84,7 @@ export function eventEvidenceToAddInput(
     url: evidence.url ?? null,
     title: evidence.title ?? null,
     snippet: evidence.snippet ?? null,
-    raw: evidence.raw ?? {},
+    raw: (evidence.raw ?? {}) as Json,
   };
 }
 

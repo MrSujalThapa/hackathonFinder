@@ -62,6 +62,10 @@ function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): Hackathon
   return evidence;
 }
 
+function isSocialUrl(url?: string): boolean {
+  return Boolean(url && /x\.com|twitter\.com/i.test(url));
+}
+
 export function extractHackathonEvent(lead: RawLead): HackathonEvent | null {
   const metadata = lead.metadata ?? {};
   const name = asString(metadata.name) ?? lead.title?.trim();
@@ -69,16 +73,21 @@ export function extractHackathonEvent(lead: RawLead): HackathonEvent | null {
     return null;
   }
 
+  const officialFromMetadata = asString(metadata.officialUrl);
+  const officialFromLinks = lead.links.find(
+    (link) => /official|event|hack/i.test(link) && !isSocialUrl(link),
+  );
   const officialUrl =
-    asString(metadata.officialUrl) ??
-    lead.links.find((link) => /official|event|hack/i.test(link)) ??
-    lead.url;
+    officialFromMetadata ??
+    officialFromLinks ??
+    (lead.url && !isSocialUrl(lead.url) ? lead.url : undefined);
   const applyUrl =
     asString(metadata.applyUrl) ??
     lead.links.find((link) => /apply|register/i.test(link));
   const socialUrl =
     asString(metadata.socialUrl) ??
-    (lead.url?.includes("x.com") || lead.url?.includes("twitter.com") ? lead.url : undefined);
+    (isSocialUrl(lead.url) ? lead.url : undefined) ??
+    lead.links.find((link) => isSocialUrl(link));
 
   const themes = Array.isArray(metadata.themes)
     ? metadata.themes.filter((value): value is string => typeof value === "string")

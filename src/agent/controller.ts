@@ -1,3 +1,4 @@
+import type { Json } from "@/lib/supabase/database.types";
 import { mockCollector } from "@/collectors/mock";
 import { hasSupabaseConfig, getServerEnv } from "@/config/env";
 import type {
@@ -38,7 +39,7 @@ export async function runDiscovery(
     try {
       runId = await createAgentRun({
         command: preferences.rawCommand,
-        preferences: preferences as unknown as Record<string, unknown>,
+        preferences: preferences as unknown as Json,
         sources: preferences.sources,
       });
     } catch (error) {

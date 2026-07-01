@@ -5,15 +5,6 @@ import type {
 } from "@/core/discovery/types";
 import { normalizeDatePart, normalizeText } from "@/core/dedupe";
 
-const PREFERRED_LOCATIONS = [
-  "toronto",
-  "waterloo",
-  "mississauga",
-  "canada",
-  "remote",
-  "online",
-];
-
 const THEME_BONUS_CAP = 30;
 const THEME_BONUS_EACH = 10;
 const MIN_ACCEPT_SCORE = 55;

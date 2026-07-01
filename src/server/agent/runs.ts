@@ -1,7 +1,5 @@
-import "server-only";
-
 import type { Json } from "@/lib/supabase/database.types";
-import { createServiceSupabaseClient } from "@/lib/supabase/service";
+import { createServiceSupabaseClient } from "@/lib/supabase/createServiceClient";
 import type { AgentRunSummary } from "@/core/discovery/types";
 
 export async function createAgentRun(input: {
