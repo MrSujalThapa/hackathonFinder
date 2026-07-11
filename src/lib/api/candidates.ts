@@ -1,5 +1,9 @@
 import type { CandidateCard, CandidateDetail } from "@/core/candidates/types";
 import type { ApiEnvelope } from "@/server/api/envelope";
+import type {
+  BatchSyncSummary,
+  SheetSyncResult,
+} from "@/server/sheets/types";
 
 export class CandidatesApiError extends Error {
   code: string;
@@ -61,16 +65,52 @@ export async function fetchCandidate(id: string): Promise<CandidateDetail> {
 
 export type DecisionAction = "approve" | "reject" | "save" | "restore";
 
+export type DecideCandidateResult = {
+  candidate: CandidateCard;
+  sheetSync?: SheetSyncResult | null;
+};
+
 export async function decideCandidate(
   id: string,
   action: DecisionAction,
   reason?: string,
-): Promise<CandidateCard> {
+): Promise<DecideCandidateResult> {
   const response = await fetch(`/api/candidates/${id}/${action}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(reason ? { reason } : {}),
   });
-  const data = await parseEnvelope<{ candidate: CandidateCard }>(response);
-  return data.candidate;
+  const data = await parseEnvelope<{
+    candidate: CandidateCard;
+    sheetSync?: SheetSyncResult | null;
+  }>(response);
+  return {
+    candidate: data.candidate,
+    sheetSync: data.sheetSync ?? null,
+  };
+}
+
+export type SyncCandidateSheetResult = {
+  candidate: CandidateDetail | CandidateCard | null;
+  sheetSync: SheetSyncResult;
+};
+
+export async function syncCandidateSheet(
+  id: string,
+): Promise<SyncCandidateSheetResult> {
+  const response = await fetch(`/api/candidates/${id}/sync-sheet`, {
+    method: "POST",
+  });
+  return parseEnvelope<SyncCandidateSheetResult>(response);
+}
+
+export async function syncApprovedSheets(
+  limit?: number,
+): Promise<BatchSyncSummary> {
+  const response = await fetch("/api/sheets/sync-approved", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(limit != null ? { limit } : {}),
+  });
+  return parseEnvelope<BatchSyncSummary>(response);
 }

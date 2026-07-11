@@ -262,6 +262,9 @@ describe("decision endpoints", () => {
     const body = await response.json();
     assert.equal(body.data.newStatus, "APPROVED");
     assert.equal(store.get(SAMPLE_ID)?.status, "APPROVED");
+    assert.ok(body.data.sheetSync);
+    assert.equal(body.data.sheetSync.candidateId, SAMPLE_ID);
+    assert.equal(typeof body.data.sheetSync.status, "string");
   });
 
   it("rejects a candidate", async () => {
@@ -275,6 +278,7 @@ describe("decision endpoints", () => {
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.data.newStatus, "REJECTED");
+    assert.equal(body.data.sheetSync, null);
   });
 
   it("saves a candidate", async () => {
