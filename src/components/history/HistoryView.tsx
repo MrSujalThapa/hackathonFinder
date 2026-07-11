@@ -10,7 +10,15 @@ import {
   fetchCandidates,
   syncCandidateSheet,
 } from "@/lib/api/candidates";
-import { formatDateRange, formatLocation } from "@/lib/candidates/format";
+import {
+  getBucket,
+  insertIntoQueue,
+  replaceBucket,
+  subscribe,
+  type HistoryBucket,
+} from "@/lib/candidates/clientStore";
+import { unseeCandidate } from "@/lib/candidates/queueSeen";
+import { formatDateRange, formatLocation, formatSourceLabel } from "@/lib/candidates/format";
 import { timedAsync } from "@/lib/perf/timing";
 import {
   needsSheetRetry,
@@ -38,6 +46,17 @@ type HistoryViewProps = {
   emptyDescription: string;
   allowRestore?: boolean;
 };
+
+function asHistoryBucket(status: CandidateStatus): HistoryBucket | null {
+  if (
+    status === "APPROVED" ||
+    status === "REJECTED" ||
+    status === "SAVED_FOR_LATER"
+  ) {
+    return status;
+  }
+  return null;
+}
 
 export function HistoryView({
   status,
@@ -71,6 +90,10 @@ export function HistoryView({
         }),
       );
       setCandidates(result.candidates);
+      const bucket = asHistoryBucket(status);
+      if (bucket && !source && !query.trim()) {
+        replaceBucket(bucket, result.candidates);
+      }
     } catch (err) {
       setError(
         err instanceof CandidatesApiError
@@ -91,15 +114,50 @@ export function HistoryView({
     return () => window.clearTimeout(handle);
   }, [load]);
 
+  useEffect(() => {
+    return subscribe(() => {
+      const bucket = asHistoryBucket(status);
+      if (!bucket) return;
+      if (source || query.trim()) return;
+
+      const storeCards = getBucket(status);
+      setCandidates((prev) => {
+        const storeIds = new Set(storeCards.map((item) => item.id));
+        const prevIds = new Set(prev.map((item) => item.id));
+        const same =
+          storeCards.length === prev.length &&
+          storeCards.every((card) => prevIds.has(card.id)) &&
+          prev.every((card) => storeIds.has(card.id));
+        if (same) {
+          // Merge field updates for shared ids
+          const byId = new Map(storeCards.map((card) => [card.id, card]));
+          return prev.map((card) => byId.get(card.id) ?? card);
+        }
+        return storeCards;
+      });
+    });
+  }, [status, source, query]);
+
   const sources = useMemo(() => {
     return [...new Set(candidates.map((c) => c.source))].sort();
   }, [candidates]);
 
   const restore = async (id: string) => {
+    const existing = candidates.find((item) => item.id === id);
+    if (!existing) return;
     setBusyId(id);
     try {
-      await decideCandidate(id, "restore");
+      const previousStatus = existing.status;
+      const { candidate: updated } = await decideCandidate(id, "restore");
+      unseeCandidate(id);
+      insertIntoQueue(updated);
       setCandidates((prev) => prev.filter((item) => item.id !== id));
+
+      if (previousStatus === "APPROVED") {
+        void syncCandidateSheet(id).catch(() => {
+          // Reconcile is best-effort until sync-sheet supports non-APPROVED.
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Restore failed");
     } finally {
@@ -231,7 +289,7 @@ export function HistoryView({
                   {formatDateRange(candidate.startDate, candidate.endDate)}
                 </p>
                 <p className="mt-1 text-xs text-muted">
-                  Source · {candidate.source}
+                  Source · {formatSourceLabel(candidate.source)}
                 </p>
                 {candidate.status === "APPROVED" ? (
                   <div className="mt-3">

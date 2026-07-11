@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { OpenSheetLink } from "@/components/shell/OpenSheetLink";
+import { getCounts, subscribe } from "@/lib/candidates/clientStore";
 
 const NAV_ITEMS = [
   { href: "/queue", label: "Queue", icon: "◈" },
@@ -22,8 +24,26 @@ function navClass(active: boolean): string {
   ].join(" ");
 }
 
+function useQueueCount(override?: number): number | undefined {
+  const [count, setCount] = useState<number | undefined>(() =>
+    typeof override === "number" ? override : getCounts().queue,
+  );
+
+  useEffect(() => {
+    if (typeof override === "number") {
+      setCount(override);
+      return;
+    }
+    setCount(getCounts().queue);
+    return subscribe(() => setCount(getCounts().queue));
+  }, [override]);
+
+  return count;
+}
+
 export function DesktopSidebar({ queueCount }: { queueCount?: number }) {
   const pathname = usePathname();
+  const resolvedCount = useQueueCount(queueCount);
 
   return (
     <aside className="hidden w-56 shrink-0 flex-col border-r border-border/70 bg-card/40 px-3 py-6 lg:flex">
@@ -52,9 +72,9 @@ export function DesktopSidebar({ queueCount }: { queueCount?: number }) {
                 {item.icon}
               </span>
               <span className="flex-1">{item.label}</span>
-              {item.href === "/queue" && typeof queueCount === "number" ? (
+              {item.href === "/queue" && typeof resolvedCount === "number" ? (
                 <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[11px] tabular-nums text-foreground/80">
-                  {queueCount}
+                  {resolvedCount}
                 </span>
               ) : null}
             </Link>
@@ -69,6 +89,7 @@ export function DesktopSidebar({ queueCount }: { queueCount?: number }) {
 
 export function MobileNavigation({ queueCount }: { queueCount?: number }) {
   const pathname = usePathname();
+  const resolvedCount = useQueueCount(queueCount);
 
   return (
     <nav
@@ -93,10 +114,10 @@ export function MobileNavigation({ queueCount }: { queueCount?: number }) {
                 <span className="relative text-sm" aria-hidden>
                   {item.icon}
                   {item.href === "/queue" &&
-                  typeof queueCount === "number" &&
-                  queueCount > 0 ? (
+                  typeof resolvedCount === "number" &&
+                  resolvedCount > 0 ? (
                     <span className="absolute -right-2.5 -top-1 min-w-4 rounded-full bg-sky-500 px-1 text-[9px] leading-4 text-white">
-                      {queueCount > 99 ? "99+" : queueCount}
+                      {resolvedCount > 99 ? "99+" : resolvedCount}
                     </span>
                   ) : null}
                 </span>
