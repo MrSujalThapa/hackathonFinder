@@ -86,16 +86,18 @@ export function useCandidateQueue() {
     void load();
   }, [load]);
 
-  const decide = useCallback(async (action: QueueDecision) => {
+  const decide = useCallback(async (action: QueueDecision, candidateId?: string) => {
     if (inflightRef.current) return { ok: false as const };
-    const current = state.candidates[0];
+    const current = candidateId
+      ? state.candidates.find((item) => item.id === candidateId)
+      : state.candidates[0];
     if (!current) return { ok: false as const };
 
     inflightRef.current = true;
     setState((prev) => ({ ...prev, busy: true }));
 
     const previous = state.candidates;
-    const remaining = previous.slice(1);
+    const remaining = previous.filter((item) => item.id !== current.id);
     seenRef.current.add(current.id);
     writeSeenIds(seenRef.current);
 

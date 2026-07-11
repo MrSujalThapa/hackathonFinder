@@ -23,7 +23,10 @@ type SwipeDeckProps = {
   candidate: CandidateCard;
   upcoming?: CandidateCard | null;
   busy?: boolean;
-  onDecision: (action: QueueDecision) => Promise<{ ok: boolean }>;
+  onDecision: (
+    action: QueueDecision,
+    candidateId?: string,
+  ) => Promise<{ ok: boolean }>;
 };
 
 export function SwipeDeck({
@@ -92,14 +95,14 @@ export function SwipeDeck({
       }
 
       // Fire mutation without waiting on animation beyond exit.
-      const result = await onDecision(action);
+      const result = await onDecision(action, candidate.id);
       if (!result.ok && el) {
         gsap.set(el, { x: 0, y: 0, rotation: 0, autoAlpha: 1 });
         exitingRef.current = false;
         setOverlay(null);
       }
     },
-    [busy, onDecision, reducedMotion],
+    [busy, candidate.id, onDecision, reducedMotion],
   );
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {

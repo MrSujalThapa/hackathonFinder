@@ -23,6 +23,12 @@ const llmProviderSchema = z
   .optional()
   .or(emptyToUndefined);
 
+const booleanFlag = z
+  .enum(["true", "false", "1", "0"])
+  .optional()
+  .or(emptyToUndefined)
+  .transform((value) => value === "true" || value === "1");
+
 export const serverEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 
@@ -30,6 +36,9 @@ export const serverEnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: optionalString,
 
   SUPABASE_SERVICE_ROLE_KEY: optionalString,
+
+  /** Explicit mock UI/API candidate data. Never silently enabled in production. */
+  USE_MOCK_CANDIDATES: booleanFlag,
 
   GOOGLE_SHEET_ID: optionalString,
   GOOGLE_SERVICE_ACCOUNT_JSON: optionalString,
