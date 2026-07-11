@@ -1,5 +1,5 @@
-import { QueueCardPreview } from "@/components/queue/QueueCardPreview";
+import { QueueReview } from "@/components/queue/QueueReview";
 
 export default function QueuePage() {
-  return <QueueCardPreview />;
+  return <QueueReview />;
 }
