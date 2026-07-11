@@ -1,13 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0f;
+  --background: #07070b;
   --foreground: #f4f4f5;
-  --muted: #71717a;
-  --card: #111118;
-  --border: #27272a;
+  --muted: #8b8b98;
+  --card: #101018;
+  --border: #2a2a35;
   --accent-approve: #22c55e;
-  --accent-reject: #64748b;
+  --accent-reject: #94a3b8;
+  --accent-save: #38bdf8;
+  --accent-warn: #f59e0b;
+  --hero-from: #1e293b;
+  --hero-to: #0f172a;
 }
 
 @theme inline {
@@ -18,6 +22,8 @@
   --color-border: var(--border);
   --color-accent-approve: var(--accent-approve);
   --color-accent-reject: var(--accent-reject);
+  --color-accent-save: var(--accent-save);
+  --color-accent-warn: var(--accent-warn);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -32,7 +38,18 @@ body {
 .grid-background {
   background-color: var(--background);
   background-image:
-    linear-gradient(rgba(59, 130, 246, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(59, 130, 246, 0.06) 1px, transparent 1px);
-  background-size: 24px 24px;
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(56, 189, 248, 0.12), transparent),
+    linear-gradient(rgba(59, 130, 246, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59, 130, 246, 0.045) 1px, transparent 1px);
+  background-size: auto, 28px 28px, 28px 28px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
