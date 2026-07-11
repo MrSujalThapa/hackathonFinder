@@ -41,7 +41,9 @@ export const serverEnvSchema = z.object({
   USE_MOCK_CANDIDATES: booleanFlag,
 
   GOOGLE_SHEET_ID: optionalString,
+  GOOGLE_SHEET_TAB: optionalString,
   GOOGLE_SERVICE_ACCOUNT_JSON: optionalString,
+  NEXT_PUBLIC_GOOGLE_SHEET_URL: optionalUrl,
 
   SEARCH_PROVIDER: searchProviderSchema,
   SEARCH_API_KEY: optionalString,
@@ -75,6 +77,10 @@ export function hasSupabaseConfig(env: ServerEnv = getServerEnv()): boolean {
 
 export function hasGoogleSheetsConfig(env: ServerEnv = getServerEnv()): boolean {
   return Boolean(env.GOOGLE_SHEET_ID && env.GOOGLE_SERVICE_ACCOUNT_JSON);
+}
+
+export function getGoogleSheetTab(env: ServerEnv = getServerEnv()): string {
+  return env.GOOGLE_SHEET_TAB?.trim() || "Hackathons";
 }
 
 export function hasSearchConfig(env: ServerEnv = getServerEnv()): boolean {
