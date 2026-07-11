@@ -7,7 +7,7 @@ describe("parseCommand", () => {
     const prefs = parseCommand("find upcoming hackathons");
     assert.ok(prefs.locations.includes("Toronto"));
     assert.ok(prefs.themes.includes("AI"));
-    assert.equal(prefs.sources[0], "mock");
+    assert.deepEqual(prefs.sources, ["hacklist", "devpost", "hakku"]);
     assert.ok(prefs.dateFrom);
     assert.ok(prefs.dateTo);
   });
