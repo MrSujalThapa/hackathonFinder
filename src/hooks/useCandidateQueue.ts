@@ -14,8 +14,7 @@ import {
   getQueue,
   insertIntoQueue,
   replaceQueue,
-  restoreSnapshot,
-  snapshot,
+  rollbackCandidateChange,
   subscribe,
 } from "@/lib/candidates/clientStore";
 import {
@@ -210,7 +209,6 @@ export function useCandidateQueue() {
       addSeenId(current.id);
       writeSeenIds(seenRef.current);
 
-      const storeSnap = snapshot();
       const previousLocal = candidatesRef.current;
       applyStatusChange({
         id: current.id,
@@ -263,8 +261,24 @@ export function useCandidateQueue() {
               }));
             });
         } else {
-          // Leave-APPROVED (or any non-approve) may need Sheet row removal.
-          void syncCandidateSheet(current.id).catch(() => undefined);
+          void syncCandidateSheet(current.id)
+            .then(({ sheetSync }) => {
+              if (sheetSync.status === "failed") {
+                setState((prev) => ({
+                  ...prev,
+                  syncMessage:
+                    sheetSync.message ??
+                    "Status updated; Sheet cleanup failed — retry from details.",
+                }));
+              }
+            })
+            .catch(() => {
+              setState((prev) => ({
+                ...prev,
+                syncMessage:
+                  "Status updated; Sheet cleanup failed — retry from details.",
+              }));
+            });
         }
 
         return { ok: true as const, candidate: updated, sheetSync: null };
@@ -273,7 +287,12 @@ export function useCandidateQueue() {
         seenRef.current.delete(current.id);
         removeSeenId(current.id);
         writeSeenIds(seenRef.current);
-        restoreSnapshot(storeSnap);
+        // Scoped rollback — do not wipe unrelated concurrent decisions.
+        rollbackCandidateChange({
+          id: current.id,
+          previousStatus,
+          card: optimisticCard,
+        });
         setState((prev) => ({
           ...prev,
           candidates: previousLocal,

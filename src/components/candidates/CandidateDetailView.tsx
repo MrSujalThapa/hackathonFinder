@@ -140,9 +140,24 @@ export function CandidateDetailView({ id }: { id: string }) {
             );
           });
       } else if (previousStatus === "APPROVED") {
-        void syncCandidateSheet(candidate.id).catch(() => {
-          // Reconcile is best-effort until sync-sheet supports leave-APPROVED.
-        });
+        void syncCandidateSheet(candidate.id)
+          .then(({ sheetSync }) => {
+            if (sheetSync.status === "failed") {
+              setLastSyncFailed(true);
+              setSyncNote(
+                sheetSync.message ??
+                  "Status updated; Sheet cleanup failed — retry below.",
+              );
+            }
+          })
+          .catch((err: unknown) => {
+            setLastSyncFailed(true);
+            setSyncNote(
+              err instanceof Error
+                ? err.message
+                : "Status updated; Sheet cleanup failed — retry below.",
+            );
+          });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Action failed");

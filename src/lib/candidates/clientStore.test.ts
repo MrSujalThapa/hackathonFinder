@@ -12,6 +12,7 @@ import {
   removeFromQueue,
   replaceQueue,
   resetClientStore,
+  rollbackCandidateChange,
   snapshot,
   restoreSnapshot,
   subscribe,
@@ -156,6 +157,39 @@ describe("clientStore", () => {
     insertIntoQueue(card({ id: "auth-new", status: "NEW" }));
     assert.ok(!readSeenIds().has("auth-new"));
     assert.equal(getQueue()[0]?.id, "auth-new");
+  });
+
+  it("rollbackCandidateChange restores one card without wiping others", () => {
+    replaceQueue([
+      card({ id: "a", status: "NEW", name: "A" }),
+      card({ id: "b", status: "NEW", name: "B" }),
+    ]);
+
+    applyStatusChange({
+      id: "a",
+      previousStatus: "NEW",
+      newStatus: "APPROVED",
+      card: card({ id: "a", status: "APPROVED", name: "A" }),
+    });
+    applyStatusChange({
+      id: "b",
+      previousStatus: "NEW",
+      newStatus: "REJECTED",
+      card: card({ id: "b", status: "REJECTED", name: "B" }),
+    });
+
+    assert.equal(getBucket("APPROVED").length, 1);
+    assert.equal(getBucket("REJECTED").length, 1);
+
+    rollbackCandidateChange({
+      id: "a",
+      previousStatus: "NEW",
+      card: card({ id: "a", status: "APPROVED", name: "A" }),
+    });
+
+    assert.equal(getQueue()[0]?.id, "a");
+    assert.equal(getBucket("APPROVED").length, 0);
+    assert.equal(getBucket("REJECTED")[0]?.id, "b");
   });
 
   it("removeFromQueue marks seen and supports snapshot rollback", () => {

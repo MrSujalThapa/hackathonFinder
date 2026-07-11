@@ -270,7 +270,18 @@ export async function appendApprovedCandidate(
 
   let updatedRange: string;
   try {
-    const values = deps.mapCandidateRow(candidate);
+    // Re-check status immediately before writing — a concurrent reject/restore
+    // must not leave an orphan Sheet row for a non-APPROVED candidate.
+    const fresh = await deps.getCandidate(candidateId);
+    if (!fresh || fresh.status !== "APPROVED") {
+      return {
+        status: "skipped_not_approved",
+        candidateId,
+        message: `Candidate status changed before append (${fresh?.status ?? "missing"})`,
+      };
+    }
+
+    const values = deps.mapCandidateRow(fresh);
     const appendResult = await deps.appendRow(spreadsheetId, tabName, values);
     updatedRange = appendResult.updatedRange;
   } catch (error) {

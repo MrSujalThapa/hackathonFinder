@@ -210,6 +210,23 @@ class CandidateClientStore {
     this.notify();
   }
 
+  /**
+   * Roll back a single optimistic status change without wiping unrelated
+   * concurrent updates in other buckets.
+   */
+  rollbackCandidateChange(args: {
+    id: string;
+    previousStatus: CandidateStatus;
+    card: CandidateCard;
+  }): void {
+    this.applyStatusChange({
+      id: args.id,
+      previousStatus: args.card.status,
+      newStatus: args.previousStatus,
+      card: { ...args.card, status: args.previousStatus },
+    });
+  }
+
   /** Test helper — clears all buckets. */
   reset(): void {
     this.queue = [];
@@ -283,6 +300,14 @@ export function applyStatusChange(args: {
   card: CandidateCard;
 }): void {
   store.applyStatusChange(args);
+}
+
+export function rollbackCandidateChange(args: {
+  id: string;
+  previousStatus: CandidateStatus;
+  card: CandidateCard;
+}): void {
+  store.rollbackCandidateChange(args);
 }
 
 export function resetClientStore(): void {

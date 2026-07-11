@@ -190,9 +190,22 @@ export function HistoryView({
       setCandidates((prev) => prev.filter((item) => item.id !== id));
 
       if (previousStatus === "APPROVED") {
-        void syncCandidateSheet(id).catch(() => {
-          // Reconcile is best-effort until sync-sheet supports non-APPROVED.
-        });
+        void syncCandidateSheet(id)
+          .then(({ sheetSync }) => {
+            if (sheetSync.status === "failed") {
+              setError(
+                sheetSync.message ??
+                  "Restored; Sheet cleanup failed — retry sync from details.",
+              );
+            }
+          })
+          .catch((err: unknown) => {
+            setError(
+              err instanceof Error
+                ? err.message
+                : "Restored; Sheet cleanup failed — retry sync from details.",
+            );
+          });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Restore failed");
