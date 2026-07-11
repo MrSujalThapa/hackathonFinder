@@ -35,27 +35,49 @@ export async function listCandidates(
 ): Promise<ListCandidatesResult> {
   const supabase = createServiceSupabaseClient();
   const limit = Math.min(Math.max(params.limit ?? 10, 1), 50);
+  const sort = params.sort ?? "score";
 
-  let query = supabase
-    .from("candidates")
-    .select("*")
-    .order("score", { ascending: false })
-    .order("found_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(limit + 1);
+  let query = supabase.from("candidates").select("*", { count: "exact" });
+
+  if (sort === "name") {
+    query = query
+      .order("name", { ascending: true })
+      .order("id", { ascending: true });
+  } else if (sort === "found_at") {
+    query = query
+      .order("found_at", { ascending: false })
+      .order("id", { ascending: false });
+  } else {
+    query = query
+      .order("score", { ascending: false })
+      .order("found_at", { ascending: false })
+      .order("id", { ascending: false });
+  }
+
+  query = query.limit(limit + 1);
 
   if (params.status) {
     query = query.eq("status", params.status);
   }
 
-  if (params.cursor) {
+  if (params.source) {
+    query = query.eq("source", params.source);
+  }
+
+  if (params.q) {
+    query = query.ilike("name", `%${params.q}%`);
+  }
+
+  if (params.offset != null && params.offset > 0) {
+    query = query.range(params.offset, params.offset + limit);
+  } else if (params.cursor) {
     const { foundAt, id } = decodeCursor(params.cursor);
     query = query.or(
       `found_at.lt.${foundAt},and(found_at.eq.${foundAt},id.lt.${id})`,
     );
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
 
   if (error) {
     throw new Error(`Failed to list candidates: ${error.message}`);
@@ -71,6 +93,7 @@ export async function listCandidates(
     candidates,
     nextCursor:
       hasMore && last ? encodeCursor(last.found_at, last.id) : undefined,
+    total: count ?? undefined,
   };
 }
 
@@ -206,6 +229,11 @@ export async function updateCandidateStatus(
     throw new Error(`Candidate not found: ${id}`);
   }
 
+  // Idempotent: already in target status — return current row without duplicate action.
+  if (existing.status === status) {
+    return mapCandidateRow(existing);
+  }
+
   const now = new Date().toISOString();
   const updatePayload: Database["public"]["Tables"]["candidates"]["Update"] = {
     status,
@@ -217,6 +245,11 @@ export async function updateCandidateStatus(
     updatePayload.rejected_at = now;
   } else if (status === "SAVED_FOR_LATER") {
     updatePayload.saved_at = now;
+  } else if (status === "NEW") {
+    // Restore clears decision timestamps so the card re-enters the queue cleanly.
+    updatePayload.approved_at = null;
+    updatePayload.rejected_at = null;
+    updatePayload.saved_at = null;
   }
 
   const { data: updated, error: updateError } = await supabase
