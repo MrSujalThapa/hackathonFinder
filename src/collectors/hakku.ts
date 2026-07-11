@@ -70,8 +70,8 @@ async function extractVisibleHakkuCards(
 
     const bodyText = (await page.locator("body").innerText().catch(() => "")).toLowerCase();
     const loginRequired =
-      /welcome back|sign in|enter your credentials|continue with|forgot\?/.test(bodyText) &&
-      !/swipe|hackathon|apply|prize/.test(bodyText);
+      (/welcome back/.test(bodyText) && /sign in|credentials/.test(bodyText)) ||
+      (/enter your credentials/.test(bodyText) && /password/.test(bodyText));
 
     if (loginRequired) {
       return { cards: [], loginRequired: true };
