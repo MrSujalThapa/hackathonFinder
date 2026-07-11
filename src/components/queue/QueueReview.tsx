@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { CandidateProgress } from "@/components/candidates/CandidateProgress";
 import { SwipeDeck } from "@/components/queue/SwipeDeck";
 import { PageHeader } from "@/components/shell/PageHeader";
@@ -10,6 +11,22 @@ import { useCandidateQueue } from "@/hooks/useCandidateQueue";
 
 export function QueueReview() {
   const queue = useCandidateQueue();
+  const [sourceFilter, setSourceFilter] = useState("");
+
+  const sources = useMemo(() => {
+    const all = [queue.current, queue.upcoming, ...queue.candidates]
+      .filter(Boolean)
+      .map((c) => c!.source);
+    return [...new Set(all)].sort();
+  }, [queue.candidates, queue.current, queue.upcoming]);
+
+  const filtered = useMemo(() => {
+    if (!sourceFilter) return queue.candidates;
+    return queue.candidates.filter((c) => c.source === sourceFilter);
+  }, [queue.candidates, sourceFilter]);
+
+  const visibleCurrent = filtered[0] ?? null;
+  const visibleUpcoming = filtered[1] ?? null;
 
   return (
     <section className="flex flex-1 flex-col items-center">
@@ -29,16 +46,34 @@ export function QueueReview() {
           }
         />
 
+        {sources.length > 1 ? (
+          <label className="mb-4 block text-sm">
+            <span className="sr-only">Filter by source</span>
+            <select
+              value={sourceFilter}
+              onChange={(event) => setSourceFilter(event.target.value)}
+              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+            >
+              <option value="">All sources</option>
+              {sources.map((source) => (
+                <option key={source} value={source}>
+                  {source}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
         {queue.loading ? <LoadingState label="Loading queue…" /> : null}
 
-        {!queue.loading && queue.error && !queue.current ? (
+        {!queue.loading && queue.error && !visibleCurrent ? (
           <ErrorState
             message={queue.error}
             onRetry={() => void queue.refresh()}
           />
         ) : null}
 
-        {!queue.loading && !queue.error && !queue.current ? (
+        {!queue.loading && !queue.error && !visibleCurrent ? (
           <EmptyState
             title="No new hackathons to review"
             description="Run the agent to discover more, then refresh this queue."
@@ -46,10 +81,10 @@ export function QueueReview() {
           />
         ) : null}
 
-        {queue.current ? (
+        {visibleCurrent ? (
           <>
             <CandidateProgress
-              current={queue.position}
+              current={Math.max(1, queue.total - filtered.length + 1)}
               total={queue.total}
             />
             {queue.error ? (
@@ -65,8 +100,9 @@ export function QueueReview() {
               </p>
             ) : null}
             <SwipeDeck
-              candidate={queue.current}
-              upcoming={queue.upcoming}
+              key={visibleCurrent.id}
+              candidate={visibleCurrent}
+              upcoming={visibleUpcoming}
               busy={queue.busy}
               onDecision={queue.decide}
             />

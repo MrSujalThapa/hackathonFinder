@@ -1,18 +1,13 @@
-import { PageHeader } from "@/components/shell/PageHeader";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { HistoryView } from "@/components/history/HistoryView";
 
 export default function ApprovedPage() {
   return (
-    <section>
-      <PageHeader
-        eyebrow="History"
-        title="Approved"
-        description="Candidates you approved. Google Sheets sync arrives in a later step."
-      />
-      <EmptyState
-        title="No approved candidates yet"
-        description="Approved hackathons will appear here after you review the queue."
-      />
-    </section>
+    <HistoryView
+      status="APPROVED"
+      title="Approved"
+      description="Candidates you approved. Google Sheets sync arrives in a later step."
+      emptyTitle="No approved candidates yet"
+      emptyDescription="Approved hackathons will appear here after you review the queue."
+    />
   );
 }

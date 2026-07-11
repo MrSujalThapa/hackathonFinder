@@ -1,18 +1,14 @@
-import { PageHeader } from "@/components/shell/PageHeader";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { HistoryView } from "@/components/history/HistoryView";
 
 export default function RejectedPage() {
   return (
-    <section>
-      <PageHeader
-        eyebrow="History"
-        title="Rejected"
-        description="Rejected candidates stay recoverable. Nothing is deleted."
-      />
-      <EmptyState
-        title="No rejected candidates"
-        description="Items you reject remain here so you can restore them later."
-      />
-    </section>
+    <HistoryView
+      status="REJECTED"
+      title="Rejected"
+      description="Rejected candidates stay recoverable. Nothing is deleted."
+      emptyTitle="No rejected candidates"
+      emptyDescription="Items you reject remain here so you can restore them later."
+      allowRestore
+    />
   );
 }
