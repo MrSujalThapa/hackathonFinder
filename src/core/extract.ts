@@ -140,6 +140,7 @@ function parseDatesFromText(text: string): {
 
 function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): HackathonEvidence[] {
   const evidence: HackathonEvidence[] = [];
+  const metadata = lead.metadata ?? {};
 
   if (event.officialUrl) {
     evidence.push({
@@ -171,12 +172,21 @@ function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): Hackathon
   }
 
   if (evidence.length === 0 && lead.url) {
+    const evidenceType =
+      lead.source === "web" || asString(metadata.evidenceType) === "search_result"
+        ? "search_result"
+        : "source_card";
     evidence.push({
-      type: "source_card",
+      type: evidenceType,
       url: lead.url,
       title: lead.title,
-      snippet: lead.text,
-      raw: { leadId: lead.id, metadata: lead.metadata ?? {}, source: lead.source },
+      snippet: asString(metadata.snippet) ?? lead.text,
+      raw: {
+        leadId: lead.id,
+        metadata: lead.metadata ?? {},
+        source: lead.source,
+        query: metadata.query,
+      },
     });
   }
 

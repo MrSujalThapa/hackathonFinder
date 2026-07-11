@@ -131,3 +131,91 @@ export function fingerprintsMatch(
 ): boolean {
   return createCandidateFingerprint(left) === createCandidateFingerprint(right);
 }
+
+/** Soft identity for cross-source merges when official URLs differ. */
+export function createSoftEventKey(input: FingerprintInput): string | null {
+  const name = normalizeText(input.name);
+  const date =
+    normalizeDatePart(input.startDate) ?? normalizeDatePart(input.deadline);
+  const city = normalizeText(input.city);
+  if (!name || !date) return null;
+  // Require city OR explicit online mode so different cities stay separate.
+  const place =
+    city ||
+    (normalizeText(input.mode) === "online" || normalizeText(input.mode) === "remote"
+      ? "online"
+      : "");
+  if (!place) return null;
+  return `soft:${name}:${place}:${date}`;
+}
+
+export function softEventsMatch(left: FingerprintInput, right: FingerprintInput): boolean {
+  if (fingerprintsMatch(left, right)) return true;
+  const leftKey = createSoftEventKey(left);
+  const rightKey = createSoftEventKey(right);
+  return Boolean(leftKey && rightKey && leftKey === rightKey);
+}
+
+const SOURCE_AUTHORITY: Record<string, number> = {
+  mlh: 80,
+  devpost: 78,
+  luma: 70,
+  hacklist: 55,
+  hakku: 55,
+  web: 40,
+  x: 20,
+  mock: 10,
+};
+
+export function sourceAuthority(source: string): number {
+  return SOURCE_AUTHORITY[source] ?? 30;
+}
+
+function hostAuthority(url?: string | null): number {
+  if (!url) return 0;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (/(mlh\.io|devpost\.com)$/.test(host)) return 75;
+    if (/(lu\.ma|luma\.com)$/.test(host)) return 65;
+    if (/(hacklist|hakku)/.test(host)) return 45;
+    // Prefer first-party official domains over aggregators/search
+    if (!/(google\.|bing\.|facebook\.|twitter\.|x\.com)/.test(host)) return 90;
+    return 20;
+  } catch {
+    return 0;
+  }
+}
+
+export function preferUrl(
+  existing?: string | null,
+  incoming?: string | null,
+  existingSource?: string,
+  incomingSource?: string,
+): string | undefined {
+  if (!existing) return incoming ?? undefined;
+  if (!incoming) return existing;
+  const existingScore =
+    hostAuthority(existing) + sourceAuthority(existingSource ?? "");
+  const incomingScore =
+    hostAuthority(incoming) + sourceAuthority(incomingSource ?? "");
+  return incomingScore > existingScore ? incoming : existing;
+}
+
+/** Prefer ISO-looking dates and non-empty stronger values over weak/empty. */
+export function preferStrongerText(
+  existing?: string | null,
+  incoming?: string | null,
+): string | undefined {
+  const left = existing?.trim() || undefined;
+  const right = incoming?.trim() || undefined;
+  if (!left) return right;
+  if (!right) return left;
+
+  const leftIso = Boolean(normalizeDatePart(left)?.match(/^\d{4}-\d{2}-\d{2}$/));
+  const rightIso = Boolean(normalizeDatePart(right)?.match(/^\d{4}-\d{2}-\d{2}$/));
+  if (rightIso && !leftIso) return normalizeDatePart(right) ?? right;
+  if (leftIso && !rightIso) return normalizeDatePart(left) ?? left;
+  if (right.length > left.length * 1.5) return right;
+  return left;
+}
+

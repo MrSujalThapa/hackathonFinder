@@ -102,6 +102,15 @@ export function mergeStringArrays(
 
 export function coalesceField<T>(existing: T | null | undefined, incoming: T | null | undefined): T | null | undefined {
   if (existing !== null && existing !== undefined && existing !== "") {
+    // Prefer incoming ISO dates over weak existing text.
+    if (
+      typeof existing === "string" &&
+      typeof incoming === "string" &&
+      /^\d{4}-\d{2}-\d{2}/.test(incoming) &&
+      !/^\d{4}-\d{2}-\d{2}/.test(existing)
+    ) {
+      return incoming;
+    }
     return existing;
   }
   return incoming ?? existing;

@@ -104,6 +104,9 @@ export type AgentRunSummary = {
   preferences: DiscoveryPreferences;
   dryRun: boolean;
   rawLeads: number;
+  uniqueLeads: number;
+  crossSourceMerges: number;
+  enriched: number;
   extracted: number;
   accepted: number;
   rejected: number;
