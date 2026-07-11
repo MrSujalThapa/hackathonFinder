@@ -37,3 +37,15 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# local scrape dumps / probe scripts (may contain third-party client keys)
+*_sample.html
+*.rss
+/scripts/inspect-*.mjs
+/scripts/make-*-fixture.mjs
+/scripts/probe-*.mjs
+/devpost.rss
+/devpost_sample.html
+/hacklist_sample.html
+/git
+/main
