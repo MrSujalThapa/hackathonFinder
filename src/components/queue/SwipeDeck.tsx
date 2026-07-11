@@ -23,6 +23,7 @@ const SAVE_THRESHOLD = 90;
 type SwipeDeckProps = {
   candidate: CandidateCard;
   upcoming?: CandidateCard | null;
+  /** When true, blocks interaction on the *current* card only. */
   busy?: boolean;
   onDecision: (
     action: QueueDecision,
@@ -32,7 +33,7 @@ type SwipeDeckProps = {
 
 export function SwipeDeck({
   candidate,
-  upcoming: _upcoming,
+  upcoming = null,
   busy = false,
   onDecision,
 }: SwipeDeckProps) {
@@ -51,6 +52,7 @@ export function SwipeDeck({
   );
   const [ready, setReady] = useState(false);
   const exitingRef = useRef(false);
+  const lockedCandidateIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     setReady(true);
@@ -73,15 +75,22 @@ export function SwipeDeck({
     setExpanded(false);
     setOverlay(null);
     exitingRef.current = false;
+    lockedCandidateIdRef.current = null;
     if (cardRef.current) {
       gsap.set(cardRef.current, { x: 0, y: 0, rotation: 0, clearProps: "transform" });
     }
   }, [candidate.id]);
 
+  const isCurrentLocked = () =>
+    exitingRef.current ||
+    busy ||
+    lockedCandidateIdRef.current === candidate.id;
+
   const exitAndDecide = useCallback(
     async (action: QueueDecision) => {
       if (exitingRef.current || busy) return;
       exitingRef.current = true;
+      lockedCandidateIdRef.current = candidate.id;
       setOverlay(
         action === "save" ? "save" : action === "approve" ? "approve" : "reject",
       );
@@ -109,11 +118,14 @@ export function SwipeDeck({
       }
 
       const endTransition = startMark("queue.transition");
+      // Parent removes optimistically and does not await Sheets — next card
+      // unlocks when candidate.id changes.
       const result = await onDecision(action, candidate.id);
       endTransition();
       if (!result.ok && el) {
         gsap.set(el, { x: 0, y: 0, rotation: 0, opacity: 1 });
         exitingRef.current = false;
+        lockedCandidateIdRef.current = null;
         setOverlay(null);
       }
     },
@@ -121,7 +133,7 @@ export function SwipeDeck({
   );
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (busy || exitingRef.current || expanded) return;
+    if (isCurrentLocked() || expanded) return;
     const target = event.target as HTMLElement | null;
     if (
       target?.closest("button, a, input, textarea, select, [role='button']")
@@ -194,7 +206,8 @@ export function SwipeDeck({
       ) {
         return;
       }
-      if (busy || exitingRef.current) return;
+      // Only lock the exiting/current card — next card unlocks on id change.
+      if (exitingRef.current || busy) return;
 
       if (event.key === "ArrowLeft") {
         event.preventDefault();
@@ -217,11 +230,32 @@ export function SwipeDeck({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [busy, exitAndDecide]);
 
+  const cardBusy = busy || exitingRef.current;
+
   return (
     <div className="relative mx-auto w-full max-w-[420px]">
+      {upcoming ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-0 scale-[0.97] opacity-35"
+        >
+          <div className="origin-top">
+            <CandidateCardView
+              candidate={upcoming}
+              expanded={false}
+              onToggleDetails={() => undefined}
+              onApprove={() => undefined}
+              onReject={() => undefined}
+              onSave={() => undefined}
+              busy
+            />
+          </div>
+        </div>
+      ) : null}
+
       <div
         ref={cardRef}
-        className="relative touch-none will-change-transform"
+        className="relative z-10 touch-none will-change-transform"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -249,7 +283,7 @@ export function SwipeDeck({
           onApprove={() => void exitAndDecide("approve")}
           onReject={() => void exitAndDecide("reject")}
           onSave={() => void exitAndDecide("save")}
-          busy={busy || exitingRef.current}
+          busy={cardBusy}
         />
       </div>
 

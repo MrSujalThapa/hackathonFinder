@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { useCandidateQueue } from "@/hooks/useCandidateQueue";
+import { formatSourceLabel } from "@/lib/candidates/format";
 
 export function QueueReview() {
   const queue = useCandidateQueue();
@@ -54,7 +55,7 @@ export function QueueReview() {
               <option value="">All sources</option>
               {sources.map((source) => (
                 <option key={source} value={source}>
-                  {source}
+                  {formatSourceLabel(source)}
                 </option>
               ))}
             </select>
@@ -83,7 +84,7 @@ export function QueueReview() {
                 onClick={() => {
                   void (async () => {
                     await fetch("/api/dev/reset-mock", { method: "POST" });
-                    sessionStorage.removeItem("hackathon-radar-queue-seen");
+                    queue.clearSeenIds();
                     await queue.refresh();
                   })();
                 }}
@@ -132,7 +133,7 @@ export function QueueReview() {
               key={visibleCurrent.id}
               candidate={visibleCurrent}
               upcoming={visibleUpcoming}
-              busy={queue.busy}
+              busy={queue.isPending(visibleCurrent.id)}
               onDecision={queue.decide}
             />
           </>
