@@ -1,14 +1,12 @@
 # Hackathon Approval Agent
 
-A mobile-first Tinder-style approval queue for hackathons. A local CLI agent discovers events from HackList, Hakku, Devpost, MLH, Luma, web search, X/Twitter, and manual leads. Candidates land in Supabase for review; only approved hackathons are appended to Google Sheets.
+A responsive Tinder-style approval queue for hackathons. A local CLI agent discovers events from HackList, Hakku, Devpost (and later MLH, Luma, web search, X/Twitter). Candidates land in Supabase for review; only approved hackathons will later be appended to Google Sheets.
 
 ## Prerequisites
 
 - Node.js 20+
 - npm 10+
-- Playwright Chromium (for Hakku and Devpost fallback): `npx playwright install chromium`
-
-No paid services are required for the foundation step. Supabase, Google Sheets, search, and LLM integrations are optional until those features are enabled.
+- Playwright Chromium (for Hakku/Devpost fallback and optional UI smoke): `npx playwright install chromium`
 
 ## Setup
 
@@ -19,21 +17,63 @@ npm install
 npx playwright install chromium
 ```
 
-2. Copy the environment template and fill in values only for features you plan to use:
+2. Copy the environment template:
 
 ```bash
 cp .env.example .env.local
 ```
 
-All variables are optional during early development. See `.env.example` for Supabase, Google Sheets, search, X/Twitter MCP, and LLM settings.
+3. Configure Supabase **or** enable explicit mock mode for local UI work:
 
-3. Start the development server:
+```bash
+# Real database (default when reachable)
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+
+# Explicit local UI fallback when Supabase is unreachable
+USE_MOCK_CANDIDATES=true
+```
+
+`USE_MOCK_CANDIDATES` is never enabled silently, and it is forbidden in production.
+
+4. Start the web app:
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The app redirects to `/queue`.
+Open [http://localhost:3000/queue](http://localhost:3000/queue).
+
+## Supabase diagnostics
+
+If writes fail with `TypeError: fetch failed`, diagnose connectivity first:
+
+```bash
+npm run check:supabase
+```
+
+The script loads `.env.local` from the repo root, prints whether each required variable is set (never prints keys), probes the REST endpoint, and attempts a read-only `candidates` select. Common categories: malformed URL, DNS/network, TLS, invalid API key, paused project, missing table.
+
+## Candidate review controls
+
+| Input | Action |
+| --- | --- |
+| Approve button / swipe right / → | Approve |
+| Reject button / swipe left / ← | Reject |
+| Save button / swipe up / `S` | Save for later |
+| More details / Enter / Space | Expand or collapse details |
+| Escape | Close expanded details |
+
+History routes:
+
+- `/approved`
+- `/rejected` (restore supported)
+- `/saved` (restore supported)
+- `/candidate/[id]`
+- `/settings`
+
+Approve currently updates Supabase status only. Google Sheets sync and X/Twitter MCP arrive in later steps.
 
 ## Scripts
 
@@ -43,33 +83,24 @@ Open [http://localhost:3000](http://localhost:3000). The app redirects to `/queu
 | `npm run build` | Production build |
 | `npm run start` | Run production server |
 | `npm run lint` | ESLint |
-| `npm run typecheck` | TypeScript check (`strict` mode) |
+| `npm run typecheck` | TypeScript check |
 | `npm run check` | Lint + typecheck + build |
-| `npm run test` | Unit tests |
+| `npm run check:supabase` | Read-only Supabase connectivity diagnostics |
+| `npm run test` | Unit / component tests |
+| `npm run smoke:queue` | Browser smoke (requires `npm run dev` + mock/live data) |
 | `npm run agent -- "<command>"` | Run local discovery agent CLI |
 
-## CLI
-
-Run the local discovery agent from your machine. Step 4 adds **real collectors** for HackList, Devpost, and Hakku, while keeping the mock collector for deterministic testing.
+## CLI discovery
 
 ```bash
 # Real collectors, dry-run (no Supabase required)
 npm run agent -- "find upcoming hackathons" -- --dry-run
 
-# Explicit real sources
-npm run agent -- "find upcoming hackathons" -- --sources=hacklist,devpost,hakku --dry-run
+# Write mode (requires reachable Supabase)
+npm run agent -- "find upcoming hackathons" -- --sources=hacklist
 
-# Mock mode for deterministic local testing
+# Deterministic fixture collector
 npm run agent -- "find upcoming hackathons" -- --sources=mock --dry-run
-
-# Limit raw leads per source
-npm run agent -- "find upcoming hackathons" -- --sources=hacklist,devpost,hakku --max-results=20 --dry-run
-
-# Natural-language examples
-npm run agent -- "find upcoming AI hackathons in Toronto or remote"
-npm run agent -- "/find hackathons in Toronto"
-npm run agent -- "search hackathons in Toronto from 2026-07-01 to 2026-08-31"
-npm run agent -- "find AI agent hackathons remote or near Waterloo"
 ```
 
 ### Dry-run vs write mode
@@ -79,62 +110,44 @@ npm run agent -- "find AI agent hackathons remote or near Waterloo"
 | `--dry-run` | No | Parses, collects, scores, and prints what would be stored |
 | default (write) | Yes | Upserts accepted candidates + evidence into Supabase |
 
-For write mode, configure these in `.env.local`:
-
-```bash
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-```
-
 The CLI loads `.env.local` automatically before running.
 
-### Source defaults (Step 4)
-
-| Flag | Default |
-| --- | --- |
-| `--sources` | `hacklist,devpost,hakku` |
-| `--max-results` | `25` |
-
-Use `--sources=mock` when you want the deterministic Step 3 fixture data.
-
-### Known limitations (Step 4)
-
-- HackList/Devpost HTML selectors can change; collectors emit warnings instead of crashing.
-- Hakku is client-rendered and currently login-gated; the collector warns and continues without leads.
-- Devpost listing pages may require Playwright when static HTML has no cards.
-- MLH, Luma, web search, X/Twitter MCP, Google Sheets, and approval UI are not implemented yet.
-
-## Routes (foundation)
+## Routes
 
 | Route | Purpose |
 | --- | --- |
-| `/queue` | Approval queue placeholder |
-| `/settings` | Settings placeholder |
+| `/queue` | One-at-a-time review deck |
+| `/approved` | Approved history |
+| `/rejected` | Rejected history (restorable) |
+| `/saved` | Saved-for-later history |
+| `/candidate/[id]` | Full candidate detail |
+| `/settings` | Connection / integration status |
 
 ## Project structure
 
 ```text
 src/
   agent/         # Command parser, controller, run summary
-  app/           # Next.js App Router pages
+  app/           # Next.js App Router pages + API routes
   cli/           # Local agent entrypoint
   collectors/    # Source collectors (mock, hacklist, hakku, devpost)
+  components/    # Approval UI shell, card, queue, history
   config/        # Typed environment validation
   core/          # Dedupe, scoring, extract/verify, discovery types
-  lib/           # HTTP fetch helpers and Playwright wrapper
-  server/        # Supabase repositories and agent run helpers
+  hooks/         # Queue + motion hooks
+  lib/           # HTTP helpers, Playwright, client API
+  server/        # Candidate repository, mock store, API helpers
 ```
 
 ## Development workflow
 
-This repo follows a step-by-step plan (`docs/hackathon_approval_agent_docs/05_PROJECT_PLAN.md`):
+This repo follows `docs/hackathon_approval_agent_docs/05_PROJECT_PLAN.md`:
 
 1. Foundation
 2. Supabase database
 3. Agent core
-4. Source collectors (current)
-5. Mobile approval UI
+4. Source collectors
+5. Approval web UI (current)
 6. Google Sheets
 7. Enrichment
 8. X/Twitter MCP
@@ -151,4 +164,4 @@ Planning docs live in `docs/hackathon_approval_agent_docs/`:
 - `03_API_SPEC.md` — API and CLI contracts
 - `04_DATABASE_SCHEMA.md` — Supabase schema
 - `05_PROJECT_PLAN.md` — implementation plan
-- `07_DESIGN_UX_SPEC.md` — mobile UI spec
+- `07_DESIGN_UX_SPEC.md` — approval UI spec

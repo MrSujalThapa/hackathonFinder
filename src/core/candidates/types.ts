@@ -74,11 +74,16 @@ export type ListCandidatesParams = {
   status?: CandidateStatus;
   limit?: number;
   cursor?: string;
+  offset?: number;
+  source?: string;
+  sort?: "score" | "found_at" | "name";
+  q?: string;
 };
 
 export type ListCandidatesResult = {
   candidates: CandidateCard[];
   nextCursor?: string;
+  total?: number;
 };
 
 export type UpsertCandidateInput = {
