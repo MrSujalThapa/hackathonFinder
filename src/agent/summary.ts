@@ -136,6 +136,9 @@ export function printAgentSummary(summary: AgentRunSummary): void {
 
   console.log("Discovery summary:");
   console.log(`- raw leads: ${summary.rawLeads}`);
+  console.log(`- unique leads: ${summary.uniqueLeads}`);
+  console.log(`- cross-source merges: ${summary.crossSourceMerges}`);
+  console.log(`- enriched pages: ${summary.enriched}`);
   console.log(`- extracted: ${summary.extracted}`);
   console.log(`- accepted: ${summary.accepted}`);
   console.log(`- rejected: ${summary.rejected}`);
@@ -206,6 +209,9 @@ export function emptySummary(
     preferences,
     dryRun,
     rawLeads: 0,
+    uniqueLeads: 0,
+    crossSourceMerges: 0,
+    enriched: 0,
     extracted: 0,
     accepted: 0,
     rejected: 0,

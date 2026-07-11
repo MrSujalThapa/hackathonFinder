@@ -10,7 +10,9 @@ import type {
   SourceName,
   SourceRunStats,
 } from "@/core/discovery/types";
+import { enrichPromisingLeads } from "@/core/enrichLead";
 import { extractHackathonEvents } from "@/core/extract";
+import { mergeCrossSourceEvents } from "@/core/mergeEvents";
 import { scoreHackathonEvent } from "@/core/score";
 import { verifyHackathonEvent } from "@/core/verify";
 import { addEvidence, upsertCandidateByFingerprint } from "@/server/candidates/repository";
@@ -21,6 +23,7 @@ import {
   eventEvidenceToAddInput,
   eventToUpsertInput,
 } from "@/agent/summary";
+import { formatSearchPlan, planSearchQueries } from "@/agent/planSearchQueries";
 
 const SUPABASE_ENV_MESSAGE =
   "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in .env.local, or run with --dry-run.";
@@ -28,8 +31,14 @@ const SUPABASE_ENV_MESSAGE =
 const MOCK_WRITE_REFUSED_MESSAGE =
   'Refusing to upsert mock-sourced candidates into the live database while USE_MOCK_CANDIDATES=false. Re-run with --dry-run, set USE_MOCK_CANDIDATES=true for local fixtures, or pass --allow-mock-writes to override.';
 
+const DEFAULT_TOTAL_TIMEOUT_MS = 45_000;
+
 export type RunDiscoveryOptions = {
   allowMockWrites?: boolean;
+  sourceTimeoutMs?: number;
+  totalTimeoutMs?: number;
+  showSearchPlan?: boolean;
+  dryRunPlan?: boolean;
 };
 
 function initSourceStats(sources: SourceName[]): Map<SourceName, SourceRunStats> {
@@ -71,6 +80,23 @@ export async function runDiscovery(
   const summary = emptySummary(preferences.rawCommand, preferences, dryRun);
   const sourceStats = initSourceStats(preferences.sources);
   const allowMockWrites = options.allowMockWrites === true;
+  const sourceTimeoutMs = options.sourceTimeoutMs ?? DEFAULT_COLLECTOR_TIMEOUT_MS;
+  const totalTimeoutMs = options.totalTimeoutMs ?? DEFAULT_TOTAL_TIMEOUT_MS;
+  const effectiveSourceTimeout = Math.min(sourceTimeoutMs, totalTimeoutMs);
+
+  if (options.showSearchPlan || options.dryRunPlan) {
+    const queries = planSearchQueries(preferences);
+    console.log("Search plan:");
+    console.log(formatSearchPlan(queries));
+    console.log("");
+  }
+
+  if (options.dryRunPlan) {
+    summary.warnings.push("Dry-run plan only; collectors were not executed.");
+    summary.durationMs = Date.now() - startedAt;
+    summary.sourceStats = [...sourceStats.values()];
+    return summary;
+  }
 
   assertMockWritesAllowed(preferences, dryRun, allowMockWrites);
 
@@ -95,18 +121,45 @@ export async function runDiscovery(
   }
 
   try {
-    const collectorResults = await runCollectors(
+    const collectorPromise = runCollectors(
       {
         preferences,
         maxResults: preferences.maxResults,
-        timeoutMs: DEFAULT_COLLECTOR_TIMEOUT_MS,
+        timeoutMs: effectiveSourceTimeout,
         dryRun,
         requestId: runId ?? undefined,
       },
       preferences.sources,
     );
 
-    const leads = collectorResults.flatMap((result) => result.leads);
+    let timedOut = false;
+    const collectorResults = await Promise.race([
+      collectorPromise,
+      new Promise<null>((resolve) => {
+        setTimeout(() => {
+          timedOut = true;
+          resolve(null);
+        }, totalTimeoutMs);
+      }),
+    ]).then(async (result) => {
+      if (result) return result;
+      // Total budget hit: still await collectors but warn; do not block forever beyond a short grace.
+      summary.warnings.push(
+        `Total collector budget ${totalTimeoutMs}ms reached; waiting briefly for in-flight collectors.`,
+      );
+      return Promise.race([
+        collectorPromise,
+        new Promise<Awaited<typeof collectorPromise>>((resolve) => {
+          setTimeout(() => resolve([]), 2_000);
+        }),
+      ]);
+    });
+
+    if (timedOut && collectorResults.length === 0) {
+      summary.warnings.push("Collectors returned no results before the total timeout grace period ended.");
+    }
+
+    let leads = collectorResults.flatMap((result) => result.leads);
     summary.rawLeads = leads.length;
 
     for (const result of collectorResults) {
@@ -120,13 +173,30 @@ export async function runDiscovery(
       summary.errors.push(...result.errors.map((error) => `[${result.source}] ${error}`));
     }
 
-    const events = extractHackathonEvents(leads);
-    summary.extracted = events.length;
+    const enrichment = await enrichPromisingLeads(leads, {
+      timeoutMs: Math.min(10_000, effectiveSourceTimeout),
+      maxPages: 15,
+      concurrency: 4,
+    });
+    leads = enrichment.leads;
+    summary.enriched = enrichment.enrichedCount;
+    summary.warnings.push(...enrichment.warnings.map((warning) => `[enrich] ${warning}`));
+
+    const extracted = extractHackathonEvents(leads);
+    const merged = mergeCrossSourceEvents(extracted);
+    summary.uniqueLeads = merged.events.length;
+    summary.crossSourceMerges = merged.mergeCount;
+    summary.extracted = merged.events.length;
 
     const accepted: AcceptedCandidate[] = [];
     const rejected: RejectedCandidate[] = [];
 
-    for (const event of events) {
+    const bump = (source: SourceName, field: "accepted" | "rejected") => {
+      const stats = sourceStats.get(source);
+      if (stats) stats[field] += 1;
+    };
+
+    for (const event of merged.events) {
       try {
         const verification = verifyHackathonEvent(event);
         if (verification.status === "rejected") {
@@ -136,7 +206,7 @@ export async function runDiscovery(
             stage: "verification",
             reason: verification.reasons[0] ?? "Failed verification",
           });
-          sourceStats.get(event.source)!.rejected += 1;
+          bump(event.source, "rejected");
           continue;
         }
 
@@ -148,13 +218,13 @@ export async function runDiscovery(
             stage: "scoring",
             reason: score.rejectionReason ?? "Rejected by scoring rules",
           });
-          sourceStats.get(event.source)!.rejected += 1;
+          bump(event.source, "rejected");
           continue;
         }
 
         const status = verification.status === "needs_review" ? "NEEDS_REVIEW" : "NEW";
         accepted.push({ event, score, fingerprint: "", status });
-        sourceStats.get(event.source)!.accepted += 1;
+        bump(event.source, "accepted");
       } catch (error) {
         summary.errors.push(
           `${event.name}: ${error instanceof Error ? error.message : "processing failed"}`,
@@ -198,11 +268,21 @@ export async function runDiscovery(
         }
 
         for (const evidence of item.event.evidence) {
-          await addEvidence(result.candidate.id, eventEvidenceToAddInput(evidence));
+          try {
+            await addEvidence(result.candidate.id, eventEvidenceToAddInput(evidence));
+          } catch (error) {
+            summary.warnings.push(
+              `Evidence write failed for ${item.event.name}: ${
+                error instanceof Error ? error.message : "unknown error"
+              }`,
+            );
+          }
         }
       } catch (error) {
         summary.errors.push(
-          `${item.event.name}: ${error instanceof Error ? error.message : "storage failed"}`,
+          `Upsert failed for ${item.event.name}: ${
+            error instanceof Error ? error.message : "unknown error"
+          }`,
         );
       }
     }

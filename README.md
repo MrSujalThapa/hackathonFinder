@@ -160,12 +160,20 @@ RUN_GOOGLE_SHEETS_INTEGRATION=true npm test -- src/server/sheets/sheets.integrat
 
 ## CLI discovery
 
+Default sources: `hacklist`, `mlh`, `luma`, `web`. Devpost and Hakku remain available when requested; `mock` only when explicit.
+
 ```bash
 # Real collectors, dry-run (no Supabase required)
 npm run agent -- "find upcoming hackathons" -- --dry-run
 
-# Write mode (requires reachable Supabase)
-npm run agent -- "find upcoming hackathons" -- --sources=hacklist
+# Broader discovery dry-run
+npm run agent -- "find upcoming hackathons" -- --sources=mlh,luma,web --dry-run
+
+# Write mode with broader sources (requires reachable Supabase)
+npm run agent -- "find AI and agent hackathons in Toronto, Waterloo, Canada, or remote from 2026-07-01 to 2026-12-31" -- --sources=hacklist,mlh,luma,web
+
+# Show planned web-search queries without collecting
+npm run agent -- "find AI hackathons in Toronto" -- --sources=web --show-search-plan --dry-run-plan
 
 # Deterministic fixture collector (dry-run; no DB writes)
 npm run agent -- "find upcoming hackathons" -- --sources=mock --dry-run
@@ -174,6 +182,7 @@ npm run agent -- "find upcoming hackathons" -- --sources=mock --dry-run
 npm run agent -- "find upcoming hackathons" -- --sources=mock --allow-mock-writes
 ```
 
+Web search requires `SEARCH_PROVIDER` and `SEARCH_API_KEY` in `.env.local` (provider `mock` needs no key). If unset, the web collector warns and other sources continue.
 ### Dry-run vs write mode
 
 | Mode | Supabase required? | Behavior |
@@ -210,12 +219,12 @@ src/
   agent/         # Command parser, controller, run summary
   app/           # Next.js App Router pages + API routes
   cli/           # Local agent + sync:sheets entrypoints
-  collectors/    # Source collectors (mock, hacklist, hakku, devpost)
+  collectors/    # Source collectors (mock, hacklist, hakku, devpost, mlh, luma, web)
   components/    # Approval UI shell, card, queue, history, sheet badges
   config/        # Typed environment validation
-  core/          # Dedupe, scoring, extract/verify, discovery types
+  core/          # Dedupe, merge, enrich, scoring, extract/verify, discovery types
   hooks/         # Queue + motion hooks
-  lib/           # HTTP helpers, Playwright, Google Sheets client
+  lib/           # HTTP helpers, Playwright, search providers, Google Sheets client
   server/        # Candidate repository, sheets sync, API helpers
 ```
 

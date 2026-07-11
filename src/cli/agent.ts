@@ -21,6 +21,10 @@ async function main(): Promise<void> {
       sources: options.sources,
       maxResults: options.maxResults,
       allowMockWrites: options.allowMockWrites,
+      sourceTimeoutMs: options.sourceTimeoutMs,
+      totalTimeoutMs: options.totalTimeoutMs,
+      showSearchPlan: options.showSearchPlan,
+      dryRunPlan: options.dryRunPlan,
     });
   } catch (error) {
     console.error(error instanceof Error ? error.message : "Agent run failed");

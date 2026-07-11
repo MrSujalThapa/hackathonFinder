@@ -15,9 +15,6 @@ const EVENT_VOCAB =
 const NOISE_VOCAB =
   /\b(what is a hackathon|history of hackathons|wikipedia|how to win|tips for|blog post|opinion)\b/i;
 
-const TRUSTED_HOST_HINT =
-  /(mlh\.io|devpost\.com|lu\.ma|luma\.com|eventbrite\.com|unstop\.com|edu$|\.edu\.|hackathon)/i;
-
 export type WebSearchCollectorDeps = {
   provider?: SearchProvider | null;
 };
@@ -32,8 +29,11 @@ function hostnameOf(url: string): string {
 
 export function isPromisingSearchResult(result: SearchResult): boolean {
   const text = `${result.title} ${result.snippet} ${result.url}`;
-  if (NOISE_VOCAB.test(text) && !EVENT_VOCAB.test(text)) return false;
-  if (TRUSTED_HOST_HINT.test(result.url) || TRUSTED_HOST_HINT.test(result.source)) return true;
+  if (NOISE_VOCAB.test(text)) return false;
+  if (/(mlh\.io|devpost\.com|lu\.ma|luma\.com|eventbrite\.com|unstop\.com)/i.test(result.url)) {
+    return true;
+  }
+  if (/\.edu(\.|$)/i.test(result.url) && EVENT_VOCAB.test(text)) return true;
   return EVENT_VOCAB.test(text);
 }
 

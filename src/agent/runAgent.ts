@@ -7,6 +7,10 @@ export type RunAgentOptions = {
   sources?: SourceName[];
   maxResults?: number;
   allowMockWrites?: boolean;
+  sourceTimeoutMs?: number;
+  totalTimeoutMs?: number;
+  showSearchPlan?: boolean;
+  dryRunPlan?: boolean;
 };
 
 export async function runAgent(
@@ -16,8 +20,12 @@ export async function runAgent(
 ): Promise<void> {
   const parsed = parseCommand(rawCommand);
   const preferences = applyCliOptions(parsed, cliOptions);
-  const summary = await runDiscovery(preferences, dryRun, {
+  const summary = await runDiscovery(preferences, dryRun || Boolean(cliOptions.dryRunPlan), {
     allowMockWrites: cliOptions.allowMockWrites,
+    sourceTimeoutMs: cliOptions.sourceTimeoutMs,
+    totalTimeoutMs: cliOptions.totalTimeoutMs,
+    showSearchPlan: cliOptions.showSearchPlan,
+    dryRunPlan: cliOptions.dryRunPlan,
   });
   printAgentSummary(summary);
 }
