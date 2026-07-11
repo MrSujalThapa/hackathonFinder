@@ -11,6 +11,14 @@ import {
   type DecisionAction,
 } from "@/lib/api/candidates";
 import {
+  applyStatusChange,
+  getDetail,
+  insertIntoQueue,
+  setDetail,
+  subscribe,
+} from "@/lib/candidates/clientStore";
+import { unseeCandidate } from "@/lib/candidates/queueSeen";
+import {
   formatDate,
   formatDateRange,
   formatLocation,
@@ -26,6 +34,7 @@ import {
 import { PageHeader } from "@/components/shell/PageHeader";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingState } from "@/components/ui/LoadingState";
+import { messageForSheetSync } from "@/hooks/useCandidateQueue";
 
 export function CandidateDetailView({ id }: { id: string }) {
   const [candidate, setCandidate] = useState<CandidateDetail | null>(null);
@@ -41,6 +50,7 @@ export function CandidateDetailView({ id }: { id: string }) {
     try {
       const detail = await fetchCandidate(id);
       setCandidate(detail);
+      setDetail(detail);
     } catch (err) {
       setError(
         err instanceof CandidatesApiError
@@ -58,35 +68,99 @@ export function CandidateDetailView({ id }: { id: string }) {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    return subscribe(() => {
+      const fromStore = getDetail(id);
+      if (!fromStore) return;
+      setCandidate((prev) => {
+        if (!prev) return prev;
+        if (prev.status === fromStore.status && prev.id === fromStore.id) {
+          return { ...prev, ...fromStore };
+        }
+        return { ...prev, ...fromStore };
+      });
+    });
+  }, [id]);
+
   const apply = async (action: DecisionAction) => {
     if (!candidate) return;
     setBusy(true);
     setSyncNote(null);
+    const previousStatus = candidate.status;
     try {
-      const { candidate: updated, sheetSync } = await decideCandidate(
+      const { candidate: updated } = await decideCandidate(
         candidate.id,
         action,
       );
+      applyStatusChange({
+        id: candidate.id,
+        previousStatus,
+        newStatus: updated.status,
+        card: updated,
+      });
       setCandidate((prev) => (prev ? { ...prev, ...updated } : prev));
-      if (action === "approve" && sheetSync) {
-        if (sheetSync.status === "failed") {
-          setLastSyncFailed(true);
-          setSyncNote("Approved; Sheet sync failed — retry below.");
-        } else {
-          setLastSyncFailed(false);
-          if (sheetSync.status === "mock_synced") {
+      setDetail({ ...candidate, ...updated });
+
+      if (action === "restore") {
+        unseeCandidate(candidate.id);
+        insertIntoQueue(updated);
+      }
+
+      setBusy(false);
+
+      if (action === "approve") {
+        void syncCandidateSheet(candidate.id)
+          .then(async (result) => {
+            if (result.sheetSync.status === "failed") {
+              setLastSyncFailed(true);
+              setSyncNote(
+                messageForSheetSync(result.sheetSync) ??
+                  "Approved; Sheet sync failed — retry below.",
+              );
+            } else {
+              setLastSyncFailed(false);
+              setSyncNote(messageForSheetSync(result.sheetSync));
+              if (result.candidate) {
+                setCandidate((prev) =>
+                  prev ? { ...prev, ...result.candidate } : prev,
+                );
+              } else {
+                const detail = await fetchCandidate(candidate.id);
+                setCandidate(detail);
+                setDetail(detail);
+              }
+            }
+          })
+          .catch((err: unknown) => {
+            setLastSyncFailed(true);
             setSyncNote(
-              "Approved (mock Sheet sync — not written to Google).",
+              err instanceof Error
+                ? `Approved; Sheet sync failed — ${err.message}`
+                : "Approved; Sheet sync failed — retry below.",
             );
-          }
-          // Reload to pick up sheet metadata written by append.
-          const detail = await fetchCandidate(candidate.id);
-          setCandidate(detail);
-        }
+          });
+      } else if (previousStatus === "APPROVED") {
+        void syncCandidateSheet(candidate.id)
+          .then(({ sheetSync }) => {
+            if (sheetSync.status === "failed") {
+              setLastSyncFailed(true);
+              setSyncNote(
+                sheetSync.message ??
+                  "Status updated; Sheet cleanup failed — retry below.",
+              );
+            }
+          })
+          .catch((err: unknown) => {
+            setLastSyncFailed(true);
+            setSyncNote(
+              err instanceof Error
+                ? err.message
+                : "Status updated; Sheet cleanup failed — retry below.",
+            );
+          });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Action failed");
-    } finally {
       setBusy(false);
     }
   };
@@ -105,7 +179,7 @@ export function CandidateDetailView({ id }: { id: string }) {
         if (result.sheetSync.status === "mock_synced") {
           setSyncNote("Mock Sheet sync — not written to Google.");
         } else {
-          setSyncNote(null);
+          setSyncNote(messageForSheetSync(result.sheetSync));
         }
       }
       if (result.candidate) {

@@ -21,5 +21,19 @@ describe("parseAgentArgs", () => {
     ]);
     assert.deepEqual(options.sources, ["mock", "hacklist"]);
     assert.equal(options.maxResults, 20);
+    assert.equal(options.allowMockWrites, false);
+  });
+
+  it("parses allow-mock-writes flag", () => {
+    const options = parseAgentArgs([
+      "node",
+      "agent.ts",
+      "find upcoming hackathons",
+      "--",
+      "--sources=mock",
+      "--allow-mock-writes",
+    ]);
+    assert.equal(options.allowMockWrites, true);
+    assert.equal(options.dryRun, false);
   });
 });

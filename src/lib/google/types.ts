@@ -37,13 +37,24 @@ export type GoogleSheetsConfig = {
   publicSheetUrl?: string;
 };
 
+export type SpreadsheetSheetInfo = {
+  title: string;
+  sheetId: number;
+};
+
 export type SpreadsheetMetadata = {
   spreadsheetId: string;
   title: string;
   sheetTitles: string[];
+  sheets: SpreadsheetSheetInfo[];
 };
 
 export type FindRowResult = {
   rowNumber: number;
   range: string;
+};
+
+export type DeleteDimensionResult = {
+  sheetId: number;
+  rowNumber: number;
 };

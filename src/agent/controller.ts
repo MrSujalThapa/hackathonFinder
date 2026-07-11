@@ -25,6 +25,13 @@ import {
 const SUPABASE_ENV_MESSAGE =
   "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in .env.local, or run with --dry-run.";
 
+const MOCK_WRITE_REFUSED_MESSAGE =
+  'Refusing to upsert mock-sourced candidates into the live database while USE_MOCK_CANDIDATES=false. Re-run with --dry-run, set USE_MOCK_CANDIDATES=true for local fixtures, or pass --allow-mock-writes to override.';
+
+export type RunDiscoveryOptions = {
+  allowMockWrites?: boolean;
+};
+
 function initSourceStats(sources: SourceName[]): Map<SourceName, SourceRunStats> {
   const stats = new Map<SourceName, SourceRunStats>();
   for (const source of sources) {
@@ -41,13 +48,31 @@ function initSourceStats(sources: SourceName[]): Map<SourceName, SourceRunStats>
   return stats;
 }
 
+function assertMockWritesAllowed(
+  preferences: DiscoveryPreferences,
+  dryRun: boolean,
+  allowMockWrites: boolean,
+): void {
+  if (dryRun || allowMockWrites) return;
+  if (!preferences.sources.includes("mock")) return;
+
+  const env = getServerEnv();
+  if (env.USE_MOCK_CANDIDATES) return;
+
+  throw new Error(MOCK_WRITE_REFUSED_MESSAGE);
+}
+
 export async function runDiscovery(
   preferences: DiscoveryPreferences,
   dryRun: boolean,
+  options: RunDiscoveryOptions = {},
 ): Promise<AgentRunSummary> {
   const startedAt = Date.now();
   const summary = emptySummary(preferences.rawCommand, preferences, dryRun);
   const sourceStats = initSourceStats(preferences.sources);
+  const allowMockWrites = options.allowMockWrites === true;
+
+  assertMockWritesAllowed(preferences, dryRun, allowMockWrites);
 
   if (!dryRun && !hasSupabaseConfig(getServerEnv())) {
     throw new Error(SUPABASE_ENV_MESSAGE);

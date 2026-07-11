@@ -117,6 +117,15 @@ export function mergeSourceIds(
   };
 }
 
+/** Prefer a live source over mock when merging duplicate fingerprints. */
+export function mergeSourceField(existing: string, incoming: string): string {
+  const next = incoming || existing;
+  if (incoming === "mock" && existing && existing !== "mock") {
+    return existing;
+  }
+  return next;
+}
+
 export function candidateRowFromUpsertInput(
   input: import("@/core/candidates/types").UpsertCandidateInput,
 ): Database["public"]["Tables"]["candidates"]["Insert"] {
@@ -155,7 +164,7 @@ export function mergeCandidateRows(
 ): Database["public"]["Tables"]["candidates"]["Update"] {
   return {
     name: incoming.name || existing.name,
-    source: incoming.source || existing.source,
+    source: mergeSourceField(existing.source, incoming.source),
     score: incoming.score ?? existing.score,
     official_url: coalesceField(existing.official_url, incoming.officialUrl),
     apply_url: coalesceField(existing.apply_url, incoming.applyUrl),

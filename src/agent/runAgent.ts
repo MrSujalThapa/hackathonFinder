@@ -6,6 +6,7 @@ import type { SourceName } from "@/core/discovery/types";
 export type RunAgentOptions = {
   sources?: SourceName[];
   maxResults?: number;
+  allowMockWrites?: boolean;
 };
 
 export async function runAgent(
@@ -15,6 +16,8 @@ export async function runAgent(
 ): Promise<void> {
   const parsed = parseCommand(rawCommand);
   const preferences = applyCliOptions(parsed, cliOptions);
-  const summary = await runDiscovery(preferences, dryRun);
+  const summary = await runDiscovery(preferences, dryRun, {
+    allowMockWrites: cliOptions.allowMockWrites,
+  });
   printAgentSummary(summary);
 }

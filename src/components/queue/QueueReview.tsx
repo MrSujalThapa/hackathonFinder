@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CandidateProgress } from "@/components/candidates/CandidateProgress";
 import { SwipeDeck } from "@/components/queue/SwipeDeck";
 import { PageHeader } from "@/components/shell/PageHeader";
@@ -8,9 +9,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { useCandidateQueue } from "@/hooks/useCandidateQueue";
+import { formatSourceLabel } from "@/lib/candidates/format";
 
 export function QueueReview() {
   const queue = useCandidateQueue();
+  const router = useRouter();
   const [sourceFilter, setSourceFilter] = useState("");
 
   const sources = useMemo(() => {
@@ -24,6 +27,13 @@ export function QueueReview() {
 
   const visibleCurrent = filtered[0] ?? null;
   const visibleUpcoming = filtered[1] ?? null;
+
+  // Prefetch next 2–3 candidate detail routes for snappy opens.
+  useEffect(() => {
+    for (const card of filtered.slice(0, 3)) {
+      router.prefetch(`/candidate/${card.id}`);
+    }
+  }, [filtered, router]);
 
   return (
     <section className="flex flex-1 flex-col items-center">
@@ -54,7 +64,7 @@ export function QueueReview() {
               <option value="">All sources</option>
               {sources.map((source) => (
                 <option key={source} value={source}>
-                  {source}
+                  {formatSourceLabel(source)}
                 </option>
               ))}
             </select>
@@ -83,7 +93,7 @@ export function QueueReview() {
                 onClick={() => {
                   void (async () => {
                     await fetch("/api/dev/reset-mock", { method: "POST" });
-                    sessionStorage.removeItem("hackathon-radar-queue-seen");
+                    queue.clearSeenIds();
                     await queue.refresh();
                   })();
                 }}
@@ -132,7 +142,7 @@ export function QueueReview() {
               key={visibleCurrent.id}
               candidate={visibleCurrent}
               upcoming={visibleUpcoming}
-              busy={queue.busy}
+              busy={queue.isPending(visibleCurrent.id)}
               onDecision={queue.decide}
             />
           </>

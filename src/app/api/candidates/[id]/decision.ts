@@ -1,5 +1,3 @@
-import { appendApprovedCandidate } from "@/server/sheets/appendApprovedCandidate";
-import type { SheetSyncResult } from "@/server/sheets/types";
 import {
   candidateIdSchema,
   decisionBodySchema,
@@ -9,11 +7,20 @@ import {
   validationError,
 } from "@/server/api/envelope";
 import { getCandidateRepository } from "@/server/candidates/service";
+import { timedAsync } from "@/lib/perf/timing";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
+/**
+ * Status-only decision handler.
+ *
+ * Google Sheets reconciliation is intentionally NOT awaited here.
+ * Clients call POST /api/candidates/[id]/sync-sheet afterward so the next
+ * queue card becomes usable immediately. Status persistence remains required;
+ * Sheet failures must not roll back APPROVED/REJECTED/etc.
+ */
 async function applyDecision(
   request: Request,
   context: RouteContext,
@@ -44,32 +51,20 @@ async function applyDecision(
     }
 
     const newStatus = statusForAction(action);
-    const candidate = await repo.updateCandidateStatus(parsedId.data, newStatus, {
-      reason,
-      metadata: { via: "api", action },
-    });
-
-    let sheetSync: SheetSyncResult | null = null;
-    if (action === "approve") {
-      try {
-        sheetSync = await appendApprovedCandidate(parsedId.data);
-      } catch (error) {
-        // Never fail the HTTP response due to sheet sync failures.
-        sheetSync = {
-          status: "failed",
-          candidateId: parsedId.data,
-          message:
-            error instanceof Error ? error.message : "Sheet sync failed",
-        };
-      }
-    }
+    const candidate = await timedAsync("server.status_mutation", () =>
+      repo.updateCandidateStatus(parsedId.data, newStatus, {
+        reason,
+        metadata: { via: "api", action },
+      }),
+    );
 
     return ok({
       candidate,
       previousStatus: existing.status,
       newStatus: candidate.status,
       action,
-      sheetSync,
+      // Sheet sync is a separate client follow-up via /sync-sheet.
+      sheetSync: null,
     });
   } catch (error) {
     const message =

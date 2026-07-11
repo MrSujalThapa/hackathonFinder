@@ -10,7 +10,16 @@ import {
   fetchCandidates,
   syncCandidateSheet,
 } from "@/lib/api/candidates";
-import { formatDateRange, formatLocation } from "@/lib/candidates/format";
+import {
+  getBucket,
+  insertIntoQueue,
+  replaceBucket,
+  subscribe,
+  type HistoryBucket,
+} from "@/lib/candidates/clientStore";
+import { unseeCandidate } from "@/lib/candidates/queueSeen";
+import { formatDateRange, formatLocation, formatSourceLabel } from "@/lib/candidates/format";
+import { timedAsync } from "@/lib/perf/timing";
 import {
   needsSheetRetry,
   SheetSyncBadge,
@@ -38,6 +47,17 @@ type HistoryViewProps = {
   allowRestore?: boolean;
 };
 
+function asHistoryBucket(status: CandidateStatus): HistoryBucket | null {
+  if (
+    status === "APPROVED" ||
+    status === "REJECTED" ||
+    status === "SAVED_FOR_LATER"
+  ) {
+    return status;
+  }
+  return null;
+}
+
 export function HistoryView({
   status,
   title,
@@ -48,6 +68,8 @@ export function HistoryView({
 }: HistoryViewProps) {
   const [candidates, setCandidates] = useState<CandidateCard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
@@ -60,14 +82,21 @@ export function HistoryView({
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchCandidates({
-        status,
-        limit: 50,
-        sort: "found_at",
-        source: source || undefined,
-        q: query.trim() || undefined,
-      });
+      const result = await timedAsync("history.fetch", () =>
+        fetchCandidates({
+          status,
+          limit: 20,
+          sort: "found_at",
+          source: source || undefined,
+          q: query.trim() || undefined,
+        }),
+      );
       setCandidates(result.candidates);
+      setNextCursor(result.nextCursor);
+      const bucket = asHistoryBucket(status);
+      if (bucket && !source && !query.trim()) {
+        replaceBucket(bucket, result.candidates);
+      }
     } catch (err) {
       setError(
         err instanceof CandidatesApiError
@@ -81,6 +110,39 @@ export function HistoryView({
     }
   }, [status, source, query]);
 
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const result = await timedAsync("history.fetch_more", () =>
+        fetchCandidates({
+          status,
+          limit: 20,
+          sort: "found_at",
+          cursor: nextCursor,
+          source: source || undefined,
+          q: query.trim() || undefined,
+        }),
+      );
+      setCandidates((prev) => {
+        const ids = new Set(prev.map((item) => item.id));
+        const appended = result.candidates.filter((item) => !ids.has(item.id));
+        return [...prev, ...appended];
+      });
+      setNextCursor(result.nextCursor);
+    } catch (err) {
+      setError(
+        err instanceof CandidatesApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to load more",
+      );
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [nextCursor, loadingMore, status, source, query]);
+
   useEffect(() => {
     const handle = window.setTimeout(() => {
       void load();
@@ -88,15 +150,63 @@ export function HistoryView({
     return () => window.clearTimeout(handle);
   }, [load]);
 
+  useEffect(() => {
+    return subscribe(() => {
+      const bucket = asHistoryBucket(status);
+      if (!bucket) return;
+      if (source || query.trim()) return;
+
+      const storeCards = getBucket(status);
+      setCandidates((prev) => {
+        const storeIds = new Set(storeCards.map((item) => item.id));
+        const prevIds = new Set(prev.map((item) => item.id));
+        const same =
+          storeCards.length === prev.length &&
+          storeCards.every((card) => prevIds.has(card.id)) &&
+          prev.every((card) => storeIds.has(card.id));
+        if (same) {
+          // Merge field updates for shared ids
+          const byId = new Map(storeCards.map((card) => [card.id, card]));
+          return prev.map((card) => byId.get(card.id) ?? card);
+        }
+        return storeCards;
+      });
+    });
+  }, [status, source, query]);
+
   const sources = useMemo(() => {
     return [...new Set(candidates.map((c) => c.source))].sort();
   }, [candidates]);
 
   const restore = async (id: string) => {
+    const existing = candidates.find((item) => item.id === id);
+    if (!existing) return;
     setBusyId(id);
     try {
-      await decideCandidate(id, "restore");
+      const previousStatus = existing.status;
+      const { candidate: updated } = await decideCandidate(id, "restore");
+      unseeCandidate(id);
+      insertIntoQueue(updated);
       setCandidates((prev) => prev.filter((item) => item.id !== id));
+
+      if (previousStatus === "APPROVED") {
+        void syncCandidateSheet(id)
+          .then(({ sheetSync }) => {
+            if (sheetSync.status === "failed") {
+              setError(
+                sheetSync.message ??
+                  "Restored; Sheet cleanup failed — retry sync from details.",
+              );
+            }
+          })
+          .catch((err: unknown) => {
+            setError(
+              err instanceof Error
+                ? err.message
+                : "Restored; Sheet cleanup failed — retry sync from details.",
+            );
+          });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Restore failed");
     } finally {
@@ -176,7 +286,7 @@ export function HistoryView({
             <option value="">All sources</option>
             {sources.map((item) => (
               <option key={item} value={item}>
-                {item}
+                {formatSourceLabel(item)}
               </option>
             ))}
           </select>
@@ -228,7 +338,7 @@ export function HistoryView({
                   {formatDateRange(candidate.startDate, candidate.endDate)}
                 </p>
                 <p className="mt-1 text-xs text-muted">
-                  Source · {candidate.source}
+                  Source · {formatSourceLabel(candidate.source)}
                 </p>
                 {candidate.status === "APPROVED" ? (
                   <div className="mt-3">
@@ -271,6 +381,19 @@ export function HistoryView({
             );
           })}
         </ul>
+      ) : null}
+
+      {nextCursor ? (
+        <div className="mt-6 flex justify-center">
+          <button
+            type="button"
+            disabled={loadingMore}
+            onClick={() => void loadMore()}
+            className="rounded-xl border border-border px-4 py-2 text-sm text-muted transition-colors hover:border-sky-500/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:opacity-40"
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
+        </div>
       ) : null}
     </section>
   );

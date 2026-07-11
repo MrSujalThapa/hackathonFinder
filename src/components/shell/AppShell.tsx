@@ -2,6 +2,7 @@ import { DesktopSidebar, MobileNavigation } from "@/components/shell/Navigation"
 
 type AppShellProps = {
   children: React.ReactNode;
+  /** Optional override; otherwise Navigation reads live counts from clientStore. */
   queueCount?: number;
 };
 

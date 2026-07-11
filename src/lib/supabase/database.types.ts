@@ -31,6 +31,7 @@ export type CandidateActionType =
   | "ENRICH"
   | "UPDATE_FROM_DUPLICATE"
   | "SHEET_APPEND"
+  | "SHEET_DELETE"
   | "UNDO";
 
 export type Json =

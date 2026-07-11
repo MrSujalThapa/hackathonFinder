@@ -53,6 +53,29 @@ export function hostnameFromUrl(url: string | null): string | null {
   }
 }
 
+/** Display label for a candidate source slug (never mutate storage values). */
+export function formatSourceLabel(source: string): string {
+  switch (source.toLowerCase()) {
+    case "mock":
+      return "Mock";
+    case "hacklist":
+      return "HackList";
+    case "hakku":
+      return "Hakku";
+    case "devpost":
+      return "Devpost";
+    default: {
+      const trimmed = source.trim();
+      if (!trimmed) return source;
+      return trimmed
+        .split(/[-_\s]+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+        .join(" ");
+    }
+  }
+}
+
 export function scoreTone(score: number): string {
   if (score >= 75) return "text-emerald-300";
   if (score >= 50) return "text-amber-300";

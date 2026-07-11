@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   formatDateRange,
   formatLocation,
+  formatSourceLabel,
   hostnameFromUrl,
 } from "@/lib/candidates/format";
 import { PREVIEW_CANDIDATE } from "@/lib/candidates/preview";
@@ -29,5 +30,17 @@ describe("candidate format helpers", () => {
   it("extracts hostnames safely", () => {
     assert.equal(hostnameFromUrl("https://www.example.com/path"), "example.com");
     assert.equal(hostnameFromUrl(null), null);
+  });
+
+  it("formats known source labels", () => {
+    assert.equal(formatSourceLabel("mock"), "Mock");
+    assert.equal(formatSourceLabel("hacklist"), "HackList");
+    assert.equal(formatSourceLabel("hakku"), "Hakku");
+    assert.equal(formatSourceLabel("devpost"), "Devpost");
+  });
+
+  it("title-cases unknown source labels", () => {
+    assert.equal(formatSourceLabel("mlh"), "Mlh");
+    assert.equal(formatSourceLabel("web_search"), "Web Search");
   });
 });

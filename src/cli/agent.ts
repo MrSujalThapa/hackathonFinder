@@ -20,6 +20,7 @@ async function main(): Promise<void> {
     await runAgent(options.command, options.dryRun, {
       sources: options.sources,
       maxResults: options.maxResults,
+      allowMockWrites: options.allowMockWrites,
     });
   } catch (error) {
     console.error(error instanceof Error ? error.message : "Agent run failed");
