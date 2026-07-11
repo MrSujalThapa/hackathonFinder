@@ -37,6 +37,22 @@ USE_MOCK_CANDIDATES=true
 
 `USE_MOCK_CANDIDATES` is never enabled silently, and it is forbidden in production. For live queue + Sheets testing use `USE_MOCK_CANDIDATES=false`.
 
+`USE_MOCK_CANDIDATES=false` never uses the in-memory mock store, but the UI may still show database rows with `source='mock'` left over from earlier agent runs. Those are live Supabase rows, not mock-mode fixtures. Do **not** auto-delete them — identify and clean up intentionally:
+
+```sql
+SELECT id, name, status, source, official_url
+FROM candidates
+WHERE source = 'mock';
+```
+
+Read-only audit (counts by source + lists mock rows):
+
+```bash
+npm run candidates:audit-sources
+```
+
+The agent refuses to upsert mock-sourced candidates into Supabase while `USE_MOCK_CANDIDATES=false` unless you pass `--allow-mock-writes` (or use `--dry-run`).
+
 4. Configure Google Sheets (required for approval → Sheet sync):
 
 ```bash
@@ -130,6 +146,7 @@ X/Twitter MCP arrives in a later project step.
 | `npm run check` | Lint + typecheck + build |
 | `npm run check:supabase` | Read-only Supabase connectivity diagnostics |
 | `npm run check:sheets` | Read-only Google Sheets diagnostics (no writes) |
+| `npm run candidates:audit-sources` | Read-only audit of candidate `source` values (lists `source='mock'`) |
 | `npm run sync:sheets` | Idempotent recovery for approved unsynced candidates |
 | `npm run test` | Unit / component tests |
 | `npm run smoke:queue` | Browser smoke (requires `npm run dev` + mock/live data) |
@@ -150,8 +167,11 @@ npm run agent -- "find upcoming hackathons" -- --dry-run
 # Write mode (requires reachable Supabase)
 npm run agent -- "find upcoming hackathons" -- --sources=hacklist
 
-# Deterministic fixture collector
+# Deterministic fixture collector (dry-run; no DB writes)
 npm run agent -- "find upcoming hackathons" -- --sources=mock --dry-run
+
+# Explicit override only (writes source=mock into live Supabase)
+npm run agent -- "find upcoming hackathons" -- --sources=mock --allow-mock-writes
 ```
 
 ### Dry-run vs write mode
@@ -160,6 +180,7 @@ npm run agent -- "find upcoming hackathons" -- --sources=mock --dry-run
 | --- | --- | --- |
 | `--dry-run` | No | Parses, collects, scores, and prints what would be stored |
 | default (write) | Yes | Upserts accepted candidates + evidence into Supabase |
+| write + `source=mock` | Yes | Refused unless `USE_MOCK_CANDIDATES=true` or `--allow-mock-writes` |
 
 The CLI loads `.env.local` automatically before running.
 
