@@ -27,6 +27,7 @@ export type CandidateRepository = {
     id: string,
     meta: { sheetRowId: string; sheetAppendedAt?: string },
   ) => Promise<CandidateCard>;
+  clearSheetMetadata?: (id: string) => Promise<CandidateCard>;
   upsertCandidateByFingerprint?: (
     input: UpsertCandidateInput,
   ) => Promise<UpsertCandidateResult>;
@@ -73,6 +74,7 @@ export function getCandidateRepository(): CandidateRepository {
     getCandidate: supabaseRepo.getCandidate,
     updateCandidateStatus: supabaseRepo.updateCandidateStatus,
     updateSheetMetadata: supabaseRepo.updateSheetMetadata,
+    clearSheetMetadata: supabaseRepo.clearSheetMetadata,
     upsertCandidateByFingerprint: supabaseRepo.upsertCandidateByFingerprint,
     addEvidence: supabaseRepo.addEvidence,
     addAction: supabaseRepo.addAction,

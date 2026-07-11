@@ -247,7 +247,8 @@ export async function updateCandidateStatus(
     updatePayload.saved_at = now;
   } else if (status === "NEW") {
     // Restore clears decision timestamps so the card re-enters the queue cleanly.
-    // Do not clear sheet_row_id / sheet_appended_at — a prior sheet append still stands.
+    // Sheet row cleanup (clear sheet_row_id / sheet_appended_at) happens via
+    // reconcileCandidateSheetState, not in updateCandidateStatus.
     updatePayload.approved_at = null;
     updatePayload.rejected_at = null;
     updatePayload.saved_at = null;
@@ -341,6 +342,26 @@ export async function updateSheetMetadata(
 
   if (error) {
     throw new Error(`Failed to update sheet metadata: ${error.message}`);
+  }
+
+  return mapCandidateRow(updated);
+}
+
+export async function clearSheetMetadata(id: string): Promise<CandidateCard> {
+  const supabase = createServiceSupabaseClient();
+
+  const { data: updated, error } = await supabase
+    .from("candidates")
+    .update({
+      sheet_row_id: null,
+      sheet_appended_at: null,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to clear sheet metadata: ${error.message}`);
   }
 
   return mapCandidateRow(updated);

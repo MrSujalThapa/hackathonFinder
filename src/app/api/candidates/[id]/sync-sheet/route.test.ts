@@ -83,6 +83,17 @@ function createMockRepo(
       store.set(id, updated);
       return baseCard(updated);
     },
+    async clearSheetMetadata(id) {
+      const existing = store.get(id);
+      if (!existing) throw new Error(`Candidate not found: ${id}`);
+      const updated: CandidateDetail = {
+        ...existing,
+        sheetRowId: null,
+        sheetAppendedAt: null,
+      };
+      store.set(id, updated);
+      return baseCard(updated);
+    },
   };
 }
 
@@ -91,7 +102,7 @@ afterEach(() => {
 });
 
 describe("POST /api/candidates/[id]/sync-sheet", () => {
-  it("returns already_synced when sheet metadata is present", async () => {
+  it("returns already_synced when APPROVED sheet metadata is present", async () => {
     const store = new Map([
       [
         SAMPLE_ID,
@@ -115,16 +126,21 @@ describe("POST /api/candidates/[id]/sync-sheet", () => {
     assert.equal(body.data.candidate.id, SAMPLE_ID);
   });
 
-  it("returns 400 when candidate is not APPROVED", async () => {
+  it("reconciles non-APPROVED candidates to already_absent when no row", async () => {
     const store = new Map([[SAMPLE_ID, baseDetail({ status: "NEW" })]]);
     setCandidateRepositoryForTests(createMockRepo(store));
 
     const response = await syncCandidateSheet(new Request("http://localhost"), {
       params: Promise.resolve({ id: SAMPLE_ID }),
     });
-    assert.equal(response.status, 400);
+    assert.equal(response.status, 200);
     const body = await response.json();
-    assert.equal(body.error.code, "VALIDATION_ERROR");
+    assert.equal(body.error, null);
+    assert.ok(
+      ["already_absent", "skipped_not_configured", "mock_cleared"].includes(
+        body.data.sheetSync.status,
+      ),
+    );
   });
 
   it("returns 404 when candidate is missing", async () => {

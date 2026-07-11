@@ -2,6 +2,7 @@ import { google, type sheets_v4 } from "googleapis";
 import { getGoogleSheetsConfig } from "@/lib/google/config";
 import {
   GoogleSheetsError,
+  type DeleteDimensionResult,
   type FindRowResult,
   type SpreadsheetMetadata,
 } from "@/lib/google/types";
@@ -132,19 +133,90 @@ export async function getSpreadsheetMetadata(
   return withSheetsError(async () => {
     const response = await client.spreadsheets.get({
       spreadsheetId,
-      fields: "spreadsheetId,properties.title,sheets.properties.title",
+      fields:
+        "spreadsheetId,properties.title,sheets.properties(sheetId,title)",
     });
 
-    const sheetTitles =
+    const sheets =
       response.data.sheets
-        ?.map((sheet) => sheet.properties?.title)
-        .filter((title): title is string => Boolean(title)) ?? [];
+        ?.map((sheet) => {
+          const title = sheet.properties?.title;
+          const sheetId = sheet.properties?.sheetId;
+          if (!title || sheetId === undefined || sheetId === null) {
+            return null;
+          }
+          return { title, sheetId };
+        })
+        .filter(
+          (sheet): sheet is { title: string; sheetId: number } => sheet !== null,
+        ) ?? [];
 
     return {
       spreadsheetId: response.data.spreadsheetId ?? spreadsheetId,
       title: response.data.properties?.title ?? "",
-      sheetTitles,
+      sheetTitles: sheets.map((sheet) => sheet.title),
+      sheets,
     };
+  });
+}
+
+/**
+ * Resolve the numeric sheetId for a tab title (required by DeleteDimension).
+ */
+export async function getSheetIdByTitle(
+  spreadsheetId: string,
+  tabName: string,
+  client: SheetsApi = createSheetsClient(),
+): Promise<number> {
+  const metadata = await getSpreadsheetMetadata(spreadsheetId, client);
+  const match = metadata.sheets.find((sheet) => sheet.title === tabName);
+  if (!match) {
+    throw new GoogleSheetsError(
+      "tab_missing",
+      `Sheet tab "${tabName}" was not found. Available tabs: ${
+        metadata.sheetTitles.length ? metadata.sheetTitles.join(", ") : "(none)"
+      }`,
+    );
+  }
+  return match.sheetId;
+}
+
+/**
+ * Delete a single row by 1-based row number via DeleteDimension (rows shift up).
+ * Guards against deleting the header row (rowNumber must be >= 2).
+ */
+export async function deleteDimensionRow(
+  spreadsheetId: string,
+  sheetId: number,
+  rowNumber: number,
+  client: SheetsApi = createSheetsClient(),
+): Promise<DeleteDimensionResult> {
+  if (rowNumber < 2) {
+    throw new RangeError(
+      `Refusing to delete row ${rowNumber}: header row and invalid rows are protected`,
+    );
+  }
+
+  return withSheetsError(async () => {
+    await client.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId,
+                dimension: "ROWS",
+                startIndex: rowNumber - 1,
+                endIndex: rowNumber,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    return { sheetId, rowNumber };
   });
 }
 

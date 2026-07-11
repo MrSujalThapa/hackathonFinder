@@ -368,7 +368,7 @@ export function createMockCandidateRepository(): CandidateRepository {
       const updated: MockRecord = {
         ...existing,
         status,
-        // Preserve sheetRowId / sheetAppendedAt on restore — sheet append history stands.
+        // Sheet metadata is cleared by reconcileCandidateSheetState, not here.
         approvedAt: status === "APPROVED" ? now : status === "NEW" ? null : existing.approvedAt,
         rejectedAt: status === "REJECTED" ? now : status === "NEW" ? null : existing.rejectedAt,
         savedAt:
@@ -392,6 +392,21 @@ export function createMockCandidateRepository(): CandidateRepository {
         ...existing,
         sheetRowId: meta.sheetRowId,
         sheetAppendedAt: meta.sheetAppendedAt ?? new Date().toISOString(),
+      };
+      store.set(id, updated);
+      return toCard(updated);
+    },
+
+    async clearSheetMetadata(id: string) {
+      const store = getStore();
+      const existing = store.get(id);
+      if (!existing) {
+        throw new Error(`Candidate not found: ${id}`);
+      }
+      const updated: MockRecord = {
+        ...existing,
+        sheetRowId: null,
+        sheetAppendedAt: null,
       };
       store.set(id, updated);
       return toCard(updated);
