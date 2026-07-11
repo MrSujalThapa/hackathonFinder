@@ -4,6 +4,7 @@ import type {
   BatchSyncSummary,
   SheetSyncResult,
 } from "@/server/sheets/types";
+import { timedAsync } from "@/lib/perf/timing";
 
 export class CandidatesApiError extends Error {
   code: string;
@@ -43,24 +44,28 @@ export async function fetchCandidates(params: {
   sort?: string;
   cursor?: string;
 }): Promise<ListCandidatesResponse> {
-  const search = new URLSearchParams();
-  if (params.status) search.set("status", params.status);
-  if (params.limit != null) search.set("limit", String(params.limit));
-  if (params.source) search.set("source", params.source);
-  if (params.q) search.set("q", params.q);
-  if (params.sort) search.set("sort", params.sort);
-  if (params.cursor) search.set("cursor", params.cursor);
+  return timedAsync("client.list_fetch", async () => {
+    const search = new URLSearchParams();
+    if (params.status) search.set("status", params.status);
+    if (params.limit != null) search.set("limit", String(params.limit));
+    if (params.source) search.set("source", params.source);
+    if (params.q) search.set("q", params.q);
+    if (params.sort) search.set("sort", params.sort);
+    if (params.cursor) search.set("cursor", params.cursor);
 
-  const response = await fetch(`/api/candidates?${search.toString()}`, {
-    cache: "no-store",
+    const response = await fetch(`/api/candidates?${search.toString()}`, {
+      cache: "no-store",
+    });
+    return parseEnvelope<ListCandidatesResponse>(response);
   });
-  return parseEnvelope<ListCandidatesResponse>(response);
 }
 
 export async function fetchCandidate(id: string): Promise<CandidateDetail> {
-  const response = await fetch(`/api/candidates/${id}`, { cache: "no-store" });
-  const data = await parseEnvelope<{ candidate: CandidateDetail }>(response);
-  return data.candidate;
+  return timedAsync("client.detail_fetch", async () => {
+    const response = await fetch(`/api/candidates/${id}`, { cache: "no-store" });
+    const data = await parseEnvelope<{ candidate: CandidateDetail }>(response);
+    return data.candidate;
+  });
 }
 
 export type DecisionAction = "approve" | "reject" | "save" | "restore";
@@ -75,19 +80,21 @@ export async function decideCandidate(
   action: DecisionAction,
   reason?: string,
 ): Promise<DecideCandidateResult> {
-  const response = await fetch(`/api/candidates/${id}/${action}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(reason ? { reason } : {}),
+  return timedAsync(`client.status_api.${action}`, async () => {
+    const response = await fetch(`/api/candidates/${id}/${action}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(reason ? { reason } : {}),
+    });
+    const data = await parseEnvelope<{
+      candidate: CandidateCard;
+      sheetSync?: SheetSyncResult | null;
+    }>(response);
+    return {
+      candidate: data.candidate,
+      sheetSync: data.sheetSync ?? null,
+    };
   });
-  const data = await parseEnvelope<{
-    candidate: CandidateCard;
-    sheetSync?: SheetSyncResult | null;
-  }>(response);
-  return {
-    candidate: data.candidate,
-    sheetSync: data.sheetSync ?? null,
-  };
 }
 
 export type SyncCandidateSheetResult = {
@@ -98,10 +105,12 @@ export type SyncCandidateSheetResult = {
 export async function syncCandidateSheet(
   id: string,
 ): Promise<SyncCandidateSheetResult> {
-  const response = await fetch(`/api/candidates/${id}/sync-sheet`, {
-    method: "POST",
+  return timedAsync("client.sheets_sync", async () => {
+    const response = await fetch(`/api/candidates/${id}/sync-sheet`, {
+      method: "POST",
+    });
+    return parseEnvelope<SyncCandidateSheetResult>(response);
   });
-  return parseEnvelope<SyncCandidateSheetResult>(response);
 }
 
 export async function syncApprovedSheets(

@@ -13,6 +13,7 @@ import type { CandidateCard } from "@/core/candidates/types";
 import { CandidateCardView } from "@/components/candidates/CandidateCard";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import type { QueueDecision } from "@/hooks/useCandidateQueue";
+import { startMark } from "@/lib/perf/timing";
 
 gsap.registerPlugin(useGSAP);
 
@@ -107,7 +108,9 @@ export function SwipeDeck({
         });
       }
 
+      const endTransition = startMark("queue.transition");
       const result = await onDecision(action, candidate.id);
+      endTransition();
       if (!result.ok && el) {
         gsap.set(el, { x: 0, y: 0, rotation: 0, opacity: 1 });
         exitingRef.current = false;

@@ -9,6 +9,7 @@ import {
   validationError,
 } from "@/server/api/envelope";
 import { getCandidateRepository } from "@/server/candidates/service";
+import { timedAsync } from "@/lib/perf/timing";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -44,15 +45,19 @@ async function applyDecision(
     }
 
     const newStatus = statusForAction(action);
-    const candidate = await repo.updateCandidateStatus(parsedId.data, newStatus, {
-      reason,
-      metadata: { via: "api", action },
-    });
+    const candidate = await timedAsync("server.status_mutation", () =>
+      repo.updateCandidateStatus(parsedId.data, newStatus, {
+        reason,
+        metadata: { via: "api", action },
+      }),
+    );
 
     let sheetSync: SheetSyncResult | null = null;
     if (action === "approve") {
       try {
-        sheetSync = await appendApprovedCandidate(parsedId.data);
+        sheetSync = await timedAsync("server.sheets_sync", () =>
+          appendApprovedCandidate(parsedId.data),
+        );
       } catch (error) {
         // Never fail the HTTP response due to sheet sync failures.
         sheetSync = {

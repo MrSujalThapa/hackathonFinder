@@ -8,6 +8,7 @@ import {
   fetchCandidates,
   type DecisionAction,
 } from "@/lib/api/candidates";
+import { timedAsync } from "@/lib/perf/timing";
 import type { SheetSyncResult } from "@/server/sheets/types";
 
 export type QueueDecision = Exclude<DecisionAction, "restore">;
@@ -72,23 +73,25 @@ export function useCandidateQueue() {
   const load = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
     try {
-      const [newBatch, reviewBatch] = await Promise.all([
-        fetchCandidates({ status: "NEW", limit: 30, sort: "score" }),
-        fetchCandidates({ status: "NEEDS_REVIEW", limit: 30, sort: "score" }),
-      ]);
-      const merged = [...newBatch.candidates, ...reviewBatch.candidates]
-        .filter(
-          (candidate, index, all) =>
-            all.findIndex((item) => item.id === candidate.id) === index,
-        )
-        .sort(
-          (a, b) =>
-            b.score - a.score ||
-            b.foundAt.localeCompare(a.foundAt) ||
-            a.id.localeCompare(b.id),
-        );
-      const seen = seenRef.current;
-      const filtered = merged.filter((candidate) => !seen.has(candidate.id));
+      const filtered = await timedAsync("queue.initial_fetch", async () => {
+        const [newBatch, reviewBatch] = await Promise.all([
+          fetchCandidates({ status: "NEW", limit: 30, sort: "score" }),
+          fetchCandidates({ status: "NEEDS_REVIEW", limit: 30, sort: "score" }),
+        ]);
+        const merged = [...newBatch.candidates, ...reviewBatch.candidates]
+          .filter(
+            (candidate, index, all) =>
+              all.findIndex((item) => item.id === candidate.id) === index,
+          )
+          .sort(
+            (a, b) =>
+              b.score - a.score ||
+              b.foundAt.localeCompare(a.foundAt) ||
+              a.id.localeCompare(b.id),
+          );
+        const seen = seenRef.current;
+        return merged.filter((candidate) => !seen.has(candidate.id));
+      });
       setState({
         candidates: filtered,
         total: filtered.length,
@@ -117,55 +120,60 @@ export function useCandidateQueue() {
     void load();
   }, [load]);
 
-  const decide = useCallback(async (action: QueueDecision, candidateId?: string) => {
-    if (inflightRef.current) return { ok: false as const };
-    const current = candidateId
-      ? state.candidates.find((item) => item.id === candidateId)
-      : state.candidates[0];
-    if (!current) return { ok: false as const };
+  const decide = useCallback(
+    async (action: QueueDecision, candidateId?: string) => {
+      if (inflightRef.current) return { ok: false as const };
+      const current = candidateId
+        ? state.candidates.find((item) => item.id === candidateId)
+        : state.candidates[0];
+      if (!current) return { ok: false as const };
 
-    inflightRef.current = true;
-    setState((prev) => ({ ...prev, busy: true }));
+      inflightRef.current = true;
+      setState((prev) => ({ ...prev, busy: true }));
 
-    const previous = state.candidates;
-    const remaining = previous.filter((item) => item.id !== current.id);
-    seenRef.current.add(current.id);
-    writeSeenIds(seenRef.current);
-
-    setState((prev) => ({
-      ...prev,
-      candidates: remaining,
-      total: Math.max(0, prev.total - 1),
-    }));
-
-    try {
-      const { sheetSync } = await decideCandidate(current.id, action);
-      const syncMessage =
-        action === "approve" ? messageForSheetSync(sheetSync) : null;
-      setState((prev) => ({
-        ...prev,
-        busy: false,
-        syncMessage,
-      }));
-      inflightRef.current = false;
-      return { ok: true as const, candidate: current, sheetSync };
-    } catch (error) {
-      seenRef.current.delete(current.id);
+      const previous = state.candidates;
+      const remaining = previous.filter((item) => item.id !== current.id);
+      seenRef.current.add(current.id);
       writeSeenIds(seenRef.current);
+
       setState((prev) => ({
         ...prev,
-        candidates: previous,
-        total: previous.length,
-        busy: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Decision failed — restored previous card",
+        candidates: remaining,
+        total: Math.max(0, prev.total - 1),
       }));
-      inflightRef.current = false;
-      return { ok: false as const };
-    }
-  }, [state.candidates]);
+
+      try {
+        const { sheetSync } = await timedAsync("queue.decide_client", () =>
+          decideCandidate(current.id, action),
+        );
+        const syncMessage =
+          action === "approve" ? messageForSheetSync(sheetSync) : null;
+        setState((prev) => ({
+          ...prev,
+          busy: false,
+          syncMessage,
+        }));
+        inflightRef.current = false;
+        return { ok: true as const, candidate: current, sheetSync };
+      } catch (error) {
+        seenRef.current.delete(current.id);
+        writeSeenIds(seenRef.current);
+        setState((prev) => ({
+          ...prev,
+          candidates: previous,
+          total: previous.length,
+          busy: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Decision failed — restored previous card",
+        }));
+        inflightRef.current = false;
+        return { ok: false as const };
+      }
+    },
+    [state.candidates],
+  );
 
   const clearError = useCallback(() => {
     setState((prev) => ({ ...prev, error: null }));

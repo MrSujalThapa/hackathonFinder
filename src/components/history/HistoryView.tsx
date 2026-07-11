@@ -11,6 +11,7 @@ import {
   syncCandidateSheet,
 } from "@/lib/api/candidates";
 import { formatDateRange, formatLocation } from "@/lib/candidates/format";
+import { timedAsync } from "@/lib/perf/timing";
 import {
   needsSheetRetry,
   SheetSyncBadge,
@@ -60,13 +61,15 @@ export function HistoryView({
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchCandidates({
-        status,
-        limit: 50,
-        sort: "found_at",
-        source: source || undefined,
-        q: query.trim() || undefined,
-      });
+      const result = await timedAsync("history.fetch", () =>
+        fetchCandidates({
+          status,
+          limit: 50,
+          sort: "found_at",
+          source: source || undefined,
+          q: query.trim() || undefined,
+        }),
+      );
       setCandidates(result.candidates);
     } catch (err) {
       setError(
