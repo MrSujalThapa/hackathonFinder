@@ -75,8 +75,23 @@ export function QueueReview() {
         {!queue.loading && !queue.error && !visibleCurrent ? (
           <EmptyState
             title="No new hackathons to review"
-            description="Run the agent to discover more, then refresh this queue."
+            description="Run the agent to discover more, then refresh this queue. In mock mode you can also reset the in-memory fixtures."
             hint={'npm run agent -- "find upcoming hackathons" -- --sources=hacklist'}
+            action={
+              <button
+                type="button"
+                onClick={() => {
+                  void (async () => {
+                    await fetch("/api/dev/reset-mock", { method: "POST" });
+                    sessionStorage.removeItem("hackathon-radar-queue-seen");
+                    await queue.refresh();
+                  })();
+                }}
+                className="rounded-xl border border-sky-500/40 px-3 py-2 text-sm text-sky-200 hover:bg-sky-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+              >
+                Reset mock candidates
+              </button>
+            }
           />
         ) : null}
 

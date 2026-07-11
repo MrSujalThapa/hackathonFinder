@@ -54,10 +54,17 @@ export function useCandidateQueue() {
         fetchCandidates({ status: "NEW", limit: 30, sort: "score" }),
         fetchCandidates({ status: "NEEDS_REVIEW", limit: 30, sort: "score" }),
       ]);
-      const merged = [...newBatch.candidates, ...reviewBatch.candidates].filter(
-        (candidate, index, all) =>
-          all.findIndex((item) => item.id === candidate.id) === index,
-      );
+      const merged = [...newBatch.candidates, ...reviewBatch.candidates]
+        .filter(
+          (candidate, index, all) =>
+            all.findIndex((item) => item.id === candidate.id) === index,
+        )
+        .sort(
+          (a, b) =>
+            b.score - a.score ||
+            b.foundAt.localeCompare(a.foundAt) ||
+            a.id.localeCompare(b.id),
+        );
       const seen = seenRef.current;
       const filtered = merged.filter((candidate) => !seen.has(candidate.id));
       setState({
@@ -71,6 +78,7 @@ export function useCandidateQueue() {
       setState((prev) => ({
         ...prev,
         loading: false,
+        busy: false,
         error:
           error instanceof CandidatesApiError
             ? error.message

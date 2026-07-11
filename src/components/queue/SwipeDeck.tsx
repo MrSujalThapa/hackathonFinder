@@ -31,7 +31,7 @@ type SwipeDeckProps = {
 
 export function SwipeDeck({
   candidate,
-  upcoming,
+  upcoming: _upcoming,
   busy = false,
   onDecision,
 }: SwipeDeckProps) {
@@ -48,18 +48,24 @@ export function SwipeDeck({
   const [overlay, setOverlay] = useState<"approve" | "reject" | "save" | null>(
     null,
   );
+  const [ready, setReady] = useState(false);
   const exitingRef = useRef(false);
+
+  useEffect(() => {
+    setReady(true);
+  }, []);
 
   useGSAP(
     () => {
-      if (!cardRef.current || reducedMotion) return;
+      const el = cardRef.current;
+      if (!el || !ready || reducedMotion) return;
       gsap.fromTo(
-        cardRef.current,
-        { autoAlpha: 0, scale: 0.96, y: 12 },
-        { autoAlpha: 1, scale: 1, y: 0, duration: 0.22, ease: "power2.out" },
+        el,
+        { y: 12, scale: 0.98 },
+        { y: 0, scale: 1, duration: 0.2, ease: "power2.out" },
       );
     },
-    { dependencies: [candidate.id, reducedMotion], revertOnUpdate: true },
+    { dependencies: [candidate.id, ready, reducedMotion] },
   );
 
   useEffect(() => {
@@ -67,7 +73,7 @@ export function SwipeDeck({
     setOverlay(null);
     exitingRef.current = false;
     if (cardRef.current) {
-      gsap.set(cardRef.current, { x: 0, y: 0, rotation: 0, autoAlpha: 1 });
+      gsap.set(cardRef.current, { x: 0, y: 0, rotation: 0, clearProps: "transform" });
     }
   }, [candidate.id]);
 
@@ -75,29 +81,35 @@ export function SwipeDeck({
     async (action: QueueDecision) => {
       if (exitingRef.current || busy) return;
       exitingRef.current = true;
-      setOverlay(action === "save" ? "save" : action === "approve" ? "approve" : "reject");
+      setOverlay(
+        action === "save" ? "save" : action === "approve" ? "approve" : "reject",
+      );
 
       const el = cardRef.current;
-      const duration = reducedMotion ? 0.01 : 0.22;
+      const duration = reducedMotion ? 0.01 : 0.2;
       if (el) {
         const x =
-          action === "approve" ? window.innerWidth : action === "reject" ? -window.innerWidth : 0;
+          action === "approve"
+            ? window.innerWidth
+            : action === "reject"
+              ? -window.innerWidth
+              : 0;
         const y = action === "save" ? -window.innerHeight * 0.35 : 0;
-        const rotation = action === "approve" ? 18 : action === "reject" ? -18 : 0;
+        const rotation =
+          action === "approve" ? 14 : action === "reject" ? -14 : 0;
         await gsap.to(el, {
           x,
           y,
           rotation,
-          autoAlpha: 0,
+          opacity: 0,
           duration,
           ease: "power2.in",
         });
       }
 
-      // Fire mutation without waiting on animation beyond exit.
       const result = await onDecision(action, candidate.id);
       if (!result.ok && el) {
-        gsap.set(el, { x: 0, y: 0, rotation: 0, autoAlpha: 1 });
+        gsap.set(el, { x: 0, y: 0, rotation: 0, opacity: 1 });
         exitingRef.current = false;
         setOverlay(null);
       }
@@ -109,9 +121,7 @@ export function SwipeDeck({
     if (busy || exitingRef.current || expanded) return;
     const target = event.target as HTMLElement | null;
     if (
-      target?.closest(
-        "button, a, input, textarea, select, [role='button']",
-      )
+      target?.closest("button, a, input, textarea, select, [role='button']")
     ) {
       return;
     }
@@ -164,7 +174,7 @@ export function SwipeDeck({
         x: 0,
         y: 0,
         rotation: 0,
-        duration: reducedMotion ? 0.01 : 0.2,
+        duration: reducedMotion ? 0.01 : 0.18,
         ease: "power2.out",
       });
     }
@@ -206,15 +216,6 @@ export function SwipeDeck({
 
   return (
     <div className="relative mx-auto w-full max-w-[420px]">
-      {upcoming ? (
-        <div
-          className="pointer-events-none absolute inset-x-3 top-3 -z-10 scale-[0.97] opacity-40"
-          aria-hidden
-        >
-          <CandidateCardView candidate={upcoming} />
-        </div>
-      ) : null}
-
       <div
         ref={cardRef}
         className="relative touch-none will-change-transform"

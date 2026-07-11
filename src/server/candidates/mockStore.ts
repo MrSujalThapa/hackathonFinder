@@ -359,3 +359,7 @@ export function resetMockCandidateStoreForTests(): void {
   };
   delete globalStore[GLOBAL_KEY];
 }
+
+export function resetMockCandidateStore(): void {
+  resetMockCandidateStoreForTests();
+}
