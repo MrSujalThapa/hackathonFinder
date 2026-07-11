@@ -112,8 +112,8 @@ export function useCandidateQueue() {
     try {
       const filtered = await timedAsync("queue.initial_fetch", async () => {
         const [newBatch, reviewBatch] = await Promise.all([
-          fetchCandidates({ status: "NEW", limit: 30, sort: "score" }),
-          fetchCandidates({ status: "NEEDS_REVIEW", limit: 30, sort: "score" }),
+          fetchCandidates({ status: "NEW", limit: 15, sort: "score" }),
+          fetchCandidates({ status: "NEEDS_REVIEW", limit: 15, sort: "score" }),
         ]);
         const merged = [...newBatch.candidates, ...reviewBatch.candidates]
           .filter(

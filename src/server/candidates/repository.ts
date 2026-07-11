@@ -30,6 +30,36 @@ function encodeCursor(foundAt: string, id: string): string {
   return Buffer.from(`${foundAt}|${id}`, "utf8").toString("base64url");
 }
 
+/** Columns required for CandidateCard mapping — avoids pulling description/fingerprint blobs. */
+const CANDIDATE_CARD_SELECT = [
+  "id",
+  "status",
+  "score",
+  "name",
+  "summary",
+  "source",
+  "official_url",
+  "apply_url",
+  "social_url",
+  "start_date",
+  "end_date",
+  "deadline",
+  "location",
+  "mode",
+  "city",
+  "country",
+  "prize",
+  "themes",
+  "eligibility",
+  "why_match",
+  "red_flags",
+  "found_at",
+  "last_verified",
+  "approved_at",
+  "sheet_row_id",
+  "sheet_appended_at",
+].join(",");
+
 export async function listCandidates(
   params: ListCandidatesParams = {},
 ): Promise<ListCandidatesResult> {
@@ -37,7 +67,9 @@ export async function listCandidates(
   const limit = Math.min(Math.max(params.limit ?? 10, 1), 50);
   const sort = params.sort ?? "score";
 
-  let query = supabase.from("candidates").select("*", { count: "exact" });
+  let query = supabase
+    .from("candidates")
+    .select(CANDIDATE_CARD_SELECT, { count: "exact" });
 
   if (sort === "name") {
     query = query
@@ -83,7 +115,8 @@ export async function listCandidates(
     throw new Error(`Failed to list candidates: ${error.message}`);
   }
 
-  const rows = data ?? [];
+  type CandidateRow = Database["public"]["Tables"]["candidates"]["Row"];
+  const rows = (data ?? []) as unknown as CandidateRow[];
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
   const candidates = pageRows.map(mapCandidateRow);

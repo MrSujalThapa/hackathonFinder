@@ -68,6 +68,8 @@ export function HistoryView({
 }: HistoryViewProps) {
   const [candidates, setCandidates] = useState<CandidateCard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
@@ -83,13 +85,14 @@ export function HistoryView({
       const result = await timedAsync("history.fetch", () =>
         fetchCandidates({
           status,
-          limit: 50,
+          limit: 20,
           sort: "found_at",
           source: source || undefined,
           q: query.trim() || undefined,
         }),
       );
       setCandidates(result.candidates);
+      setNextCursor(result.nextCursor);
       const bucket = asHistoryBucket(status);
       if (bucket && !source && !query.trim()) {
         replaceBucket(bucket, result.candidates);
@@ -106,6 +109,39 @@ export function HistoryView({
       setLoading(false);
     }
   }, [status, source, query]);
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const result = await timedAsync("history.fetch_more", () =>
+        fetchCandidates({
+          status,
+          limit: 20,
+          sort: "found_at",
+          cursor: nextCursor,
+          source: source || undefined,
+          q: query.trim() || undefined,
+        }),
+      );
+      setCandidates((prev) => {
+        const ids = new Set(prev.map((item) => item.id));
+        const appended = result.candidates.filter((item) => !ids.has(item.id));
+        return [...prev, ...appended];
+      });
+      setNextCursor(result.nextCursor);
+    } catch (err) {
+      setError(
+        err instanceof CandidatesApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to load more",
+      );
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [nextCursor, loadingMore, status, source, query]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -237,7 +273,7 @@ export function HistoryView({
             <option value="">All sources</option>
             {sources.map((item) => (
               <option key={item} value={item}>
-                {item}
+                {formatSourceLabel(item)}
               </option>
             ))}
           </select>
@@ -332,6 +368,19 @@ export function HistoryView({
             );
           })}
         </ul>
+      ) : null}
+
+      {nextCursor ? (
+        <div className="mt-6 flex justify-center">
+          <button
+            type="button"
+            disabled={loadingMore}
+            onClick={() => void loadMore()}
+            className="rounded-xl border border-border px-4 py-2 text-sm text-muted transition-colors hover:border-sky-500/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:opacity-40"
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
+        </div>
       ) : null}
     </section>
   );

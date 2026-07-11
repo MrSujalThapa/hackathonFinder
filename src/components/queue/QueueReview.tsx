@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CandidateProgress } from "@/components/candidates/CandidateProgress";
 import { SwipeDeck } from "@/components/queue/SwipeDeck";
 import { PageHeader } from "@/components/shell/PageHeader";
@@ -12,6 +13,7 @@ import { formatSourceLabel } from "@/lib/candidates/format";
 
 export function QueueReview() {
   const queue = useCandidateQueue();
+  const router = useRouter();
   const [sourceFilter, setSourceFilter] = useState("");
 
   const sources = useMemo(() => {
@@ -25,6 +27,13 @@ export function QueueReview() {
 
   const visibleCurrent = filtered[0] ?? null;
   const visibleUpcoming = filtered[1] ?? null;
+
+  // Prefetch next 2–3 candidate detail routes for snappy opens.
+  useEffect(() => {
+    for (const card of filtered.slice(0, 3)) {
+      router.prefetch(`/candidate/${card.id}`);
+    }
+  }, [filtered, router]);
 
   return (
     <section className="flex flex-1 flex-col items-center">
