@@ -8,6 +8,7 @@ import {
   fetchCandidates,
   type DecisionAction,
 } from "@/lib/api/candidates";
+import type { SheetSyncResult } from "@/server/sheets/types";
 
 export type QueueDecision = Exclude<DecisionAction, "restore">;
 
@@ -16,6 +17,7 @@ type QueueState = {
   total: number;
   loading: boolean;
   error: string | null;
+  syncMessage: string | null;
   busy: boolean;
 };
 
@@ -36,12 +38,32 @@ function writeSeenIds(ids: Set<string>): void {
   sessionStorage.setItem(SESSION_SEEN_KEY, JSON.stringify([...ids]));
 }
 
+function messageForSheetSync(
+  sheetSync: SheetSyncResult | null | undefined,
+): string | null {
+  if (!sheetSync) return null;
+  switch (sheetSync.status) {
+    case "failed":
+      return "Approved; Sheet sync failed — retry from details.";
+    case "appended":
+    case "recovered_existing_row":
+      return "Approved and added to Sheet.";
+    case "mock_synced":
+      return "Approved (mock Sheet sync — not written to Google).";
+    case "already_synced":
+      return "Already in Sheet.";
+    default:
+      return null;
+  }
+}
+
 export function useCandidateQueue() {
   const [state, setState] = useState<QueueState>({
     candidates: [],
     total: 0,
     loading: true,
     error: null,
+    syncMessage: null,
     busy: false,
   });
   const seenRef = useRef<Set<string>>(new Set());
@@ -72,6 +94,7 @@ export function useCandidateQueue() {
         total: filtered.length,
         loading: false,
         error: null,
+        syncMessage: null,
         busy: false,
       });
     } catch (error) {
@@ -116,10 +139,16 @@ export function useCandidateQueue() {
     }));
 
     try {
-      await decideCandidate(current.id, action);
-      setState((prev) => ({ ...prev, busy: false }));
+      const { sheetSync } = await decideCandidate(current.id, action);
+      const syncMessage =
+        action === "approve" ? messageForSheetSync(sheetSync) : null;
+      setState((prev) => ({
+        ...prev,
+        busy: false,
+        syncMessage,
+      }));
       inflightRef.current = false;
-      return { ok: true as const, candidate: current };
+      return { ok: true as const, candidate: current, sheetSync };
     } catch (error) {
       seenRef.current.delete(current.id);
       writeSeenIds(seenRef.current);
@@ -142,6 +171,10 @@ export function useCandidateQueue() {
     setState((prev) => ({ ...prev, error: null }));
   }, []);
 
+  const clearSyncMessage = useCallback(() => {
+    setState((prev) => ({ ...prev, syncMessage: null }));
+  }, []);
+
   return {
     ...state,
     current: state.candidates[0] ?? null,
@@ -152,5 +185,6 @@ export function useCandidateQueue() {
     refresh: load,
     decide,
     clearError,
+    clearSyncMessage,
   };
 }

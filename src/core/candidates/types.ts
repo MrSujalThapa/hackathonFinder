@@ -30,6 +30,9 @@ export type CandidateCard = {
   redFlags: string[];
   foundAt: string;
   lastVerified: string;
+  approvedAt: string | null;
+  sheetRowId: string | null;
+  sheetAppendedAt: string | null;
 };
 
 export type CandidateEvidence = {

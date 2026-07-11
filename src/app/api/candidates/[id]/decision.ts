@@ -1,3 +1,5 @@
+import { appendApprovedCandidate } from "@/server/sheets/appendApprovedCandidate";
+import type { SheetSyncResult } from "@/server/sheets/types";
 import {
   candidateIdSchema,
   decisionBodySchema,
@@ -47,11 +49,27 @@ async function applyDecision(
       metadata: { via: "api", action },
     });
 
+    let sheetSync: SheetSyncResult | null = null;
+    if (action === "approve") {
+      try {
+        sheetSync = await appendApprovedCandidate(parsedId.data);
+      } catch (error) {
+        // Never fail the HTTP response due to sheet sync failures.
+        sheetSync = {
+          status: "failed",
+          candidateId: parsedId.data,
+          message:
+            error instanceof Error ? error.message : "Sheet sync failed",
+        };
+      }
+    }
+
     return ok({
       candidate,
       previousStatus: existing.status,
       newStatus: candidate.status,
       action,
+      sheetSync,
     });
   } catch (error) {
     const message =

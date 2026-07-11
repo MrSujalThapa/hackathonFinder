@@ -36,6 +36,9 @@ export function mapCandidateRow(row: CandidateRow): CandidateCard {
     redFlags: row.red_flags,
     foundAt: row.found_at,
     lastVerified: row.last_verified,
+    approvedAt: row.approved_at,
+    sheetRowId: row.sheet_row_id,
+    sheetAppendedAt: row.sheet_appended_at,
   };
 }
 

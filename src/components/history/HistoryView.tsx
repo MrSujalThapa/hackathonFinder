@@ -8,8 +8,13 @@ import {
   CandidatesApiError,
   decideCandidate,
   fetchCandidates,
+  syncCandidateSheet,
 } from "@/lib/api/candidates";
 import { formatDateRange, formatLocation } from "@/lib/candidates/format";
+import {
+  needsSheetRetry,
+  SheetSyncBadge,
+} from "@/components/sheets/SheetSyncBadge";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -47,6 +52,9 @@ export function HistoryView({
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [failedSyncIds, setFailedSyncIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +99,40 @@ export function HistoryView({
       setCandidates((prev) => prev.filter((item) => item.id !== id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Restore failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const retrySync = async (id: string) => {
+    setBusyId(id);
+    try {
+      const result = await syncCandidateSheet(id);
+      if (result.sheetSync.status === "failed") {
+        setFailedSyncIds((prev) => new Set(prev).add(id));
+        setError(result.sheetSync.message ?? "Sheet sync failed");
+      } else {
+        setFailedSyncIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+      if (result.candidate) {
+        setCandidates((prev) =>
+          prev.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  ...result.candidate,
+                }
+              : item,
+          ),
+        );
+      }
+    } catch (err) {
+      setFailedSyncIds((prev) => new Set(prev).add(id));
+      setError(err instanceof Error ? err.message : "Sheet sync failed");
     } finally {
       setBusyId(null);
     }
@@ -153,49 +195,81 @@ export function HistoryView({
 
       {candidates.length > 0 ? (
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {candidates.map((candidate) => (
-            <li
-              key={candidate.id}
-              className="rounded-2xl border border-border bg-card/80 p-4 transition-colors hover:border-sky-500/30"
-            >
-              <div className="mb-2 flex items-start justify-between gap-2">
-                <Link
-                  href={`/candidate/${candidate.id}`}
-                  className="text-base font-semibold tracking-tight hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
-                >
-                  {candidate.name}
-                </Link>
-                <span className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted">
-                  {STATUS_LABEL[candidate.status] ?? candidate.status}
-                </span>
-              </div>
-              <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
-                {formatLocation(candidate)}
-              </p>
-              <p className="mt-2 text-sm text-foreground/75">
-                {formatDateRange(candidate.startDate, candidate.endDate)}
-              </p>
-              <p className="mt-1 text-xs text-muted">Source · {candidate.source}</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Link
-                  href={`/candidate/${candidate.id}`}
-                  className="rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
-                >
-                  Open
-                </Link>
-                {allowRestore ? (
-                  <button
-                    type="button"
-                    disabled={busyId === candidate.id}
-                    onClick={() => void restore(candidate.id)}
-                    className="rounded-lg border border-sky-500/40 px-2.5 py-1.5 text-xs text-sky-200 transition-colors hover:bg-sky-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:opacity-40"
+          {candidates.map((candidate) => {
+            const lastSyncFailed = failedSyncIds.has(candidate.id);
+            const showRetry =
+              !allowRestore &&
+              candidate.status === "APPROVED" &&
+              needsSheetRetry({
+                sheetRowId: candidate.sheetRowId,
+                lastSyncFailed,
+              });
+
+            return (
+              <li
+                key={candidate.id}
+                className="rounded-2xl border border-border bg-card/80 p-4 transition-colors hover:border-sky-500/30"
+              >
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <Link
+                    href={`/candidate/${candidate.id}`}
+                    className="text-base font-semibold tracking-tight hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
                   >
-                    Restore to queue
-                  </button>
+                    {candidate.name}
+                  </Link>
+                  <span className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted">
+                    {STATUS_LABEL[candidate.status] ?? candidate.status}
+                  </span>
+                </div>
+                <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
+                  {formatLocation(candidate)}
+                </p>
+                <p className="mt-2 text-sm text-foreground/75">
+                  {formatDateRange(candidate.startDate, candidate.endDate)}
+                </p>
+                <p className="mt-1 text-xs text-muted">
+                  Source · {candidate.source}
+                </p>
+                {candidate.status === "APPROVED" ? (
+                  <div className="mt-3">
+                    <SheetSyncBadge
+                      sheetRowId={candidate.sheetRowId}
+                      sheetAppendedAt={candidate.sheetAppendedAt}
+                      lastSyncFailed={lastSyncFailed}
+                    />
+                  </div>
                 ) : null}
-              </div>
-            </li>
-          ))}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link
+                    href={`/candidate/${candidate.id}`}
+                    className="rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+                  >
+                    Open
+                  </Link>
+                  {allowRestore ? (
+                    <button
+                      type="button"
+                      disabled={busyId === candidate.id}
+                      onClick={() => void restore(candidate.id)}
+                      className="rounded-lg border border-sky-500/40 px-2.5 py-1.5 text-xs text-sky-200 transition-colors hover:bg-sky-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:opacity-40"
+                    >
+                      Restore to queue
+                    </button>
+                  ) : null}
+                  {showRetry ? (
+                    <button
+                      type="button"
+                      disabled={busyId === candidate.id}
+                      onClick={() => void retrySync(candidate.id)}
+                      className="rounded-lg border border-amber-500/40 px-2.5 py-1.5 text-xs text-amber-100 transition-colors hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60 disabled:opacity-40"
+                    >
+                      Retry Sync
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
     </section>

@@ -41,6 +41,9 @@ function baseCard(overrides: Partial<CandidateCard> = {}): CandidateCard {
     redFlags: [],
     foundAt: "2026-07-01T12:00:00.000Z",
     lastVerified: "2026-07-01T12:00:00.000Z",
+    approvedAt: null,
+    sheetRowId: null,
+    sheetAppendedAt: null,
     ...overrides,
   };
 }
@@ -87,6 +90,9 @@ function createMockRepo(
         redFlags: item.redFlags,
         foundAt: item.foundAt,
         lastVerified: item.lastVerified,
+        approvedAt: item.approvedAt,
+        sheetRowId: item.sheetRowId,
+        sheetAppendedAt: item.sheetAppendedAt,
       }));
       if (params.status) {
         candidates = candidates.filter((c) => c.status === params.status);
@@ -134,6 +140,49 @@ function createMockRepo(
         redFlags: updated.redFlags,
         foundAt: updated.foundAt,
         lastVerified: updated.lastVerified,
+        approvedAt: updated.approvedAt,
+        sheetRowId: updated.sheetRowId,
+        sheetAppendedAt: updated.sheetAppendedAt,
+      };
+    },
+    async updateSheetMetadata(id, meta) {
+      const existing = store.get(id);
+      if (!existing) {
+        throw new Error(`Candidate not found: ${id}`);
+      }
+      const updated: CandidateDetail = {
+        ...existing,
+        sheetRowId: meta.sheetRowId,
+        sheetAppendedAt: meta.sheetAppendedAt ?? new Date().toISOString(),
+      };
+      store.set(id, updated);
+      return {
+        id: updated.id,
+        status: updated.status,
+        score: updated.score,
+        name: updated.name,
+        summary: updated.summary,
+        source: updated.source,
+        officialUrl: updated.officialUrl,
+        applyUrl: updated.applyUrl,
+        socialUrl: updated.socialUrl,
+        startDate: updated.startDate,
+        endDate: updated.endDate,
+        deadline: updated.deadline,
+        location: updated.location,
+        mode: updated.mode,
+        city: updated.city,
+        country: updated.country,
+        prize: updated.prize,
+        themes: updated.themes,
+        eligibility: updated.eligibility,
+        whyMatch: updated.whyMatch,
+        redFlags: updated.redFlags,
+        foundAt: updated.foundAt,
+        lastVerified: updated.lastVerified,
+        approvedAt: updated.approvedAt,
+        sheetRowId: updated.sheetRowId,
+        sheetAppendedAt: updated.sheetAppendedAt,
       };
     },
   };
@@ -217,6 +266,9 @@ describe("decision endpoints", () => {
     const body = await response.json();
     assert.equal(body.data.newStatus, "APPROVED");
     assert.equal(store.get(SAMPLE_ID)?.status, "APPROVED");
+    assert.ok(body.data.sheetSync);
+    assert.equal(body.data.sheetSync.candidateId, SAMPLE_ID);
+    assert.equal(typeof body.data.sheetSync.status, "string");
   });
 
   it("rejects a candidate", async () => {
@@ -230,6 +282,7 @@ describe("decision endpoints", () => {
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.data.newStatus, "REJECTED");
+    assert.equal(body.data.sheetSync, null);
   });
 
   it("saves a candidate", async () => {

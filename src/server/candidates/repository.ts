@@ -247,6 +247,7 @@ export async function updateCandidateStatus(
     updatePayload.saved_at = now;
   } else if (status === "NEW") {
     // Restore clears decision timestamps so the card re-enters the queue cleanly.
+    // Do not clear sheet_row_id / sheet_appended_at — a prior sheet append still stands.
     updatePayload.approved_at = null;
     updatePayload.rejected_at = null;
     updatePayload.saved_at = null;
@@ -292,6 +293,57 @@ function statusToActionType(
     default:
       return null;
   }
+}
+
+/**
+ * APPROVED candidates missing confirmed sheet sync metadata.
+ * Queries at the DB layer so already-synced rows do not fill the page.
+ */
+export async function listPendingSheetSync(
+  limit = 50,
+): Promise<CandidateCard[]> {
+  const supabase = createServiceSupabaseClient();
+  const capped = Math.min(Math.max(limit, 1), 200);
+
+  const { data, error } = await supabase
+    .from("candidates")
+    .select("*")
+    .eq("status", "APPROVED")
+    .or("sheet_row_id.is.null,sheet_appended_at.is.null")
+    .order("found_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(capped);
+
+  if (error) {
+    throw new Error(`Failed to list pending sheet sync: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapCandidateRow);
+}
+
+export async function updateSheetMetadata(
+  id: string,
+  meta: { sheetRowId: string; sheetAppendedAt?: string },
+): Promise<CandidateCard> {
+  const supabase = createServiceSupabaseClient();
+
+  const sheetAppendedAt = meta.sheetAppendedAt ?? new Date().toISOString();
+
+  const { data: updated, error } = await supabase
+    .from("candidates")
+    .update({
+      sheet_row_id: meta.sheetRowId,
+      sheet_appended_at: sheetAppendedAt,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update sheet metadata: ${error.message}`);
+  }
+
+  return mapCandidateRow(updated);
 }
 
 export async function addEvidence(candidateId: string, evidence: AddEvidenceInput) {

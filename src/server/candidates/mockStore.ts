@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type {
+  AddActionInput,
   CandidateAction,
   CandidateCard,
   CandidateDetail,
@@ -45,6 +46,8 @@ function seedCandidates(): MockRecord[] {
       redFlags: [],
       foundAt: now,
       lastVerified: now,
+      sheetRowId: null,
+      sheetAppendedAt: null,
       description:
         "A Toronto-based AI challenge for builders exploring agents, tooling, and cloud workflows.",
       fingerprint: "mock-fp-hackto-ai",
@@ -76,6 +79,8 @@ function seedCandidates(): MockRecord[] {
       redFlags: [],
       foundAt: now,
       lastVerified: now,
+      sheetRowId: null,
+      sheetAppendedAt: null,
       description: "Campus builders weekend with sponsor tracks and mentoring.",
       fingerprint: "mock-fp-waterloo-builders",
       sourceIds: { mock: "waterloo-builders" },
@@ -106,6 +111,8 @@ function seedCandidates(): MockRecord[] {
       redFlags: [],
       foundAt: now,
       lastVerified: now,
+      sheetRowId: null,
+      sheetAppendedAt: null,
       description: "Fully remote agent hack with async demos and mentor office hours.",
       fingerprint: "mock-fp-remote-agent",
       sourceIds: { mock: "remote-agent" },
@@ -136,6 +143,8 @@ function seedCandidates(): MockRecord[] {
       redFlags: ["Needs official link", "Missing dates"],
       foundAt: now,
       lastVerified: now,
+      sheetRowId: null,
+      sheetAppendedAt: null,
       description: null,
       fingerprint: "mock-fp-sparse",
       sourceIds: { mock: "sparse" },
@@ -166,6 +175,8 @@ function seedCandidates(): MockRecord[] {
       redFlags: [],
       foundAt: now,
       lastVerified: now,
+      sheetRowId: null,
+      sheetAppendedAt: null,
       description: "Already approved fixture used for history screens.",
       fingerprint: "mock-fp-approved",
       sourceIds: { mock: "approved" },
@@ -237,6 +248,9 @@ function toCard(record: MockRecord): CandidateCard {
     redFlags: record.redFlags,
     foundAt: record.foundAt,
     lastVerified: record.lastVerified,
+    approvedAt: record.approvedAt,
+    sheetRowId: record.sheetRowId,
+    sheetAppendedAt: record.sheetAppendedAt,
   };
 }
 
@@ -287,6 +301,19 @@ export function createMockCandidateRepository(): CandidateRepository {
         total: records.length,
         nextCursor: undefined,
       };
+    },
+
+    async listPendingSheetSync(limit = 50): Promise<CandidateCard[]> {
+      const capped = Math.min(Math.max(limit, 1), 200);
+      const records = sortRecords(
+        [...getStore().values()].filter(
+          (item) =>
+            item.status === "APPROVED" &&
+            (!item.sheetRowId || !item.sheetAppendedAt),
+        ),
+        "found_at",
+      );
+      return records.slice(0, capped).map(toCard);
     },
 
     async getCandidate(id: string) {
@@ -341,6 +368,7 @@ export function createMockCandidateRepository(): CandidateRepository {
       const updated: MockRecord = {
         ...existing,
         status,
+        // Preserve sheetRowId / sheetAppendedAt on restore — sheet append history stands.
         approvedAt: status === "APPROVED" ? now : status === "NEW" ? null : existing.approvedAt,
         rejectedAt: status === "REJECTED" ? now : status === "NEW" ? null : existing.rejectedAt,
         savedAt:
@@ -349,6 +377,47 @@ export function createMockCandidateRepository(): CandidateRepository {
       };
       store.set(id, updated);
       return toCard(updated);
+    },
+
+    async updateSheetMetadata(
+      id: string,
+      meta: { sheetRowId: string; sheetAppendedAt?: string },
+    ) {
+      const store = getStore();
+      const existing = store.get(id);
+      if (!existing) {
+        throw new Error(`Candidate not found: ${id}`);
+      }
+      const updated: MockRecord = {
+        ...existing,
+        sheetRowId: meta.sheetRowId,
+        sheetAppendedAt: meta.sheetAppendedAt ?? new Date().toISOString(),
+      };
+      store.set(id, updated);
+      return toCard(updated);
+    },
+
+    async addAction(candidateId: string, action: AddActionInput) {
+      const store = getStore();
+      const existing = store.get(candidateId);
+      if (!existing) {
+        throw new Error(`Candidate not found: ${candidateId}`);
+      }
+      const record: CandidateAction = {
+        id: randomUUID(),
+        candidateId,
+        action: action.action,
+        previousStatus: action.previousStatus ?? null,
+        newStatus: action.newStatus ?? null,
+        reason: action.reason ?? null,
+        metadata: action.metadata ?? {},
+        createdAt: new Date().toISOString(),
+      };
+      store.set(candidateId, {
+        ...existing,
+        actions: [record, ...existing.actions],
+      });
+      return record;
     },
   };
 }
