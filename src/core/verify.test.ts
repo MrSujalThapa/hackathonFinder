@@ -7,10 +7,13 @@ import { getDefaultDiscoveryPreferences } from "@/agent/parseCommand";
 
 describe("verifyHackathonEvent", () => {
   it("rejects past and social-only leads with appropriate status", async () => {
-    const leads = await mockCollector.collect(
-      getDefaultDiscoveryPreferences("find upcoming hackathons"),
-    );
-    const events = extractHackathonEvents(leads);
+    const result = await mockCollector.collect({
+      preferences: getDefaultDiscoveryPreferences("find upcoming hackathons"),
+      maxResults: 25,
+      timeoutMs: 15_000,
+      dryRun: true,
+    });
+    const events = extractHackathonEvents(result.leads);
     const past = events.find((event) => event.name === "Past Hackathon");
     const social = events.find((event) => event.name === "Maybe a hackathon?");
     const strong = events.find((event) => event.name === "HackTO AI Challenge");

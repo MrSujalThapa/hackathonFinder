@@ -4,6 +4,7 @@ import type {
   HackathonEvidence,
   RawLead,
 } from "@/core/discovery/types";
+import { normalizeDatePart } from "@/core/dedupe";
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -17,6 +18,126 @@ function asMode(value: unknown): DiscoveryMode | undefined {
   return undefined;
 }
 
+const THEME_PATTERNS: Array<{ pattern: RegExp; theme: string }> = [
+  { pattern: /\bai\b/i, theme: "AI" },
+  { pattern: /\bagents?\b/i, theme: "agents" },
+  { pattern: /\bcloud\b/i, theme: "cloud" },
+  { pattern: /\bweb3\b/i, theme: "web3" },
+  { pattern: /\bfintech\b/i, theme: "fintech" },
+  { pattern: /\bhealthcare\b/i, theme: "healthcare" },
+  { pattern: /\bcybersecurity\b/i, theme: "cybersecurity" },
+  { pattern: /\bdeveloper tools\b/i, theme: "developer tools" },
+];
+
+const LOCATION_PATTERNS: Array<{ pattern: RegExp; city?: string; country?: string }> = [
+  { pattern: /\btoronto\b/i, city: "Toronto", country: "Canada" },
+  { pattern: /\bwaterloo\b/i, city: "Waterloo", country: "Canada" },
+  { pattern: /\bmississauga\b/i, city: "Mississauga", country: "Canada" },
+  { pattern: /\bcanada\b/i, country: "Canada" },
+  { pattern: /\bsan francisco\b/i, city: "San Francisco", country: "USA" },
+  { pattern: /\bnew york\b/i, city: "New York", country: "USA" },
+  { pattern: /\bberkeley\b/i, city: "Berkeley", country: "USA" },
+];
+
+function detectModeFromText(text: string): DiscoveryMode | undefined {
+  const lower = text.toLowerCase();
+  const hasOnline = /\b(online|remote|virtual|worldwide)\b/.test(lower);
+  const hasInPerson = /\b(in[- ]?person|on[- ]?site|in person)\b/.test(lower);
+  const hasHybrid = /\b(hybrid|both)\b/.test(lower);
+
+  if (hasHybrid || (hasOnline && hasInPerson)) return "hybrid";
+  if (hasOnline) return "online";
+  if (hasInPerson) return "in-person";
+  return undefined;
+}
+
+function detectThemesFromText(text: string): string[] {
+  const themes = new Set<string>();
+  for (const { pattern, theme } of THEME_PATTERNS) {
+    if (pattern.test(text)) themes.add(theme);
+  }
+  return [...themes];
+}
+
+function detectLocationFromText(text: string): { city?: string; country?: string; location?: string } {
+  for (const entry of LOCATION_PATTERNS) {
+    if (entry.pattern.test(text)) {
+      return {
+        city: entry.city,
+        country: entry.country,
+        location: [entry.city, entry.country].filter(Boolean).join(", ") || undefined,
+      };
+    }
+  }
+
+  if (/\b(online|remote|virtual|worldwide)\b/i.test(text)) {
+    return { city: "Remote", country: "Online", location: "Online" };
+  }
+
+  return {};
+}
+
+function parseIsoDate(value: string): string | undefined {
+  return normalizeDatePart(value) ?? undefined;
+}
+
+function parseDatesFromText(text: string): {
+  startDate?: string;
+  endDate?: string;
+  deadline?: string;
+} {
+  const result: { startDate?: string; endDate?: string; deadline?: string } = {};
+
+  const iso = text.match(/\b(20\d{2}-\d{2}-\d{2})\b/g);
+  if (iso?.length) {
+    result.startDate = parseIsoDate(iso[0]);
+    if (iso.length > 1) {
+      result.endDate = parseIsoDate(iso[1]);
+    }
+  }
+
+  const monthRange = text.match(
+    /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:\s*[–—-]\s*(?:([A-Za-z]+)\s+)?(\d{1,2}))?,?\s*(20\d{2})\b/i,
+  );
+  if (monthRange) {
+    const start = `${monthRange[1]} ${monthRange[2]}, ${monthRange[5]}`;
+    const endMonth = monthRange[3] ?? monthRange[1];
+    const endDay = monthRange[4] ?? monthRange[2];
+    const end = `${endMonth} ${endDay}, ${monthRange[5]}`;
+    result.startDate = parseIsoDate(start) ?? result.startDate;
+    result.endDate = parseIsoDate(end) ?? result.endDate;
+  }
+
+  const deadlineMatch = text.match(
+    /\b(?:deadline|closes|close date|apply by|registration closes|register by|submission deadline)\s*[:\-]?\s*((?:20\d{2}-\d{2}-\d{2})|(?:[A-Za-z]+\s+\d{1,2},?\s+20\d{2})|\d+\s+days?\s+left)/i,
+  );
+  if (deadlineMatch?.[1]) {
+    const raw = deadlineMatch[1].trim();
+    if (/days?\s+left/i.test(raw)) {
+      const days = Number.parseInt(raw, 10);
+      if (!Number.isNaN(days)) {
+        const date = new Date();
+        date.setDate(date.getDate() + days);
+        result.deadline = date.toISOString().slice(0, 10);
+      }
+    } else {
+      result.deadline = parseIsoDate(raw) ?? result.deadline;
+    }
+  } else {
+    const daysLeft = text.match(/\b(\d+)\s+days?\s+left\b/i);
+    if (daysLeft?.[1]) {
+      const days = Number.parseInt(daysLeft[1], 10);
+      if (!Number.isNaN(days)) {
+        const date = new Date();
+        date.setDate(date.getDate() + days);
+        result.deadline = date.toISOString().slice(0, 10);
+      }
+    }
+  }
+
+  return result;
+}
+
 function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): HackathonEvidence[] {
   const evidence: HackathonEvidence[] = [];
 
@@ -26,7 +147,7 @@ function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): Hackathon
       url: event.officialUrl,
       title: lead.title,
       snippet: lead.text,
-      raw: { leadId: lead.id },
+      raw: { leadId: lead.id, source: lead.source },
     });
   }
 
@@ -35,7 +156,7 @@ function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): Hackathon
       type: "apply_page",
       url: event.applyUrl,
       title: `${lead.title ?? event.name} apply`,
-      raw: { leadId: lead.id },
+      raw: { leadId: lead.id, source: lead.source },
     });
   }
 
@@ -45,7 +166,7 @@ function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): Hackathon
       url: event.socialUrl,
       title: lead.title,
       snippet: lead.text,
-      raw: { leadId: lead.id },
+      raw: { leadId: lead.id, source: lead.source },
     });
   }
 
@@ -55,7 +176,7 @@ function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): Hackathon
       url: lead.url,
       title: lead.title,
       snippet: lead.text,
-      raw: { leadId: lead.id, metadata: lead.metadata ?? {} },
+      raw: { leadId: lead.id, metadata: lead.metadata ?? {}, source: lead.source },
     });
   }
 
@@ -68,6 +189,10 @@ function isSocialUrl(url?: string): boolean {
 
 export function extractHackathonEvent(lead: RawLead): HackathonEvent | null {
   const metadata = lead.metadata ?? {};
+  const combinedText = [lead.title, lead.text, JSON.stringify(metadata)].filter(Boolean).join(" ");
+  const parsedDates = parseDatesFromText(combinedText);
+  const parsedLocation = detectLocationFromText(combinedText);
+
   const name = asString(metadata.name) ?? lead.title?.trim();
   if (!name) {
     return null;
@@ -75,7 +200,7 @@ export function extractHackathonEvent(lead: RawLead): HackathonEvent | null {
 
   const officialFromMetadata = asString(metadata.officialUrl);
   const officialFromLinks = lead.links.find(
-    (link) => /official|event|hack/i.test(link) && !isSocialUrl(link),
+    (link) => /official|event|hack|devpost|dorahacks/i.test(link) && !isSocialUrl(link),
   );
   const officialUrl =
     officialFromMetadata ??
@@ -89,9 +214,16 @@ export function extractHackathonEvent(lead: RawLead): HackathonEvent | null {
     (isSocialUrl(lead.url) ? lead.url : undefined) ??
     lead.links.find((link) => isSocialUrl(link));
 
-  const themes = Array.isArray(metadata.themes)
+  const metadataThemes = Array.isArray(metadata.themes)
     ? metadata.themes.filter((value): value is string => typeof value === "string")
     : [];
+  const textThemes = detectThemesFromText(combinedText);
+  const themes = [...new Set([...metadataThemes, ...textThemes])];
+
+  const mode =
+    asMode(metadata.mode) ??
+    detectModeFromText(combinedText) ??
+    (parsedLocation.city === "Remote" ? "online" : undefined);
 
   const event: HackathonEvent = {
     name,
@@ -99,13 +231,16 @@ export function extractHackathonEvent(lead: RawLead): HackathonEvent | null {
     officialUrl,
     applyUrl,
     socialUrl,
-    startDate: asString(metadata.startDate),
-    endDate: asString(metadata.endDate),
-    deadline: asString(metadata.deadline),
-    location: asString(metadata.location) ?? asString(metadata.city),
-    mode: asMode(metadata.mode),
-    city: asString(metadata.city),
-    country: asString(metadata.country),
+    startDate: asString(metadata.startDate) ?? parsedDates.startDate,
+    endDate: asString(metadata.endDate) ?? parsedDates.endDate,
+    deadline: asString(metadata.deadline) ?? parsedDates.deadline,
+    location:
+      asString(metadata.location) ??
+      parsedLocation.location ??
+      asString(metadata.city),
+    mode,
+    city: asString(metadata.city) ?? parsedLocation.city,
+    country: asString(metadata.country) ?? parsedLocation.country,
     prize: asString(metadata.prize),
     themes,
     eligibility: asString(metadata.eligibility),

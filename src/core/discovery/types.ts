@@ -119,6 +119,17 @@ export type AgentRunSummary = {
     status: string;
   }>;
   rejectedCandidates: RejectedCandidate[];
+  sourceStats: SourceRunStats[];
   warnings: string[];
   errors: string[];
+};
+
+export type SourceRunStats = {
+  source: SourceName;
+  leadsFound: number;
+  accepted: number;
+  rejected: number;
+  errors: string[];
+  warnings: string[];
+  durationMs: number;
 };
