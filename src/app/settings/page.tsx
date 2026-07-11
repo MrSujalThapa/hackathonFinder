@@ -1,9 +1,19 @@
+import { OpenSheetLink } from "@/components/shell/OpenSheetLink";
 import { PageHeader } from "@/components/shell/PageHeader";
-import { hasSupabaseConfig, getServerEnv } from "@/config/env";
+import {
+  getGoogleSheetTab,
+  getServerEnv,
+  hasGoogleSheetsConfig,
+  hasSupabaseConfig,
+} from "@/config/env";
 import { isMockCandidatesEnabled } from "@/server/candidates/service";
 
 export default function SettingsPage() {
   const env = getServerEnv();
+  const sheetsConfigured = hasGoogleSheetsConfig(env);
+  const sheetTab = getGoogleSheetTab(env);
+  const publicSheetUrl = env.NEXT_PUBLIC_GOOGLE_SHEET_URL?.trim() || null;
+
   let mockEnabled = false;
   let mockError: string | null = null;
   try {
@@ -17,7 +27,7 @@ export default function SettingsPage() {
       <PageHeader
         eyebrow="Configuration"
         title="Settings"
-        description="Connection status and upcoming integrations."
+        description="Connection status and integrations."
       />
 
       <div className="space-y-4">
@@ -40,15 +50,25 @@ export default function SettingsPage() {
         <section className="rounded-2xl border border-border bg-card/80 p-5">
           <h2 className="text-sm font-semibold">Google Sheet</h2>
           <p className="mt-1 text-sm text-muted">
-            Sheet link and append status will appear here after Step 6.
+            Credentials —{" "}
+            {sheetsConfigured ? "present" : "missing"}. Tab —{" "}
+            <code className="text-foreground/80">{sheetTab}</code>
+            {publicSheetUrl ? null : (
+              <>
+                {" "}
+                · Public URL not set (
+                <code className="text-foreground/80">
+                  NEXT_PUBLIC_GOOGLE_SHEET_URL
+                </code>
+                ).
+              </>
+            )}
           </p>
-          <button
-            type="button"
-            disabled
-            className="mt-4 rounded-xl border border-border px-3 py-2 text-sm text-muted opacity-60"
-          >
-            Open Sheet (soon)
-          </button>
+          <p className="mt-2 text-xs text-muted">
+            Verify connectivity with{" "}
+            <code className="text-foreground/80">npm run check:sheets</code>.
+          </p>
+          <OpenSheetLink className="mt-4 inline-flex rounded-xl border border-border px-3 py-2 text-sm text-muted transition-colors hover:border-sky-500/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 aria-disabled:cursor-not-allowed aria-disabled:opacity-60" />
         </section>
 
         <section className="rounded-2xl border border-border bg-card/80 p-5">
@@ -68,7 +88,11 @@ export default function SettingsPage() {
               <code className="text-foreground/80">npm run check:supabase</code>)
             </li>
             <li>Mock candidates — {mockEnabled ? "on" : "off"}</li>
-            <li>Google Sheets — not configured yet</li>
+            <li>
+              Google Sheets — {sheetsConfigured ? "configured" : "not configured"}{" "}
+              (run{" "}
+              <code className="text-foreground/80">npm run check:sheets</code>)
+            </li>
             <li>X MCP — not configured yet</li>
           </ul>
         </section>

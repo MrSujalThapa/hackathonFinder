@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { OpenSheetLink } from "@/components/shell/OpenSheetLink";
 
 const NAV_ITEMS = [
   { href: "/queue", label: "Queue", icon: "◈" },
@@ -61,13 +62,7 @@ export function DesktopSidebar({ queueCount }: { queueCount?: number }) {
         })}
       </nav>
 
-      <a
-        href="#sheet-placeholder"
-        className="mt-4 rounded-xl border border-border/80 px-3 py-2.5 text-sm text-muted transition-colors hover:border-sky-500/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
-        title="Google Sheets sync lands in a later step"
-      >
-        Open Sheet
-      </a>
+      <OpenSheetLink className="mt-4 rounded-xl border border-border/80 px-3 py-2.5 text-sm text-muted transition-colors hover:border-sky-500/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:cursor-not-allowed disabled:opacity-60" />
     </aside>
   );
 }

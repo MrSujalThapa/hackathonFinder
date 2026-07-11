@@ -101,6 +101,21 @@ export function QueueReview() {
               current={Math.max(1, queue.total - filtered.length + 1)}
               total={queue.total}
             />
+            {queue.syncMessage ? (
+              <p
+                className="mb-3 text-center text-xs text-sky-100/90"
+                role="status"
+              >
+                {queue.syncMessage}
+                <button
+                  type="button"
+                  className="ml-2 underline"
+                  onClick={queue.clearSyncMessage}
+                >
+                  dismiss
+                </button>
+              </p>
+            ) : null}
             {queue.error ? (
               <p className="mb-3 text-center text-xs text-amber-200/90" role="status">
                 {queue.error}

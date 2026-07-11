@@ -7,6 +7,7 @@ import {
   CandidatesApiError,
   decideCandidate,
   fetchCandidate,
+  syncCandidateSheet,
   type DecisionAction,
 } from "@/lib/api/candidates";
 import {
@@ -18,6 +19,10 @@ import {
 import { CandidateEvidenceLinks } from "@/components/candidates/CandidateEvidenceLinks";
 import { CandidateScore } from "@/components/candidates/CandidateScore";
 import { CandidateTags } from "@/components/candidates/CandidateTags";
+import {
+  needsSheetRetry,
+  SheetSyncBadge,
+} from "@/components/sheets/SheetSyncBadge";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingState } from "@/components/ui/LoadingState";
@@ -27,6 +32,8 @@ export function CandidateDetailView({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [lastSyncFailed, setLastSyncFailed] = useState(false);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,11 +61,64 @@ export function CandidateDetailView({ id }: { id: string }) {
   const apply = async (action: DecisionAction) => {
     if (!candidate) return;
     setBusy(true);
+    setSyncNote(null);
     try {
-      const updated = await decideCandidate(candidate.id, action);
+      const { candidate: updated, sheetSync } = await decideCandidate(
+        candidate.id,
+        action,
+      );
       setCandidate((prev) => (prev ? { ...prev, ...updated } : prev));
+      if (action === "approve" && sheetSync) {
+        if (sheetSync.status === "failed") {
+          setLastSyncFailed(true);
+          setSyncNote("Approved; Sheet sync failed — retry below.");
+        } else {
+          setLastSyncFailed(false);
+          if (sheetSync.status === "mock_synced") {
+            setSyncNote(
+              "Approved (mock Sheet sync — not written to Google).",
+            );
+          }
+          // Reload to pick up sheet metadata written by append.
+          const detail = await fetchCandidate(candidate.id);
+          setCandidate(detail);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retrySync = async () => {
+    if (!candidate) return;
+    setBusy(true);
+    setSyncNote(null);
+    try {
+      const result = await syncCandidateSheet(candidate.id);
+      if (result.sheetSync.status === "failed") {
+        setLastSyncFailed(true);
+        setSyncNote(result.sheetSync.message ?? "Sheet sync failed");
+      } else {
+        setLastSyncFailed(false);
+        if (result.sheetSync.status === "mock_synced") {
+          setSyncNote("Mock Sheet sync — not written to Google.");
+        } else {
+          setSyncNote(null);
+        }
+      }
+      if (result.candidate) {
+        setCandidate((prev) =>
+          prev ? { ...prev, ...result.candidate } : prev,
+        );
+      } else {
+        const detail = await fetchCandidate(candidate.id);
+        setCandidate(detail);
+      }
+    } catch (err) {
+      setLastSyncFailed(true);
+      setSyncNote(err instanceof Error ? err.message : "Sheet sync failed");
     } finally {
       setBusy(false);
     }
@@ -69,6 +129,17 @@ export function CandidateDetailView({ id }: { id: string }) {
     return <ErrorState message={error} onRetry={() => void load()} />;
   }
   if (!candidate) return null;
+
+  const isMockSheetRow =
+    candidate.sheetRowId != null &&
+    (candidate.sheetRowId.startsWith("mock:") ||
+      candidate.sheetRowId.startsWith("mock-row:"));
+  const showRetry =
+    candidate.status === "APPROVED" &&
+    needsSheetRetry({
+      sheetRowId: candidate.sheetRowId,
+      lastSyncFailed,
+    });
 
   return (
     <section className="mx-auto w-full max-w-2xl">
@@ -104,6 +175,57 @@ export function CandidateDetailView({ id }: { id: string }) {
         </div>
 
         <CandidateTags themes={candidate.themes} />
+
+        {candidate.status === "APPROVED" ? (
+          <section className="rounded-2xl border border-border/70 bg-black/20 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
+                Google Sheet
+              </h2>
+              <SheetSyncBadge
+                sheetRowId={candidate.sheetRowId}
+                sheetAppendedAt={candidate.sheetAppendedAt}
+                lastSyncFailed={lastSyncFailed}
+              />
+            </div>
+            <dl className="mt-3 space-y-1 text-sm text-foreground/80">
+              <div className="flex flex-wrap gap-x-2">
+                <dt className="text-muted">Row</dt>
+                <dd className="font-mono text-xs">
+                  {candidate.sheetRowId ?? "—"}
+                  {isMockSheetRow ? (
+                    <span className="ml-2 text-amber-100/85">
+                      (mock — not written to Google)
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
+              <div className="flex flex-wrap gap-x-2">
+                <dt className="text-muted">Synced at</dt>
+                <dd>
+                  {candidate.sheetAppendedAt
+                    ? new Date(candidate.sheetAppendedAt).toLocaleString()
+                    : "—"}
+                </dd>
+              </div>
+            </dl>
+            {syncNote ? (
+              <p className="mt-2 text-xs text-amber-100/90" role="status">
+                {syncNote}
+              </p>
+            ) : null}
+            {showRetry ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void retrySync()}
+                className="mt-3 rounded-xl border border-amber-500/40 px-3 py-2 text-sm text-amber-100 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60 disabled:opacity-40"
+              >
+                Retry Sync
+              </button>
+            ) : null}
+          </section>
+        ) : null}
 
         {candidate.description ? (
           <p className="text-sm leading-relaxed text-foreground/80">
