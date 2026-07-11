@@ -30,11 +30,18 @@ export function parseAgentArgs(argv: string[]): CliOptions {
 
   if (!command) {
     throw new Error(
-      'Usage: npm run agent -- "find upcoming hackathons" [-- --dry-run] [-- --sources=hacklist,devpost,hakku] [-- --max-results=20] [-- --allow-mock-writes]',
+      'Usage: npm run agent -- "find upcoming hackathons" [-- --dry-run] [-- --sources=hacklist,mlh,luma,web] [-- --max-results=20] [-- --allow-mock-writes]',
     );
   }
 
-  const sources = sourcesArg ? parseSourcesFlag(sourcesArg.slice("--sources=".length)) : undefined;
+  let sources: SourceName[] | undefined;
+  if (sourcesArg) {
+    try {
+      sources = parseSourcesFlag(sourcesArg.slice("--sources=".length));
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : String(error));
+    }
+  }
   const maxResults = maxResultsArg
     ? Number.parseInt(maxResultsArg.slice("--max-results=".length), 10)
     : undefined;

@@ -2,7 +2,10 @@ import type { SourceName } from "@/core/discovery/types";
 import { devpostCollector } from "@/collectors/devpost";
 import { hacklistCollector } from "@/collectors/hacklist";
 import { hakkuCollector } from "@/collectors/hakku";
+import { lumaCollector } from "@/collectors/luma";
+import { mlhCollector } from "@/collectors/mlh";
 import { mockCollector } from "@/collectors/mock";
+import { webSearchCollector } from "@/collectors/webSearch";
 import type { Collector, CollectorInput, CollectorResult } from "@/collectors/types";
 import { emptyCollectorResult } from "@/collectors/types";
 
@@ -11,6 +14,9 @@ const COLLECTORS: Partial<Record<SourceName, Collector>> = {
   hacklist: hacklistCollector,
   hakku: hakkuCollector,
   devpost: devpostCollector,
+  mlh: mlhCollector,
+  luma: lumaCollector,
+  web: webSearchCollector,
 };
 
 export function getRegisteredSources(): SourceName[] {
@@ -40,11 +46,20 @@ export function resolveCollectors(sources: SourceName[]): Collector[] {
 
 export function parseSourcesFlag(value: string): SourceName[] {
   const allowed = new Set(getRegisteredSources());
-  return value
+  const parts = value
     .split(",")
     .map((part) => part.trim().toLowerCase())
-    .filter(Boolean)
-    .filter((part): part is SourceName => allowed.has(part as SourceName));
+    .filter(Boolean);
+
+  const unknown = parts.filter((part) => !allowed.has(part as SourceName));
+  if (unknown.length > 0) {
+    const registered = getRegisteredSources().join(", ");
+    throw new Error(
+      `Unknown source(s): ${unknown.join(", ")}. Registered sources: ${registered}`,
+    );
+  }
+
+  return parts as SourceName[];
 }
 
 export async function runCollectors(

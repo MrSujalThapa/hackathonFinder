@@ -74,8 +74,9 @@ export default function SettingsPage() {
         <section className="rounded-2xl border border-border bg-card/80 p-5">
           <h2 className="text-sm font-semibold">Discovery sources</h2>
           <p className="mt-1 text-sm text-muted">
-            HackList, Devpost, and Hakku are available via the CLI. MLH, Luma,
-            web search, and X/Twitter MCP arrive later.
+            Default CLI sources: HackList, MLH, Luma, and web search. Devpost
+            and Hakku remain available when requested; mock only when explicit.
+            X/Twitter MCP arrives later.
           </p>
         </section>
 

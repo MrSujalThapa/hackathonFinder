@@ -37,10 +37,12 @@ describe("candidate format helpers", () => {
     assert.equal(formatSourceLabel("hacklist"), "HackList");
     assert.equal(formatSourceLabel("hakku"), "Hakku");
     assert.equal(formatSourceLabel("devpost"), "Devpost");
+    assert.equal(formatSourceLabel("mlh"), "MLH");
+    assert.equal(formatSourceLabel("luma"), "Luma");
+    assert.equal(formatSourceLabel("web"), "Web");
   });
 
   it("title-cases unknown source labels", () => {
-    assert.equal(formatSourceLabel("mlh"), "Mlh");
     assert.equal(formatSourceLabel("web_search"), "Web Search");
   });
 });

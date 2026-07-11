@@ -36,4 +36,28 @@ describe("parseAgentArgs", () => {
     assert.equal(options.allowMockWrites, true);
     assert.equal(options.dryRun, false);
   });
+
+  it("parses broader discovery sources and rejects unknown names", () => {
+    const options = parseAgentArgs([
+      "node",
+      "agent.ts",
+      "find upcoming hackathons",
+      "--",
+      "--sources=mlh,luma,web",
+      "--dry-run",
+    ]);
+    assert.deepEqual(options.sources, ["mlh", "luma", "web"]);
+
+    assert.throws(
+      () =>
+        parseAgentArgs([
+          "node",
+          "agent.ts",
+          "find upcoming hackathons",
+          "--",
+          "--sources=mlh,not-a-source",
+        ]),
+      /Unknown source\(s\): not-a-source/,
+    );
+  });
 });

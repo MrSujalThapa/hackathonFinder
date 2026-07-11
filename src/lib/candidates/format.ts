@@ -64,6 +64,12 @@ export function formatSourceLabel(source: string): string {
       return "Hakku";
     case "devpost":
       return "Devpost";
+    case "mlh":
+      return "MLH";
+    case "luma":
+      return "Luma";
+    case "web":
+      return "Web";
     default: {
       const trimmed = source.trim();
       if (!trimmed) return source;

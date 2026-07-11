@@ -24,7 +24,8 @@ export type Collector = {
 
 export const DEFAULT_COLLECTOR_TIMEOUT_MS = 15_000;
 
-export const REAL_DEFAULT_SOURCES: SourceName[] = ["hacklist", "devpost", "hakku"];
+/** Default live sources after Phase 7 broader discovery. */
+export const REAL_DEFAULT_SOURCES: SourceName[] = ["hacklist", "mlh", "luma", "web"];
 
 export function emptyCollectorResult(source: SourceName, startedAt = Date.now()): CollectorResult {
   return {
