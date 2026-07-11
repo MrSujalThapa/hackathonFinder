@@ -181,7 +181,8 @@ async function main(): Promise<number> {
   console.log(`parsed hostname: ${hostname}`);
 
   console.log("\n--- HTTP health probe (anon key) ---");
-  const restUrl = `${url!.replace(/\/$/, "")}/rest/v1/`;
+  // Probe a real table route. Bare /rest/v1/ often returns 401 even with valid keys.
+  const restUrl = `${url!.replace(/\/$/, "")}/rest/v1/candidates?select=id&limit=1`;
   try {
     const response = await fetch(restUrl, {
       method: "GET",
@@ -196,7 +197,7 @@ async function main(): Promise<number> {
     if (response.status === 401 || response.status === 403) {
       console.log("\nRESULT: FAIL");
       console.log("category: invalid_api_key");
-      console.log("message: Supabase rejected the anon key on REST health probe");
+      console.log("message: Supabase rejected the anon key on candidates probe");
       return 1;
     }
 
@@ -205,6 +206,19 @@ async function main(): Promise<number> {
       console.log("category: project_paused_or_unavailable");
       console.log("message: Supabase project appears paused or unavailable");
       return 1;
+    }
+
+    if (response.status === 404) {
+      const body = await response.text();
+      if (
+        body.toLowerCase().includes("could not find the table") ||
+        body.toLowerCase().includes("schema cache")
+      ) {
+        console.log("\nRESULT: FAIL");
+        console.log("category: table_missing");
+        console.log("message: candidates table was not found");
+        return 1;
+      }
     }
   } catch (error) {
     const { category, message, cause } = classifyError(error);
