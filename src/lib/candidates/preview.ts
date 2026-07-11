@@ -26,4 +26,6 @@ export const PREVIEW_CANDIDATE: CandidateCard = {
   redFlags: [],
   foundAt: "2026-07-01T12:00:00.000Z",
   lastVerified: "2026-07-01T12:00:00.000Z",
+  sheetRowId: null,
+  sheetAppendedAt: null,
 };

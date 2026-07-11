@@ -92,6 +92,8 @@ describe("optimistic queue rollback helpers", () => {
           redFlags: [],
           foundAt: new Date().toISOString(),
           lastVerified: new Date().toISOString(),
+          sheetRowId: null,
+          sheetAppendedAt: null,
           description: null,
           fingerprint: "x",
           sourceIds: {},
@@ -101,6 +103,9 @@ describe("optimistic queue rollback helpers", () => {
         };
       },
       async updateCandidateStatus() {
+        throw new Error("simulated write failure");
+      },
+      async updateSheetMetadata() {
         throw new Error("simulated write failure");
       },
     };

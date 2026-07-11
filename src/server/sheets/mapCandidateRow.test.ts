@@ -34,6 +34,8 @@ const completeCandidate: CandidateCard = {
   redFlags: ["short deadline"],
   foundAt: "2026-07-01T12:00:00.000Z",
   lastVerified: "2026-07-02T08:30:00.000Z",
+  sheetRowId: null,
+  sheetAppendedAt: null,
 };
 
 describe("formatSheetDate", () => {
@@ -110,6 +112,8 @@ describe("mapCandidateRow", () => {
       redFlags: [],
       foundAt: "2026-07-10T01:02:03.000Z",
       lastVerified: "2026-07-10T01:02:03.000Z",
+      sheetRowId: null,
+      sheetAppendedAt: null,
     };
 
     const row = mapCandidateRow(sparse);
