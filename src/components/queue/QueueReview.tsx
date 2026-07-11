@@ -14,11 +14,8 @@ export function QueueReview() {
   const [sourceFilter, setSourceFilter] = useState("");
 
   const sources = useMemo(() => {
-    const all = [queue.current, queue.upcoming, ...queue.candidates]
-      .filter(Boolean)
-      .map((c) => c!.source);
-    return [...new Set(all)].sort();
-  }, [queue.candidates, queue.current, queue.upcoming]);
+    return [...new Set(queue.candidates.map((c) => c.source))].sort();
+  }, [queue.candidates]);
 
   const filtered = useMemo(() => {
     if (!sourceFilter) return queue.candidates;
@@ -64,7 +61,9 @@ export function QueueReview() {
           </label>
         ) : null}
 
-        {queue.loading ? <LoadingState label="Loading queue…" /> : null}
+        {queue.loading && !visibleCurrent ? (
+          <LoadingState label="Loading queue…" />
+        ) : null}
 
         {!queue.loading && queue.error && !visibleCurrent ? (
           <ErrorState

@@ -1,5 +1,4 @@
 import {
-  candidateIdSchema,
   fail,
   listCandidatesQuerySchema,
   ok,

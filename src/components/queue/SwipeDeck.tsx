@@ -107,6 +107,14 @@ export function SwipeDeck({
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (busy || exitingRef.current || expanded) return;
+    const target = event.target as HTMLElement | null;
+    if (
+      target?.closest(
+        "button, a, input, textarea, select, [role='button']",
+      )
+    ) {
+      return;
+    }
     drag.current = {
       active: true,
       startX: event.clientX,

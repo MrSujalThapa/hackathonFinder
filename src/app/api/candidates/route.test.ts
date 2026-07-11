@@ -63,10 +63,31 @@ function createMockRepo(
 ): CandidateRepository {
   return {
     async listCandidates(params = {}) {
-      let candidates = [...store.values()].map((item) => {
-        const { description: _d, fingerprint: _f, sourceIds: _s, evidence: _e, answers: _a, actions: _act, ...card } = item;
-        return card;
-      });
+      let candidates = [...store.values()].map((item) => ({
+        id: item.id,
+        status: item.status,
+        score: item.score,
+        name: item.name,
+        summary: item.summary,
+        source: item.source,
+        officialUrl: item.officialUrl,
+        applyUrl: item.applyUrl,
+        socialUrl: item.socialUrl,
+        startDate: item.startDate,
+        endDate: item.endDate,
+        deadline: item.deadline,
+        location: item.location,
+        mode: item.mode,
+        city: item.city,
+        country: item.country,
+        prize: item.prize,
+        themes: item.themes,
+        eligibility: item.eligibility,
+        whyMatch: item.whyMatch,
+        redFlags: item.redFlags,
+        foundAt: item.foundAt,
+        lastVerified: item.lastVerified,
+      }));
       if (params.status) {
         candidates = candidates.filter((c) => c.status === params.status);
       }
@@ -89,16 +110,31 @@ function createMockRepo(
       }
       const updated: CandidateDetail = { ...existing, status };
       store.set(id, updated);
-      const {
-        description: _d,
-        fingerprint: _f,
-        sourceIds: _s,
-        evidence: _e,
-        answers: _a,
-        actions: _act,
-        ...card
-      } = updated;
-      return card;
+      return {
+        id: updated.id,
+        status: updated.status,
+        score: updated.score,
+        name: updated.name,
+        summary: updated.summary,
+        source: updated.source,
+        officialUrl: updated.officialUrl,
+        applyUrl: updated.applyUrl,
+        socialUrl: updated.socialUrl,
+        startDate: updated.startDate,
+        endDate: updated.endDate,
+        deadline: updated.deadline,
+        location: updated.location,
+        mode: updated.mode,
+        city: updated.city,
+        country: updated.country,
+        prize: updated.prize,
+        themes: updated.themes,
+        eligibility: updated.eligibility,
+        whyMatch: updated.whyMatch,
+        redFlags: updated.redFlags,
+        foundAt: updated.foundAt,
+        lastVerified: updated.lastVerified,
+      };
     },
   };
 }

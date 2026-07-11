@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm run build",
     "check:supabase": "tsx scripts/check-supabase.ts",
-    "test": "tsx --test src/**/*.test.ts",
+    "smoke:queue": "tsx scripts/smoke-queue.ts",
+    "test": "tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",
     "agent": "tsx src/cli/agent.ts"
   },
   "dependencies": {

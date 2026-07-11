@@ -1,4 +1,5 @@
-import type { CandidateCard, CandidateMode } from "@/core/candidates/types";
+import type { CandidateCard } from "@/core/candidates/types";
+import type { CandidateMode } from "@/lib/supabase/database.types";
 
 export function formatDateRange(
   start: string | null,

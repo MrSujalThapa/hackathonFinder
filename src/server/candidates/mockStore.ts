@@ -213,19 +213,31 @@ function getStore(): Map<string, MockRecord> {
 }
 
 function toCard(record: MockRecord): CandidateCard {
-  const {
-    description: _description,
-    fingerprint: _fingerprint,
-    sourceIds: _sourceIds,
-    evidence: _evidence,
-    answers: _answers,
-    actions: _actions,
-    approvedAt: _approvedAt,
-    rejectedAt: _rejectedAt,
-    savedAt: _savedAt,
-    ...card
-  } = record;
-  return card;
+  return {
+    id: record.id,
+    status: record.status,
+    score: record.score,
+    name: record.name,
+    summary: record.summary,
+    source: record.source,
+    officialUrl: record.officialUrl,
+    applyUrl: record.applyUrl,
+    socialUrl: record.socialUrl,
+    startDate: record.startDate,
+    endDate: record.endDate,
+    deadline: record.deadline,
+    location: record.location,
+    mode: record.mode,
+    city: record.city,
+    country: record.country,
+    prize: record.prize,
+    themes: record.themes,
+    eligibility: record.eligibility,
+    whyMatch: record.whyMatch,
+    redFlags: record.redFlags,
+    foundAt: record.foundAt,
+    lastVerified: record.lastVerified,
+  };
 }
 
 function sortRecords(
@@ -280,8 +292,15 @@ export function createMockCandidateRepository(): CandidateRepository {
     async getCandidate(id: string) {
       const record = getStore().get(id);
       if (!record) return null;
-      const { approvedAt: _a, rejectedAt: _r, savedAt: _s, ...detail } = record;
-      return detail;
+      return {
+        ...toCard(record),
+        description: record.description,
+        fingerprint: record.fingerprint,
+        sourceIds: record.sourceIds,
+        evidence: record.evidence,
+        answers: record.answers,
+        actions: record.actions,
+      };
     },
 
     async updateCandidateStatus(

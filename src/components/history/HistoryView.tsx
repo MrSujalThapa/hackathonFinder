@@ -141,7 +141,9 @@ export function HistoryView({
         </label>
       </div>
 
-      {loading ? <LoadingState label="Loading history…" /> : null}
+      {loading && candidates.length === 0 ? (
+        <LoadingState label="Loading history…" />
+      ) : null}
       {!loading && error ? (
         <ErrorState message={error} onRetry={() => void load()} />
       ) : null}
@@ -149,7 +151,7 @@ export function HistoryView({
         <EmptyState title={emptyTitle} description={emptyDescription} />
       ) : null}
 
-      {!loading && !error && candidates.length > 0 ? (
+      {candidates.length > 0 ? (
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {candidates.map((candidate) => (
             <li
