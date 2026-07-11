@@ -71,6 +71,14 @@ export async function syncPendingApproved(options: {
   summary.checked = pending.length;
 
   if (dryRun) {
+    for (const candidate of pending) {
+      summary.results.push({
+        candidateId: candidate.id,
+        status: "skipped_not_configured",
+        message: `dry-run: would sync "${candidate.name}"`,
+      });
+      summary.skipped += 1;
+    }
     return summary;
   }
 
