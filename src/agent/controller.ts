@@ -1,11 +1,14 @@
 import type { Json } from "@/lib/supabase/database.types";
-import { mockCollector } from "@/collectors/mock";
+import { runCollectors } from "@/collectors/registry";
+import { DEFAULT_COLLECTOR_TIMEOUT_MS } from "@/collectors/types";
 import { hasSupabaseConfig, getServerEnv } from "@/config/env";
 import type {
   AcceptedCandidate,
   AgentRunSummary,
   DiscoveryPreferences,
   RejectedCandidate,
+  SourceName,
+  SourceRunStats,
 } from "@/core/discovery/types";
 import { extractHackathonEvents } from "@/core/extract";
 import { scoreHackathonEvent } from "@/core/score";
@@ -22,12 +25,29 @@ import {
 const SUPABASE_ENV_MESSAGE =
   "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in .env.local, or run with --dry-run.";
 
+function initSourceStats(sources: SourceName[]): Map<SourceName, SourceRunStats> {
+  const stats = new Map<SourceName, SourceRunStats>();
+  for (const source of sources) {
+    stats.set(source, {
+      source,
+      leadsFound: 0,
+      accepted: 0,
+      rejected: 0,
+      errors: [],
+      warnings: [],
+      durationMs: 0,
+    });
+  }
+  return stats;
+}
+
 export async function runDiscovery(
   preferences: DiscoveryPreferences,
   dryRun: boolean,
 ): Promise<AgentRunSummary> {
   const startedAt = Date.now();
   const summary = emptySummary(preferences.rawCommand, preferences, dryRun);
+  const sourceStats = initSourceStats(preferences.sources);
 
   if (!dryRun && !hasSupabaseConfig(getServerEnv())) {
     throw new Error(SUPABASE_ENV_MESSAGE);
@@ -50,8 +70,30 @@ export async function runDiscovery(
   }
 
   try {
-    const leads = await mockCollector.collect(preferences);
+    const collectorResults = await runCollectors(
+      {
+        preferences,
+        maxResults: preferences.maxResults,
+        timeoutMs: DEFAULT_COLLECTOR_TIMEOUT_MS,
+        dryRun,
+        requestId: runId ?? undefined,
+      },
+      preferences.sources,
+    );
+
+    const leads = collectorResults.flatMap((result) => result.leads);
     summary.rawLeads = leads.length;
+
+    for (const result of collectorResults) {
+      const stats = sourceStats.get(result.source);
+      if (!stats) continue;
+      stats.leadsFound = result.leads.length;
+      stats.durationMs = result.durationMs;
+      stats.errors.push(...result.errors);
+      stats.warnings.push(...result.warnings);
+      summary.warnings.push(...result.warnings.map((warning) => `[${result.source}] ${warning}`));
+      summary.errors.push(...result.errors.map((error) => `[${result.source}] ${error}`));
+    }
 
     const events = extractHackathonEvents(leads);
     summary.extracted = events.length;
@@ -69,6 +111,7 @@ export async function runDiscovery(
             stage: "verification",
             reason: verification.reasons[0] ?? "Failed verification",
           });
+          sourceStats.get(event.source)!.rejected += 1;
           continue;
         }
 
@@ -80,11 +123,13 @@ export async function runDiscovery(
             stage: "scoring",
             reason: score.rejectionReason ?? "Rejected by scoring rules",
           });
+          sourceStats.get(event.source)!.rejected += 1;
           continue;
         }
 
         const status = verification.status === "needs_review" ? "NEEDS_REVIEW" : "NEW";
         accepted.push({ event, score, fingerprint: "", status });
+        sourceStats.get(event.source)!.accepted += 1;
       } catch (error) {
         summary.errors.push(
           `${event.name}: ${error instanceof Error ? error.message : "processing failed"}`,
@@ -138,6 +183,7 @@ export async function runDiscovery(
     }
 
     summary.acceptedCandidates = buildAcceptedSummary(accepted);
+    summary.sourceStats = [...sourceStats.values()];
     summary.durationMs = Date.now() - startedAt;
 
     if (runId) {
@@ -153,6 +199,7 @@ export async function runDiscovery(
     return summary;
   } catch (error) {
     summary.errors.push(error instanceof Error ? error.message : "Discovery run failed");
+    summary.sourceStats = [...sourceStats.values()];
     summary.durationMs = Date.now() - startedAt;
 
     if (runId) {

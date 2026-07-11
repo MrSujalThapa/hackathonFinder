@@ -145,6 +145,22 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   console.log(`- duration: ${summary.durationMs}ms`);
   console.log("");
 
+  if (summary.sourceStats.length > 0) {
+    console.log("Source stats:");
+    for (const stats of summary.sourceStats) {
+      console.log(
+        `- ${stats.source}: leads ${stats.leadsFound}, accepted ${stats.accepted}, rejected ${stats.rejected}, duration ${stats.durationMs}ms`,
+      );
+      for (const warning of stats.warnings) {
+        console.log(`  warning: ${warning}`);
+      }
+      for (const error of stats.errors) {
+        console.log(`  error: ${error}`);
+      }
+    }
+    console.log("");
+  }
+
   if (summary.acceptedCandidates.length > 0) {
     console.log("Accepted:");
     summary.acceptedCandidates.forEach((candidate, index) => {
@@ -199,6 +215,7 @@ export function emptySummary(
     durationMs: 0,
     acceptedCandidates: [],
     rejectedCandidates: [],
+    sourceStats: [],
     warnings: [],
     errors: [],
   };

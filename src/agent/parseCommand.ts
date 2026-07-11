@@ -1,4 +1,5 @@
 import type { DiscoveryMode, DiscoveryPreferences, SourceName } from "@/core/discovery/types";
+import { REAL_DEFAULT_SOURCES } from "@/collectors/types";
 
 const DEFAULT_LOCATIONS = [
   "Toronto",
@@ -50,6 +51,7 @@ const SOURCE_ALIASES: Record<string, SourceName> = {
   luma: "luma",
   web: "web",
   x: "x",
+  mock: "mock",
   twitter: "x",
 };
 
@@ -154,10 +156,21 @@ export function getDefaultDiscoveryPreferences(rawCommand: string): DiscoveryPre
     locations: [...DEFAULT_LOCATIONS],
     themes: [...DEFAULT_THEMES],
     modes: ["online", "in-person", "hybrid"],
-    sources: ["mock"],
+    sources: [...REAL_DEFAULT_SOURCES],
     includeRemote: true,
     includeInPerson: true,
     maxResults: 25,
+  };
+}
+
+export function applyCliOptions(
+  preferences: DiscoveryPreferences,
+  options: { sources?: SourceName[]; maxResults?: number },
+): DiscoveryPreferences {
+  return {
+    ...preferences,
+    sources: options.sources && options.sources.length > 0 ? options.sources : preferences.sources,
+    maxResults: options.maxResults ?? preferences.maxResults,
   };
 }
 
