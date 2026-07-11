@@ -16,6 +16,7 @@ function emptySummary(): BatchSyncSummary {
     skipped: 0,
     failed: 0,
     mock_synced: 0,
+    dry_run: 0,
     results: [],
   };
 }
@@ -35,6 +36,9 @@ function tally(summary: BatchSyncSummary, result: SheetSyncResult): void {
     case "mock_synced":
       summary.mock_synced += 1;
       break;
+    case "dry_run":
+      summary.dry_run += 1;
+      break;
     case "failed":
       summary.failed += 1;
       break;
@@ -48,9 +52,24 @@ function tally(summary: BatchSyncSummary, result: SheetSyncResult): void {
   }
 }
 
+async function loadPending(limit: number): Promise<CandidateCard[]> {
+  const repo = getCandidateRepository();
+  if (repo.listPendingSheetSync) {
+    return repo.listPendingSheetSync(limit);
+  }
+
+  // Test fakes may omit listPendingSheetSync.
+  const { candidates } = await repo.listCandidates({
+    status: "APPROVED",
+    limit,
+    sort: "found_at",
+  });
+  return candidates.filter(needsSheetSync);
+}
+
 /**
  * Batch-recover APPROVED candidates that are missing sheet sync metadata.
- * Continues on per-candidate errors. CLI wiring is a later step.
+ * Continues on per-candidate errors.
  */
 export async function syncPendingApproved(options: {
   limit?: number;
@@ -58,26 +77,18 @@ export async function syncPendingApproved(options: {
 } = {}): Promise<BatchSyncSummary> {
   const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
   const dryRun = options.dryRun ?? false;
-  const repo = getCandidateRepository();
   const summary = emptySummary();
 
-  const { candidates } = await repo.listCandidates({
-    status: "APPROVED",
-    limit,
-    sort: "found_at",
-  });
-
-  const pending = candidates.filter(needsSheetSync);
+  const pending = await loadPending(limit);
   summary.checked = pending.length;
 
   if (dryRun) {
     for (const candidate of pending) {
-      summary.results.push({
+      tally(summary, {
         candidateId: candidate.id,
-        status: "skipped_not_configured",
+        status: "dry_run",
         message: `dry-run: would sync "${candidate.name}"`,
       });
-      summary.skipped += 1;
     }
     return summary;
   }

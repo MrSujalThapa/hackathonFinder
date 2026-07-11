@@ -149,15 +149,23 @@ export async function appendApprovedCandidate(
   if (deps.isMockCandidatesEnabled()) {
     const rowId = `mock-row:${candidateId}`;
     const appendedAt = deps.now();
-    await deps.updateSheetMetadata(candidateId, {
-      sheetRowId: rowId,
-      sheetAppendedAt: appendedAt,
-    });
-    await recordSheetAppendAction(deps, candidateId, {
-      ok: true,
-      mock: true,
-      rowId,
-    });
+    try {
+      await deps.updateSheetMetadata(candidateId, {
+        sheetRowId: rowId,
+        sheetAppendedAt: appendedAt,
+      });
+      await recordSheetAppendAction(deps, candidateId, {
+        ok: true,
+        mock: true,
+        rowId,
+      });
+    } catch (error) {
+      return {
+        status: "failed",
+        candidateId,
+        message: errorMessage(error),
+      };
+    }
     return {
       status: "mock_synced",
       candidateId,
@@ -227,16 +235,32 @@ export async function appendApprovedCandidate(
   if (existingRow) {
     const rowId = existingRow.range;
     const appendedAt = deps.now();
-    await deps.updateSheetMetadata(candidateId, {
-      sheetRowId: rowId,
-      sheetAppendedAt: appendedAt,
-    });
-    await recordSheetAppendAction(deps, candidateId, {
-      ok: true,
-      recovered: true,
-      rowId,
-      rowNumber: existingRow.rowNumber,
-    });
+    try {
+      await deps.updateSheetMetadata(candidateId, {
+        sheetRowId: rowId,
+        sheetAppendedAt: appendedAt,
+      });
+      await recordSheetAppendAction(deps, candidateId, {
+        ok: true,
+        recovered: true,
+        rowId,
+        rowNumber: existingRow.rowNumber,
+      });
+    } catch (error) {
+      const message = errorMessage(error);
+      await recordSheetAppendAction(deps, candidateId, {
+        ok: false,
+        error: message,
+        phase: "metadata_after_recover",
+        rowId,
+      }).catch(() => undefined);
+      return {
+        status: "failed",
+        candidateId,
+        rowId,
+        message: `Found existing Sheet row but metadata update failed: ${message}`,
+      };
+    }
     return {
       status: "recovered_existing_row",
       candidateId,

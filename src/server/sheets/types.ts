@@ -5,7 +5,8 @@ export type SheetSyncStatus =
   | "skipped_not_approved"
   | "failed"
   | "skipped_not_configured"
-  | "mock_synced";
+  | "mock_synced"
+  | "dry_run";
 
 export type SheetSyncResult = {
   status: SheetSyncStatus;
@@ -22,5 +23,6 @@ export type BatchSyncSummary = {
   skipped: number;
   failed: number;
   mock_synced: number;
+  dry_run: number;
   results: SheetSyncResult[];
 };

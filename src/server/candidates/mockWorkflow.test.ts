@@ -92,6 +92,7 @@ describe("optimistic queue rollback helpers", () => {
           redFlags: [],
           foundAt: new Date().toISOString(),
           lastVerified: new Date().toISOString(),
+          approvedAt: null,
           sheetRowId: null,
           sheetAppendedAt: null,
           description: null,

@@ -1,6 +1,6 @@
 # Hackathon Approval Agent
 
-A responsive Tinder-style approval queue for hackathons. A local CLI agent discovers events from HackList, Hakku, Devpost (and later MLH, Luma, web search, X/Twitter). Candidates land in Supabase for review; only approved hackathons will later be appended to Google Sheets.
+A responsive Tinder-style approval queue for hackathons. A local CLI agent discovers events from HackList, Hakku, Devpost (and later MLH, Luma, web search, X/Twitter). Candidates land in Supabase for review; approved hackathons sync idempotently to Google Sheets.
 
 ## Prerequisites
 
@@ -35,15 +35,58 @@ SUPABASE_SERVICE_ROLE_KEY=...
 USE_MOCK_CANDIDATES=true
 ```
 
-`USE_MOCK_CANDIDATES` is never enabled silently, and it is forbidden in production.
+`USE_MOCK_CANDIDATES` is never enabled silently, and it is forbidden in production. For live queue + Sheets testing use `USE_MOCK_CANDIDATES=false`.
 
-4. Start the web app:
+4. Configure Google Sheets (required for approval → Sheet sync):
+
+```bash
+GOOGLE_SHEET_ID=
+GOOGLE_SHEET_TAB=Hackathons
+GOOGLE_SERVICE_ACCOUNT_JSON=
+NEXT_PUBLIC_GOOGLE_SHEET_URL=
+```
+
+5. Start the web app:
 
 ```bash
 npm run dev
 ```
 
 Open [http://localhost:3000/queue](http://localhost:3000/queue).
+
+## Google Sheets setup (manual)
+
+1. Create or select a Google Cloud project.
+2. Enable the **Google Sheets API**.
+3. Create a **service account**.
+4. Create a JSON key and copy the **complete JSON** into `GOOGLE_SERVICE_ACCOUNT_JSON` in `.env.local` (as a single-line string is fine; escaped `\n` in `private_key` is handled).
+5. Create a Google Spreadsheet.
+6. Create a tab named `Hackathons` (or set `GOOGLE_SHEET_TAB`).
+7. Share the Sheet with the service-account email as **Editor**.
+8. Copy the spreadsheet ID into `GOOGLE_SHEET_ID`.
+9. Copy the full browser URL into `NEXT_PUBLIC_GOOGLE_SHEET_URL` (used by the Open Sheet link).
+
+Never commit `.env.local`, service-account JSON files, or private keys.
+
+Verify read-only connectivity:
+
+```bash
+npm run check:sheets
+```
+
+Recover approved-but-unsynced candidates (idempotent):
+
+```bash
+npm run sync:sheets -- --dry-run
+npm run sync:sheets -- --limit=50
+```
+
+### Idempotency and partial failure
+
+- Approving always keeps the candidate `APPROVED`, even if Sheets fails.
+- Sync looks up the **Candidate ID** column before appending, so retries do not create duplicate rows.
+- If append succeeds but Supabase `sheet_row_id` / `sheet_appended_at` update fails, the next retry finds the existing row and recovers metadata (`recovered_existing_row`).
+- Mock mode (`USE_MOCK_CANDIDATES=true`) records a labeled mock sync and does **not** write to Google Sheets.
 
 ## Supabase diagnostics
 
@@ -59,7 +102,7 @@ The script loads `.env.local` from the repo root, prints whether each required v
 
 | Input | Action |
 | --- | --- |
-| Approve button / swipe right / → | Approve |
+| Approve button / swipe right / → | Approve (+ attempt Sheet sync) |
 | Reject button / swipe left / ← | Reject |
 | Save button / swipe up / `S` | Save for later |
 | More details / Enter / Space | Expand or collapse details |
@@ -67,13 +110,13 @@ The script loads `.env.local` from the repo root, prints whether each required v
 
 History routes:
 
-- `/approved`
+- `/approved` — sync badges + Retry Sync when needed
 - `/rejected` (restore supported)
 - `/saved` (restore supported)
-- `/candidate/[id]`
-- `/settings`
+- `/candidate/[id]` — sheet row/range, sync timestamp, retry
+- `/settings` — Sheets config status + Open Sheet link
 
-Approve currently updates Supabase status only. Google Sheets sync and X/Twitter MCP arrive in later steps.
+X/Twitter MCP arrives in a later project step.
 
 ## Scripts
 
@@ -86,9 +129,17 @@ Approve currently updates Supabase status only. Google Sheets sync and X/Twitter
 | `npm run typecheck` | TypeScript check |
 | `npm run check` | Lint + typecheck + build |
 | `npm run check:supabase` | Read-only Supabase connectivity diagnostics |
+| `npm run check:sheets` | Read-only Google Sheets diagnostics (no writes) |
+| `npm run sync:sheets` | Idempotent recovery for approved unsynced candidates |
 | `npm run test` | Unit / component tests |
 | `npm run smoke:queue` | Browser smoke (requires `npm run dev` + mock/live data) |
 | `npm run agent -- "<command>"` | Run local discovery agent CLI |
+
+Opt-in live Sheets integration tests (not part of default CI):
+
+```bash
+RUN_GOOGLE_SHEETS_INTEGRATION=true npm test -- src/server/sheets/sheets.integration.test.ts
+```
 
 ## CLI discovery
 
@@ -123,20 +174,28 @@ The CLI loads `.env.local` automatically before running.
 | `/candidate/[id]` | Full candidate detail |
 | `/settings` | Connection / integration status |
 
+## API notes (Sheets)
+
+| Endpoint | Behavior |
+| --- | --- |
+| `POST /api/candidates/[id]/approve` | Marks APPROVED, then best-effort Sheet sync; returns `sheetSync` |
+| `POST /api/candidates/[id]/sync-sheet` | Idempotent retry for APPROVED candidates |
+| `POST /api/sheets/sync-approved` | Batch recovery (`limit` required/ capped) |
+
 ## Project structure
 
 ```text
 src/
   agent/         # Command parser, controller, run summary
   app/           # Next.js App Router pages + API routes
-  cli/           # Local agent entrypoint
+  cli/           # Local agent + sync:sheets entrypoints
   collectors/    # Source collectors (mock, hacklist, hakku, devpost)
-  components/    # Approval UI shell, card, queue, history
+  components/    # Approval UI shell, card, queue, history, sheet badges
   config/        # Typed environment validation
   core/          # Dedupe, scoring, extract/verify, discovery types
   hooks/         # Queue + motion hooks
-  lib/           # HTTP helpers, Playwright, client API
-  server/        # Candidate repository, mock store, API helpers
+  lib/           # HTTP helpers, Playwright, Google Sheets client
+  server/        # Candidate repository, sheets sync, API helpers
 ```
 
 ## Development workflow
@@ -147,8 +206,8 @@ This repo follows `docs/hackathon_approval_agent_docs/05_PROJECT_PLAN.md`:
 2. Supabase database
 3. Agent core
 4. Source collectors
-5. Approval web UI (current)
-6. Google Sheets
+5. Approval web UI
+6. Google Sheets (current)
 7. Enrichment
 8. X/Twitter MCP
 9. Polish

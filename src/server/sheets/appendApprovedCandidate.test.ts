@@ -44,6 +44,7 @@ function baseCandidate(
     redFlags: [],
     foundAt: "2026-07-01T12:00:00.000Z",
     lastVerified: "2026-07-02T12:00:00.000Z",
+    approvedAt: "2026-07-03T12:00:00.000Z",
     sheetRowId: null,
     sheetAppendedAt: null,
     description: "desc",
@@ -138,6 +139,7 @@ function toCard(candidate: CandidateDetail): CandidateCard {
     redFlags: candidate.redFlags,
     foundAt: candidate.foundAt,
     lastVerified: candidate.lastVerified,
+    approvedAt: candidate.approvedAt ?? null,
     sheetRowId: candidate.sheetRowId,
     sheetAppendedAt: candidate.sheetAppendedAt,
   };
@@ -433,7 +435,9 @@ describe("syncPendingApproved", () => {
 
     assert.equal(summary.checked, 1);
     assert.equal(summary.appended, 0);
-    assert.equal(summary.results.length, 0);
+    assert.equal(summary.dry_run, 1);
+    assert.equal(summary.results.length, 1);
+    assert.equal(summary.results[0]?.status, "dry_run");
     assert.equal(store.appendCalls, 0);
   });
 
@@ -456,5 +460,29 @@ describe("syncPendingApproved", () => {
 
     assert.equal(summary.checked, 0);
     assert.equal(summary.appended, 0);
+  });
+
+  it("continues after individual append failures in batch", async () => {
+    const store: FakeStore = {
+      candidate: baseCandidate(),
+      actions: [],
+      appendCalls: 0,
+      findResult: null,
+      metadataShouldFail: false,
+      appendShouldFail: false,
+      ensureHeadersShouldFail: false,
+    };
+    const repo = createFakeRepo(store);
+    repo.getCandidate = async () => {
+      throw new Error("simulated repository failure");
+    };
+    setCandidateRepositoryForTests(repo);
+
+    const summary = await syncPendingApproved({ dryRun: false, limit: 5 });
+
+    assert.equal(summary.checked, 1);
+    assert.equal(summary.failed, 1);
+    assert.equal(summary.appended, 0);
+    assert.equal(store.appendCalls, 0);
   });
 });

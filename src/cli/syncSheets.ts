@@ -72,6 +72,7 @@ async function main(): Promise<number> {
   console.log(`  failed:    ${summary.failed}`);
   console.log(`  mock:      ${summary.mock_synced}`);
   if (options.dryRun) {
+    console.log(`  planned:   ${summary.dry_run}`);
     console.log("  (dry-run — no Sheet writes, no Supabase updates)");
   }
 

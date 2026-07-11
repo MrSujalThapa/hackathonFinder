@@ -248,6 +248,7 @@ function toCard(record: MockRecord): CandidateCard {
     redFlags: record.redFlags,
     foundAt: record.foundAt,
     lastVerified: record.lastVerified,
+    approvedAt: record.approvedAt,
     sheetRowId: record.sheetRowId,
     sheetAppendedAt: record.sheetAppendedAt,
   };
@@ -300,6 +301,19 @@ export function createMockCandidateRepository(): CandidateRepository {
         total: records.length,
         nextCursor: undefined,
       };
+    },
+
+    async listPendingSheetSync(limit = 50): Promise<CandidateCard[]> {
+      const capped = Math.min(Math.max(limit, 1), 200);
+      const records = sortRecords(
+        [...getStore().values()].filter(
+          (item) =>
+            item.status === "APPROVED" &&
+            (!item.sheetRowId || !item.sheetAppendedAt),
+        ),
+        "found_at",
+      );
+      return records.slice(0, capped).map(toCard);
     },
 
     async getCandidate(id: string) {

@@ -41,6 +41,7 @@ function baseCard(overrides: Partial<CandidateCard> = {}): CandidateCard {
     redFlags: [],
     foundAt: "2026-07-01T12:00:00.000Z",
     lastVerified: "2026-07-01T12:00:00.000Z",
+    approvedAt: null,
     sheetRowId: null,
     sheetAppendedAt: null,
     ...overrides,
@@ -89,6 +90,7 @@ function createMockRepo(
         redFlags: item.redFlags,
         foundAt: item.foundAt,
         lastVerified: item.lastVerified,
+        approvedAt: item.approvedAt,
         sheetRowId: item.sheetRowId,
         sheetAppendedAt: item.sheetAppendedAt,
       }));
@@ -138,6 +140,7 @@ function createMockRepo(
         redFlags: updated.redFlags,
         foundAt: updated.foundAt,
         lastVerified: updated.lastVerified,
+        approvedAt: updated.approvedAt,
         sheetRowId: updated.sheetRowId,
         sheetAppendedAt: updated.sheetAppendedAt,
       };
@@ -177,6 +180,7 @@ function createMockRepo(
         redFlags: updated.redFlags,
         foundAt: updated.foundAt,
         lastVerified: updated.lastVerified,
+        approvedAt: updated.approvedAt,
         sheetRowId: updated.sheetRowId,
         sheetAppendedAt: updated.sheetAppendedAt,
       };
