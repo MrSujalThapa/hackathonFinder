@@ -98,7 +98,9 @@ export default function SettingsPage() {
             <li>
               X MCP — {hasXConfig(env) ? "configured" : "not configured"} (opt-in
               via{" "}
-              <code className="text-foreground/80">--sources=x</code>)
+              <code className="text-foreground/80">--sources=x</code>; diagnose
+              with{" "}
+              <code className="text-foreground/80">npm run check:x</code>)
             </li>
           </ul>
         </section>

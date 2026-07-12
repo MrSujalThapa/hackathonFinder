@@ -76,6 +76,23 @@ describe("runDiscovery", () => {
     assert.equal(results.length, 2);
     assert.ok(results.some((result) => result.source === "mock" && result.leads.length > 0));
   });
+
+  it("skips unconfigured x without failing other sources", async () => {
+    const summary = await runDiscovery(
+      {
+        ...getDefaultDiscoveryPreferences("find hackathons from x and mock"),
+        sources: ["x", "mock"],
+      },
+      true,
+    );
+
+    assert.ok(summary.accepted >= 1);
+    assert.ok(
+      summary.warnings.some((warning) => /\[x\].*not configured/i.test(warning)),
+    );
+    assert.equal(summary.created, 0);
+    assert.equal(summary.dryRun, true);
+  });
 });
 
 describe("runCollectors failure isolation", () => {

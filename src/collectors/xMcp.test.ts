@@ -334,6 +334,13 @@ describe("createXMcpCollector", () => {
     assert.equal(result.errors.length, 0);
     assert.ok(result.leads.length >= 1);
     assert.ok(result.leads.length <= 2); // fixture has 2 promising unique posts
+    assert.ok(result.metrics);
+    assert.equal(result.metrics?.queriesPlanned, 2);
+    assert.ok((result.metrics?.queriesExecuted ?? 0) >= 1);
+    assert.ok((result.metrics?.postsReturned ?? 0) >= 1);
+    assert.ok((result.metrics?.postsKept ?? 0) >= 1);
+    assert.ok((result.metrics?.postsWithLinks ?? 0) >= 1);
+    assert.ok((result.metrics?.postsRejectedNoise ?? 0) >= 1);
 
     const announcement = result.leads.find((l) =>
       /Applications open/i.test(l.text ?? ""),

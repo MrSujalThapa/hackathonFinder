@@ -204,6 +204,22 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   console.log(`- missing apply links: ${summary.quality.missingApplyLinks}`);
   console.log("");
 
+  if (summary.xDiscovery) {
+    const x = summary.xDiscovery;
+    console.log("X discovery:");
+    console.log(`- queries planned: ${x.queriesPlanned}`);
+    console.log(`- queries executed: ${x.queriesExecuted}`);
+    console.log(`- posts returned: ${x.postsReturned}`);
+    console.log(`- posts deduped: ${x.postsDeduped}`);
+    console.log(`- posts with links: ${x.postsWithLinks}`);
+    console.log(`- posts kept: ${x.postsKept}`);
+    console.log(`- rejected noise: ${x.postsRejectedNoise}`);
+    console.log(`- pages enriched: ${x.pagesEnriched}`);
+    console.log(`- rate/quota warnings: ${x.rateQuotaWarnings}`);
+    console.log(`- X duration: ${x.durationMs}ms`);
+    console.log("");
+  }
+
   if (summary.sourceStats.length > 0) {
     console.log("Source stats:");
     for (const stats of summary.sourceStats) {

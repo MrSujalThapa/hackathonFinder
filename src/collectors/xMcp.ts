@@ -538,12 +538,17 @@ export function createXMcpCollector(deps: XMcpCollectorDeps = {}): Collector {
 
         const seenIds = new Set<string>();
         const leads: RawLead[] = [];
+        let queriesExecuted = 0;
+        let postsReturned = 0;
+        let postsRejectedNoise = 0;
+        let rateQuotaWarnings = 0;
 
         for (const query of queries) {
           if (leads.length >= totalLimit) break;
 
           const args = buildXSearchToolArgs(searchTool, query, maxPosts);
           try {
+            queriesExecuted += 1;
             const callResult = await client.callTool(searchTool.name, args);
             if (callResult.isError) {
               result.warnings.push(
@@ -553,17 +558,24 @@ export function createXMcpCollector(deps: XMcpCollectorDeps = {}): Collector {
             }
 
             const posts = parseXPostsFromCallResult(callResult);
+            postsReturned += posts.length;
             for (const post of posts) {
               if (seenIds.has(post.id)) continue;
               seenIds.add(post.id);
 
               const lead = xPostToLead(post, query);
-              if (!lead) continue;
+              if (!lead) {
+                postsRejectedNoise += 1;
+                continue;
+              }
               leads.push(lead);
               if (leads.length >= totalLimit) break;
             }
           } catch (error) {
             recordMcpFailure(result, error, `search "${query}"`);
+            if (error instanceof McpError && error.category === "rate_quota") {
+              rateQuotaWarnings += 1;
+            }
             // Auth failures: stop further queries
             if (error instanceof McpError && error.category === "auth") {
               break;
@@ -571,7 +583,28 @@ export function createXMcpCollector(deps: XMcpCollectorDeps = {}): Collector {
           }
         }
 
+        const postsWithLinks = leads.filter((lead) =>
+          lead.links.some((link) => {
+            try {
+              const host = new URL(link).hostname.replace(/^www\./, "");
+              return !SOCIAL_HOST.test(host);
+            } catch {
+              return false;
+            }
+          }),
+        ).length;
+
         result.leads = leads;
+        result.metrics = {
+          queriesPlanned: queries.length,
+          queriesExecuted,
+          postsReturned,
+          postsDeduped: seenIds.size,
+          postsWithLinks,
+          postsKept: leads.length,
+          postsRejectedNoise,
+          rateQuotaWarnings,
+        };
       } catch (error) {
         recordMcpFailure(result, error, "collect");
       } finally {
