@@ -25,6 +25,8 @@
     "skills:check": "tsx scripts/check-agent-skills.ts",
     "test": "tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",
     "agent": "tsx src/cli/agent.ts",
+    "worker:discovery": "tsx worker/index.ts",
+    "worker:discovery:once": "tsx worker/index.ts --once",
     "source:connect": "tsx scripts/source-browser.ts connect",
     "source:status": "tsx scripts/source-browser.ts status",
     "source:disconnect": "tsx scripts/source-browser.ts disconnect",
