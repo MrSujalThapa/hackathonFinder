@@ -21,6 +21,8 @@
     "candidates:audit-sources": "tsx scripts/audit-candidate-sources.ts",
     "hash:password": "tsx scripts/hash-password.ts",
     "verify:password": "tsx scripts/verify-password.ts",
+    "skills:sync": "tsx scripts/sync-agent-skills.ts",
+    "skills:check": "tsx scripts/check-agent-skills.ts",
     "test": "tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",
     "agent": "tsx src/cli/agent.ts"
   },

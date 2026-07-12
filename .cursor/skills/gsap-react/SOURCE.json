@@ -1,0 +1,8 @@
+{
+  "name": "gsap-react",
+  "sourceRepository": "https://github.com/greensock/gsap-skills",
+  "sourcePath": "skills/gsap-react",
+  "sourceCommit": "aed9cfd3277740755f6bfc1155c7aa645403b760",
+  "license": "MIT",
+  "vendoredAt": "2026-07-12T17:55:00.000Z"
+}
