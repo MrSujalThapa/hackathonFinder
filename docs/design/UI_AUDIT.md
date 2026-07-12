@@ -255,3 +255,115 @@ Hard caps in code: `--content-queue: 27.5rem`, `SwipeDeck`/`CandidateProgress` `
 
 ### Acceptance implication
 The Phase 10.2 redesign fails acceptance criteria for fluid layout, instructional clutter, swipe-first queue, state-aware actions, description quality, Ask decision reasoning, and blueprint visual direction. Corrective Steps 2â€“17 address these without weakening auth, rate limits, Sheets sync, evidence grounding, or persistence.
+
+---
+
+## Second corrective review
+
+Branch: `step-10-2-design-overhaul`  
+Date: 2026-07-12  
+Artifacts: `artifacts/design/corrective-before/` (50 PNGs + `metrics.json`)  
+Viewports: 390×844, 430×932, 768×1024, 1024×900, 1440×1000, 1728×900, 1920×1080  
+Surfaces: queue, approved, rejected, saved, settings, candidate-detail, ask-section, ask-response@1440  
+Method: Node Playwright (server restarted with mock auth after stale `.next` 404s). No production component edits.
+
+`unusedPct = (mainWidth - cardWidth) / clientWidth * 100`
+
+### Layout measurements (queue)
+
+| Viewport | clientWidth | cardWidth | mainWidth | sidebarWidth | unusedPct | overflowX |
+|----------|------------:|----------:|----------:|-------------:|----------:|:---------:|
+| 390×844 | 390 | 347 | 390 | 0 | 11.0 | no |
+| 430×932 | 430 | 386 | 430 | 0 | 10.2 | no |
+| 768×1024 | 768 | 621 | 768 | 0 | 19.1 | no |
+| 1024×900 | 1024 | 621 | 817 | 207 | 19.1 | no |
+| 1440×1000 | 1440 | 621 | 1233 | 207 | 42.5 | no |
+| 1728×900 | 1728 | 621 | 1521 | 207 | 52.1 | no |
+| 1920×1080 | 1920 | 621 | 1713 | 207 | 56.9 | no |
+
+Notes: `--content-queue: 40rem` (~640px) caps the review card from tablet up. Desktop sidebar measures ~207px. No horizontal overflow on any captured queue viewport.
+
+### Key desktop numbers
+
+| Metric | 1440×1000 | 1920×1080 |
+|--------|----------:|----------:|
+| clientWidth | 1440 | 1920 |
+| cardWidth | 621 | 621 |
+| mainWidth | 1233 | 1713 |
+| sidebarWidth | 207 | 207 |
+| unusedPct | 42.5% | 56.9% |
+| overflowX | false | false |
+
+### Issue matrix
+
+#### 1. Content / card width — review card hard-capped while main expands
+- **Page/state:** Queue @ =768 (worst @ 1440 / 1920)
+- **Expected:** Fluid primary review column (~720–900px+) that grows with the workspace.
+- **Actual:** Card locked at **621px** (`--content-queue: 40rem`); main grows to 1233–1713px.
+- **Severity:** Critical
+- **Fix:** Raise/remove hard cap; size card as a fluid fraction of main (with sensible max), not a phone-width column on desktop.
+
+#### 2. Unused viewport % — empty blueprint canvas dominates desktop
+- **Page/state:** Queue @ 1440 / 1728 / 1920
+- **Expected:** Unused side canvas < ~20–25% of client for an ops review desk.
+- **Actual:** **42.5% @1440**, **52.1% @1728**, **56.9% @1920** of client width is main-minus-card emptiness.
+- **Severity:** Critical
+- **Fix:** Expand card + optional context rail; stop centering a mobile card in a wide drafting grid.
+
+#### 3. Nav width / chrome crowding
+- **Page/state:** Desktop shell sidebar; mobile bottom nav
+- **Expected:** Stable ~220–250px nav; logout/sheet controls fully visible; tablet gets a deliberate layout.
+- **Actual:** Sidebar **~207px**; Open Sheet / Logout / avatar crowd the footer (Logout can read clipped). Tablet **768** still uses bottom nav + 621px card (19.1% unused) — neither phone-tight nor desktop workspace.
+- **Severity:** High
+- **Fix:** Widen nav slightly; stack footer controls with safe padding; introduce tablet breakpoint (side nav or denser queue) instead of stretched-phone chrome.
+
+#### 4. Mobile overflow / composition
+- **Page/state:** Queue @ 390 / 430
+- **Expected:** Full-bleed readable card; no horizontal scroll; decision affordances clear.
+- **Actual:** **No overflowX**. Card ~347–386px (healthy). Large empty grid below card above bottom nav; `…` menu is the only visible decision chrome (improvement vs permanent button row).
+- **Severity:** Medium (empty vertical canvas / weak mobile density; overflow pass)
+- **Fix:** Tighten vertical rhythm; keep swipe + `…`; ensure 44px targets inside menu.
+
+#### 5. Tablet composition (768 / 1024)
+- **Page/state:** Queue @ 768×1024, 1024×900
+- **Expected:** Transitional workspace — wider card, optional side nav, less dead grid.
+- **Actual:** Card stuck at **621px**; 768 keeps bottom nav; 1024 adds 207px side nav but card does not grow (unusedPct still 19.1%).
+- **Severity:** High
+- **Fix:** Break `40rem` earlier; at =1024 grow card with main; avoid phone bottom nav once side nav appears.
+
+#### 6. Desktop composition (detail / settings)
+- **Page/state:** Candidate detail, settings @ 1440+
+- **Expected:** Document column + facts/actions rail filling the workspace intentionally.
+- **Actual:** Detail document + Facts/Actions rail present (good), but the whole block sits in a max-width island with large left/right gutters on the blueprint grid. Settings cards similarly narrow-centered. Header actions float far from the narrow review stack on queue.
+- **Severity:** High
+- **Fix:** Fluid shell max-width; align header/progress/card to one expanding column; let settings use a readable ~720–960px column without huge side voids.
+
+#### 7. Blueprint authenticity & typography
+- **Page/state:** Global
+- **Expected:** Cohesive blueprint token system (grid, ink, display type) distinct from generic dark SaaS.
+- **Actual:** Grid background + navy ink read blueprint-adjacent and better than prior black SaaS, but **body font is still `ui-sans-serif, system-ui, sans-serif`** (system stack). `--font-display` empty in measured tokens. Title serif on cards helps hierarchy but feels bolted on rather than tokenized.
+- **Severity:** Medium
+- **Fix:** Wire display/body font tokens; tighten blueprint line/ink tokens so type + grid feel designed, not default + overlay.
+
+#### 8. Ask response problems (visible UI)
+- **Page/state:** Candidate detail Ask @ 1440 (`ask-response__1440x1000.png`)
+- **Expected:** One clear decision answer; structured why/concerns/missing/next; no raw dumps.
+- **Actual:** Decision path **works** (structured Why / Concerns / Missing / Next step; placeholder `Ask about this event…`). **No raw snippet / URL dump leakage** observed. Issues: **duplicate stacked answers** for the same question (e.g. DECISION · MEDIUM and DECISION · HIGH both visible); next-step copy can feel clipped/abrupt in thread text; Ask sits inside nested cards rather than a quiet investigation strip.
+- **Severity:** High (duplication / presentation); leakage = pass
+- **Fix:** Dedupe thread (replace-in-place or collapse prior); sentence-complete next steps; reduce card nesting around Ask.
+
+### Console / requests
+- Capture session: no console errors recorded; no unexpected =400 API failures in the metrics log.
+- Dev server required `.next` clear + restart after login/API 404s from a corrupted Fast Refresh state (harness only).
+
+### Acceptance snapshot
+| Check | Result |
+|-------|--------|
+| Horizontal overflow (queue matrix) | Pass |
+| Raw Ask snippet leakage | Pass |
+| Ask decision structure visible | Pass (with duplicate-answer noise) |
+| Fluid desktop card width | Fail |
+| Unused viewport budget @1440/1920 | Fail |
+| Tablet transitional layout | Fail |
+| Blueprint type tokens | Fail / partial |
+| Nav footer crowding | Fail / partial |
