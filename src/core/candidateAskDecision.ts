@@ -14,14 +14,35 @@ export type DecisionRecommendationLevel =
   | "no"
   | "strong_no";
 
+export type DecisionReasonBasis =
+  | "verified"
+  | "inferred"
+  | "generic"
+  | "missing";
+
+export type DecisionReason = {
+  text: string;
+  basis: DecisionReasonBasis;
+};
+
 export type DecisionRecommendation = {
   recommendation: DecisionRecommendationLevel;
   headline: string;
-  reasons: string[];
+  /** Short advisory summary (1–2 sentences). */
+  summary: string;
+  reasons: DecisionReason[];
   concerns: string[];
   missingInformation: string[];
   nextStep: string;
   confidence: "high" | "medium" | "low";
+  citations: CandidateAnswerSource[];
+};
+
+/** Compact structured factual payload for Ask UI / persistence. */
+export type FactualAnswerPayload = {
+  answer: string;
+  certainty: FactCertainty;
+  supportingFacts: string[];
   citations: CandidateAnswerSource[];
 };
 
@@ -34,6 +55,13 @@ export const DECISION_LEVELS = [
 ] as const;
 
 export const CONFIDENCE_LEVELS = ["high", "medium", "low"] as const;
+
+export const REASON_BASIS_LEVELS = [
+  "verified",
+  "inferred",
+  "generic",
+  "missing",
+] as const;
 
 /**
  * Route factual vs decision/advisory without a fixed allowlist.
@@ -86,6 +114,32 @@ export function asCitations(
   return (parsed.length ? parsed : fallback).slice(0, 6);
 }
 
+export function reasonText(reason: DecisionReason | string): string {
+  if (typeof reason === "string") return reason.trim();
+  return reason.text.trim();
+}
+
+export function asDecisionReasons(value: unknown): DecisionReason[] {
+  if (!Array.isArray(value)) return [];
+  const out: DecisionReason[] = [];
+  for (const item of value) {
+    if (typeof item === "string" && item.trim()) {
+      out.push({ text: item.trim(), basis: "inferred" });
+    } else if (item && typeof item === "object") {
+      const row = item as { text?: unknown; basis?: unknown };
+      if (typeof row.text !== "string" || !row.text.trim()) continue;
+      const basis = REASON_BASIS_LEVELS.includes(
+        row.basis as DecisionReasonBasis,
+      )
+        ? (row.basis as DecisionReasonBasis)
+        : "inferred";
+      out.push({ text: row.text.trim(), basis });
+    }
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
 export function parseDecisionRecommendation(
   value: unknown,
   fallbackCitations: CandidateAnswerSource[],
@@ -103,13 +157,20 @@ export function parseDecisionRecommendation(
     ? (row.confidence as DecisionRecommendation["confidence"])
     : "low";
 
+  const headline =
+    typeof row.headline === "string" && row.headline.trim()
+      ? row.headline.trim()
+      : "Advisory recommendation";
+  const summary =
+    typeof row.summary === "string" && row.summary.trim()
+      ? row.summary.trim()
+      : headline;
+
   return {
     recommendation,
-    headline:
-      typeof row.headline === "string" && row.headline.trim()
-        ? row.headline.trim()
-        : "Advisory recommendation",
-    reasons: asStringArray(row.reasons),
+    headline,
+    summary,
+    reasons: asDecisionReasons(row.reasons),
     concerns: asStringArray(row.concerns),
     missingInformation: asStringArray(row.missingInformation),
     nextStep:
@@ -121,11 +182,37 @@ export function parseDecisionRecommendation(
   };
 }
 
+export function parseFactualAnswerPayload(
+  value: unknown,
+  fallbackCitations: CandidateAnswerSource[] = [],
+): FactualAnswerPayload | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.answer !== "string" || !row.answer.trim()) return null;
+  const certainty: FactCertainty =
+    row.certainty === "confirmed" ||
+    row.certainty === "inferred" ||
+    row.certainty === "conflicting" ||
+    row.certainty === "unknown"
+      ? row.certainty
+      : "unknown";
+  return {
+    answer: row.answer.trim(),
+    certainty,
+    supportingFacts: asStringArray(row.supportingFacts),
+    citations: asCitations(row.citations, fallbackCitations),
+  };
+}
+
 export function formatDecisionAnswer(decision: DecisionRecommendation): string {
   const label = decision.recommendation.replace(/_/g, " ");
+  const reasonLines = decision.reasons.map(reasonText).filter(Boolean);
   const parts = [
     `${decision.headline} (Recommendation: ${label}.)`,
-    decision.reasons.length ? `Why: ${decision.reasons.join("; ")}` : null,
+    decision.summary && decision.summary !== decision.headline
+      ? decision.summary
+      : null,
+    reasonLines.length ? `Why: ${reasonLines.join("; ")}` : null,
     decision.concerns.length ? `Concerns: ${decision.concerns.join("; ")}` : null,
     decision.missingInformation.length
       ? `Missing: ${decision.missingInformation.join("; ")}`
@@ -139,6 +226,7 @@ export function formatDecisionAnswer(decision: DecisionRecommendation): string {
 export function readPersistedAskPayload(sources: unknown): {
   kind: QuestionKind | null;
   decision: DecisionRecommendation | null;
+  factual: FactualAnswerPayload | null;
   links: CandidateAnswerSource[];
   liveVerification: boolean;
   certainty: FactCertainty | null;
@@ -146,6 +234,7 @@ export function readPersistedAskPayload(sources: unknown): {
   const empty = {
     kind: null as QuestionKind | null,
     decision: null as DecisionRecommendation | null,
+    factual: null as FactualAnswerPayload | null,
     links: [] as CandidateAnswerSource[],
     liveVerification: false,
     certainty: null as FactCertainty | null,
@@ -163,21 +252,25 @@ export function readPersistedAskPayload(sources: unknown): {
     links?: unknown;
     kind?: unknown;
     decision?: unknown;
+    factual?: unknown;
     liveVerification?: unknown;
     certainty?: unknown;
   };
 
   const kind =
     row.kind === "factual" || row.kind === "decision" ? row.kind : null;
+  const links = asCitations(row.links, []);
   const decision =
     row.decision && typeof row.decision === "object"
-      ? parseDecisionRecommendation(row.decision, asCitations(row.links, []))
+      ? parseDecisionRecommendation(row.decision, links)
       : null;
+  const factual = parseFactualAnswerPayload(row.factual, links);
 
   return {
     kind,
     decision,
-    links: asCitations(row.links, []),
+    factual,
+    links,
     liveVerification: Boolean(row.liveVerification),
     certainty:
       row.certainty === "confirmed" ||
@@ -185,6 +278,6 @@ export function readPersistedAskPayload(sources: unknown): {
       row.certainty === "conflicting" ||
       row.certainty === "unknown"
         ? row.certainty
-        : null,
+        : factual?.certainty ?? null,
   };
 }

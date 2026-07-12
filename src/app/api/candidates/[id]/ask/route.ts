@@ -72,6 +72,7 @@ export async function POST(
           liveVerification: result.liveVerification,
           kind: result.kind,
           decision: result.decision ?? null,
+          factual: result.factual ?? null,
         },
       });
 
@@ -85,9 +86,12 @@ export async function POST(
         liveVerification: result.liveVerification,
         kind: result.kind,
         decision: result.decision ?? null,
+        factual: result.factual ?? null,
         sources: result.sources,
         persistedAnswer: persisted ?? null,
         updatedCandidate: updatedCandidate ?? candidate,
+        // Safe debug meta only — no secrets / prompts / CoT.
+        meta: result.meta ?? null,
       });
     } catch {
       return fail(
