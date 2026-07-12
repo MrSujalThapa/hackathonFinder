@@ -7,6 +7,7 @@ import type {
   AgentRunSummary,
   DiscoveryPreferences,
   RejectedCandidate,
+  ScoringResult,
   SourceName,
   SourceRunStats,
 } from "@/core/discovery/types";
@@ -80,6 +81,15 @@ function assertMockWritesAllowed(
   if (env.USE_MOCK_CANDIDATES) return;
 
   throw new Error(MOCK_WRITE_REFUSED_MESSAGE);
+}
+
+function reviewOnlyScore(reasons: string[], redFlags: string[]): ScoringResult {
+  return {
+    score: 0,
+    whyMatch: ["Needs human review before scoring"],
+    redFlags: [...new Set([...reasons, ...redFlags])],
+    rejected: false,
+  };
 }
 
 export async function runDiscovery(
@@ -299,21 +309,9 @@ export async function runDiscovery(
             continue;
           }
 
-          const score = scoreHackathonEvent(event, preferences, { now });
-          if (score.rejected) {
-            rejected.push({
-              name: event.name,
-              source: event.source,
-              stage: "scoring",
-              reason: score.rejectionReason ?? "Rejected by eligibility/scoring",
-            });
-            bump(event.source, "rejected");
-            continue;
-          }
-
           accepted.push({
             event,
-            score,
+            score: reviewOnlyScore(classified.reasons, verification.redFlags),
             fingerprint: "",
             status: "NEEDS_REVIEW",
             classification: classified.classification,

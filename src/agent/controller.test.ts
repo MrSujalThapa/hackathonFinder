@@ -27,18 +27,24 @@ describe("runDiscovery", () => {
       true,
     );
 
-    assert.equal(summary.rawLeads, 7);
-    assert.equal(summary.extracted, 7);
-    assert.equal(summary.uniqueLeads, 6);
+    assert.equal(summary.rawLeads, 8);
+    assert.equal(summary.extracted, 8);
+    assert.equal(summary.uniqueLeads, 7);
     assert.equal(summary.crossSourceMerges, 1);
     assert.ok(summary.accepted >= 3);
     assert.ok(summary.rejected >= 3);
-    assert.equal(summary.wouldCreate, 3);
+    assert.equal(summary.wouldCreate, 4);
     assert.equal(summary.wouldUpdate, 0);
-    assert.equal(summary.stored, 3);
+    assert.equal(summary.stored, 4);
     assert.equal(summary.created, 0);
     assert.equal(summary.dryRun, true);
     assert.ok(summary.sourceStats.some((stats) => stats.source === "mock"));
+
+    const facebook = summary.acceptedCandidates.find((item) => item.name === "Facebook");
+    assert.ok(facebook);
+    assert.equal(facebook.classification, "UNCERTAIN");
+    assert.equal(facebook.status, "NEEDS_REVIEW");
+    assert.equal(facebook.score, 0);
   });
 
   it("respects Toronto and AI-focused command preferences", async () => {

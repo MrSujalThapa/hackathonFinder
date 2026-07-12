@@ -166,6 +166,21 @@ const MOCK_LEADS: RawLead[] = [
       applyUrl: "https://tokyo-robotics.example.com/fair/register",
     },
   },
+  {
+    id: "mock-facebook-generic",
+    source: "mock",
+    title: "Facebook",
+    url: "https://www.facebook.com/",
+    text: "Log into Facebook to start sharing and connecting with friends, family, and people you know.",
+    links: ["https://www.facebook.com/"],
+    postedAt: MOCK_POSTED_AT,
+    metadata: {
+      mode: "online",
+      officialUrl: "https://www.facebook.com/",
+      applyUrl: "https://www.facebook.com/",
+      sourceIds: { mock: "facebook-generic" },
+    },
+  },
 ];
 
 export const mockCollector: Collector = {
