@@ -70,6 +70,9 @@ export function formatSourceLabel(source: string): string {
       return "Luma";
     case "web":
       return "Web";
+    case "x":
+    case "twitter":
+      return "X";
     default: {
       const trimmed = source.trim();
       if (!trimmed) return source;

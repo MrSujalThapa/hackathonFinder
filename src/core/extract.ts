@@ -5,6 +5,11 @@ import type {
   RawLead,
 } from "@/core/discovery/types";
 import { parseDatesFromText } from "@/core/dates";
+import {
+  isXSocialUrl,
+  pickBestOfficialUrlForXLead,
+  resolveXSocialUrl,
+} from "@/core/xLeadVerify";
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -77,6 +82,30 @@ function detectLocationFromText(text: string): { city?: string; country?: string
   return {};
 }
 
+const SECRET_KEY = /bearer|authorization|api[_-]?key|access[_-]?token|secret|password|credential/i;
+
+/** Strip secrets from evidence raw dumps (bearer tokens, API keys, etc.). */
+export function sanitizeEvidenceRaw(
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (SECRET_KEY.test(key)) continue;
+    if (typeof value === "string") {
+      out[key] = /bearer\s+[a-z0-9._~+/=-]+/i.test(value)
+        ? "[redacted]"
+        : value;
+      continue;
+    }
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      out[key] = sanitizeEvidenceRaw(value as Record<string, unknown>);
+      continue;
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
 function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): HackathonEvidence[] {
   const evidence: HackathonEvidence[] = [];
   const metadata = lead.metadata ?? {};
@@ -87,7 +116,7 @@ function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): Hackathon
       url: event.officialUrl,
       title: lead.title,
       snippet: lead.text,
-      raw: { leadId: lead.id, source: lead.source },
+      raw: sanitizeEvidenceRaw({ leadId: lead.id, source: lead.source }),
     });
   }
 
@@ -96,7 +125,7 @@ function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): Hackathon
       type: "apply_page",
       url: event.applyUrl,
       title: `${lead.title ?? event.name} apply`,
-      raw: { leadId: lead.id, source: lead.source },
+      raw: sanitizeEvidenceRaw({ leadId: lead.id, source: lead.source }),
     });
   }
 
@@ -106,7 +135,7 @@ function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): Hackathon
       url: event.socialUrl,
       title: lead.title,
       snippet: lead.text,
-      raw: { leadId: lead.id, source: lead.source },
+      raw: sanitizeEvidenceRaw({ leadId: lead.id, source: lead.source }),
     });
   }
 
@@ -120,12 +149,12 @@ function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): Hackathon
       url: lead.url,
       title: lead.title,
       snippet: asString(metadata.snippet) ?? lead.text,
-      raw: {
+      raw: sanitizeEvidenceRaw({
         leadId: lead.id,
         metadata: lead.metadata ?? {},
         source: lead.source,
         query: metadata.query,
-      },
+      }),
     });
   }
 
@@ -133,7 +162,7 @@ function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): Hackathon
 }
 
 function isSocialUrl(url?: string): boolean {
-  return Boolean(url && /x\.com|twitter\.com/i.test(url));
+  return isXSocialUrl(url);
 }
 
 export function extractHackathonEvent(
@@ -154,17 +183,34 @@ export function extractHackathonEvent(
   const officialFromLinks = lead.links.find(
     (link) => /official|event|hack|devpost|dorahacks/i.test(link) && !isSocialUrl(link),
   );
-  const officialUrl =
-    officialFromMetadata ??
-    officialFromLinks ??
-    (lead.url && !isSocialUrl(lead.url) ? lead.url : undefined);
+
+  // X: never treat the post URL as official; prefer outbound / enriched page.
+  let officialUrl: string | undefined;
+  if (lead.source === "x") {
+    if (officialFromMetadata && !isSocialUrl(officialFromMetadata)) {
+      officialUrl = officialFromMetadata;
+    } else {
+      officialUrl = pickBestOfficialUrlForXLead(lead);
+    }
+  } else {
+    officialUrl =
+      (officialFromMetadata && !isSocialUrl(officialFromMetadata)
+        ? officialFromMetadata
+        : undefined) ??
+      officialFromLinks ??
+      (lead.url && !isSocialUrl(lead.url) ? lead.url : undefined);
+  }
+
   const applyUrl =
     asString(metadata.applyUrl) ??
-    lead.links.find((link) => /apply|register/i.test(link));
+    lead.links.find((link) => /apply|register/i.test(link) && !isSocialUrl(link));
+
   const socialUrl =
-    asString(metadata.socialUrl) ??
-    (isSocialUrl(lead.url) ? lead.url : undefined) ??
-    lead.links.find((link) => isSocialUrl(link));
+    lead.source === "x"
+      ? resolveXSocialUrl(lead)
+      : asString(metadata.socialUrl) ??
+        (isSocialUrl(lead.url) ? lead.url : undefined) ??
+        lead.links.find((link) => isSocialUrl(link));
 
   const metadataThemes = Array.isArray(metadata.themes)
     ? metadata.themes.filter((value): value is string => typeof value === "string")

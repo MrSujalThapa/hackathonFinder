@@ -123,6 +123,19 @@ export type DiscoveryQualityStats = {
   missingApplyLinks: number;
 };
 
+export type XDiscoveryStats = {
+  queriesPlanned: number;
+  queriesExecuted: number;
+  postsReturned: number;
+  postsDeduped: number;
+  postsWithLinks: number;
+  postsKept: number;
+  postsRejectedNoise: number;
+  pagesEnriched: number;
+  durationMs: number;
+  rateQuotaWarnings: number;
+};
+
 export type AgentRunSummary = {
   rawCommand: string;
   preferences: DiscoveryPreferences;
@@ -154,6 +167,8 @@ export type AgentRunSummary = {
   needsReview: number;
   durationMs: number;
   quality: DiscoveryQualityStats;
+  /** Present when the x source ran. */
+  xDiscovery?: XDiscoveryStats;
   acceptedCandidates: Array<{
     name: string;
     score: number;

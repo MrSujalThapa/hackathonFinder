@@ -15,6 +15,8 @@ export type CollectorResult = {
   errors: string[];
   warnings: string[];
   durationMs: number;
+  /** Optional collector-specific counters for run summaries. */
+  metrics?: Record<string, number>;
 };
 
 export type Collector = {

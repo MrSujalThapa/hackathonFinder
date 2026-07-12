@@ -6,8 +6,14 @@ import { lumaCollector } from "@/collectors/luma";
 import { mlhCollector } from "@/collectors/mlh";
 import { mockCollector } from "@/collectors/mock";
 import { webSearchCollector } from "@/collectors/webSearch";
+import { xMcpCollector } from "@/collectors/xMcp";
 import type { Collector, CollectorInput, CollectorResult } from "@/collectors/types";
 import { emptyCollectorResult } from "@/collectors/types";
+
+/** CLI aliases that resolve to a registered SourceName. */
+const SOURCE_ALIASES: Record<string, SourceName> = {
+  twitter: "x",
+};
 
 const COLLECTORS: Partial<Record<SourceName, Collector>> = {
   mock: mockCollector,
@@ -17,6 +23,7 @@ const COLLECTORS: Partial<Record<SourceName, Collector>> = {
   mlh: mlhCollector,
   luma: lumaCollector,
   web: webSearchCollector,
+  x: xMcpCollector,
 };
 
 export function getRegisteredSources(): SourceName[] {
@@ -49,7 +56,8 @@ export function parseSourcesFlag(value: string): SourceName[] {
   const parts = value
     .split(",")
     .map((part) => part.trim().toLowerCase())
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((part) => SOURCE_ALIASES[part] ?? part);
 
   const unknown = parts.filter((part) => !allowed.has(part as SourceName));
   if (unknown.length > 0) {

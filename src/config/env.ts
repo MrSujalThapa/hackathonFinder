@@ -48,8 +48,16 @@ export const serverEnvSchema = z.object({
   SEARCH_PROVIDER: searchProviderSchema,
   SEARCH_API_KEY: optionalString,
 
+  X_MCP_MODE: z
+    .enum(["app-only"])
+    .optional()
+    .or(emptyToUndefined),
   X_BEARER_TOKEN: optionalString,
   X_MCP_URL: optionalUrl,
+  X_MAX_QUERIES_PER_RUN: optionalString,
+  X_MAX_POSTS_PER_QUERY: optionalString,
+  X_TOTAL_POST_LIMIT: optionalString,
+  X_REQUEST_TIMEOUT_MS: optionalString,
 
   LLM_PROVIDER: llmProviderSchema,
   LLM_API_KEY: optionalString,
@@ -88,7 +96,7 @@ export function hasSearchConfig(env: ServerEnv = getServerEnv()): boolean {
 }
 
 export function hasXConfig(env: ServerEnv = getServerEnv()): boolean {
-  return Boolean(env.X_BEARER_TOKEN || env.X_MCP_URL);
+  return Boolean(env.X_BEARER_TOKEN?.trim());
 }
 
 export function hasLlmConfig(env: ServerEnv = getServerEnv()): boolean {

@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   createCandidateFingerprint,
+  createSourceIdIdentity,
   createSourceUrlIdentity,
   fingerprintsMatch,
   normalizeDatePart,
   normalizeUrl,
+  preferStrongerText,
+  preferUrl,
+  sourceAuthority,
 } from "./dedupe";
 
 describe("normalizeUrl", () => {
@@ -142,5 +146,45 @@ describe("createSourceUrlIdentity", () => {
     const right = createSourceUrlIdentity("devpost", "https://www.devpost.com/hackathons/foo");
     assert.equal(left, right);
     assert.equal(left, "source-url:devpost:https://devpost.com/hackathons/foo");
+  });
+});
+
+describe("source authority preferences", () => {
+  it("ranks official/MLH above X and web above X", () => {
+    assert.ok(sourceAuthority("mlh") > sourceAuthority("x"));
+    assert.ok(sourceAuthority("web") > sourceAuthority("x"));
+    assert.ok(sourceAuthority("luma") > sourceAuthority("hacklist"));
+  });
+
+  it("lets X fill missing text but not overwrite stronger ISO dates", () => {
+    assert.equal(
+      preferStrongerText(undefined, "2026-08-20", "mlh", "x"),
+      "2026-08-20",
+    );
+    assert.equal(
+      preferStrongerText("2026-08-01", "2026-09-30", "mlh", "x"),
+      "2026-08-01",
+    );
+    assert.equal(
+      preferStrongerText("2026-09-30", "2026-08-01", "x", "mlh"),
+      "2026-08-01",
+    );
+  });
+
+  it("preferUrl keeps MLH official over weaker X-linked URL", () => {
+    const kept = preferUrl(
+      "https://events.mlh.io/events/1",
+      "https://blog.example.com/post",
+      "mlh",
+      "x",
+    );
+    assert.equal(kept, "https://events.mlh.io/events/1");
+  });
+
+  it("createSourceIdIdentity sorts array x post ids stably", () => {
+    const left = createSourceIdIdentity({ x: ["222", "111"], mlh: "1" });
+    const right = createSourceIdIdentity({ x: ["111", "222"], mlh: "1" });
+    assert.equal(left, right);
+    assert.match(String(left), /x:111,222/);
   });
 });

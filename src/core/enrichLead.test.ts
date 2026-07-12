@@ -4,9 +4,11 @@ import {
   assertSafePublicHttpUrl,
   enrichPromisingLeads,
   parseEnrichedPage,
+  resolveEnrichmentTarget,
   UnsafeUrlError,
 } from "@/core/enrichLead";
 import type { RawLead } from "@/core/discovery/types";
+import { createMockSearchProvider } from "@/lib/search/providers/mock";
 
 describe("enrichLead SSRF protections", () => {
   it("allows public http(s) URLs", () => {
@@ -82,6 +84,7 @@ describe("enrichPromisingLeads", () => {
       maxPages: 10,
       concurrency: 2,
       timeoutMs: 2_000,
+      searchProvider: null,
     });
 
     assert.equal(result.enrichedCount, 1);
@@ -90,5 +93,121 @@ describe("enrichPromisingLeads", () => {
     assert.equal(result.leads[1]?.title, "Bad");
     assert.ok(result.warnings.some((w) => /bad\.example\.com/i.test(w)));
     assert.equal(result.leads[2]?.title, "Skip");
+  });
+
+  it("enriches X leads via outbound official URL and preserves socialUrl", async () => {
+    const postUrl = "https://x.com/hackorg/status/99";
+    const official = "https://hack.utoronto.edu/ai-2026";
+    const leads: RawLead[] = [
+      {
+        id: "x-99",
+        source: "x",
+        title: "UofT AI Hackathon 2026 — apply now",
+        url: postUrl,
+        text: `Applications open ${official}`,
+        links: [postUrl, official],
+        postedAt: "2026-07-01T00:00:00Z",
+        metadata: {
+          socialUrl: postUrl,
+          officialUrl: official,
+          evidenceType: "x_post",
+        },
+      },
+    ];
+
+    const fetched: string[] = [];
+    const result = await enrichPromisingLeads(leads, {
+      searchProvider: null,
+      fetchImpl: async (url) => {
+        fetched.push(url);
+        return `<html><head><title>UofT AI Hackathon 2026</title>
+          <meta name="description" content="In-person Toronto. Deadline: 2026-08-01" /></head>
+          <body>
+            <div class="location">Toronto, Canada</div>
+            <a href="/apply">Apply</a>
+            <p>Deadline: 2026-08-01 registration closes</p>
+          </body></html>`;
+      },
+    });
+
+    assert.equal(result.enrichedCount, 1);
+    assert.deepEqual(fetched, [official]);
+    assert.equal(resolveEnrichmentTarget(leads[0]!), official);
+
+    const enriched = result.leads[0]!;
+    assert.equal(enriched.metadata?.officialUrl, official);
+    assert.equal(enriched.metadata?.socialUrl, postUrl);
+    assert.equal(enriched.metadata?.enrichedFrom, official);
+    assert.match(String(enriched.title), /UofT AI Hackathon/i);
+    assert.ok(!String(enriched.metadata?.officialUrl).includes("x.com"));
+  });
+
+  it("does not invent official pages for social-only X leads without search", async () => {
+    const postUrl = "https://x.com/hackleads/status/123";
+    const leads: RawLead[] = [
+      {
+        id: "x-123",
+        source: "x",
+        title: "Maybe a hackathon soon?",
+        url: postUrl,
+        text: "Heard there might be a cool hackathon. DM for details.",
+        links: [postUrl],
+        postedAt: "2026-07-01T00:00:00Z",
+        metadata: { socialUrl: postUrl },
+      },
+    ];
+
+    let fetches = 0;
+    const result = await enrichPromisingLeads(leads, {
+      searchProvider: null,
+      fetchImpl: async () => {
+        fetches += 1;
+        return "<html><body>nope</body></html>";
+      },
+    });
+
+    assert.equal(fetches, 0);
+    assert.equal(result.enrichedCount, 0);
+    assert.equal(result.leads[0]?.metadata?.socialUrl, postUrl);
+    assert.equal(result.leads[0]?.metadata?.officialUrl, undefined);
+  });
+
+  it("optionally soft-searches linkless X leads when provider is available", async () => {
+    const postUrl = "https://x.com/org/status/7";
+    const foundOfficial = "https://agents.example.com/hack-2026";
+    const leads: RawLead[] = [
+      {
+        id: "x-7",
+        source: "x",
+        title: "Agents Hack 2026 applications open",
+        url: postUrl,
+        text: "Applications open for Agents Hack 2026",
+        links: [postUrl],
+        postedAt: "2026-07-01T00:00:00Z",
+        metadata: { socialUrl: postUrl },
+      },
+    ];
+
+    const result = await enrichPromisingLeads(leads, {
+      searchProvider: createMockSearchProvider({
+        results: [
+          {
+            title: "Agents Hack 2026",
+            url: foundOfficial,
+            snippet: "Apply now",
+            source: "mock",
+          },
+        ],
+      }),
+      fetchImpl: async (url) => {
+        assert.equal(url, foundOfficial);
+        return `<html><head><title>Agents Hack 2026</title></head>
+          <body><a href="/apply">Apply</a></body></html>`;
+      },
+    });
+
+    assert.equal(result.enrichedCount, 1);
+    assert.equal(result.leads[0]?.metadata?.officialUrl, foundOfficial);
+    assert.equal(result.leads[0]?.metadata?.socialUrl, postUrl);
   });
 });

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm run build",
     "check:supabase": "tsx scripts/check-supabase.ts",
+    "check:x": "tsx scripts/check-x-mcp.ts",
     "check:sheets": "tsx scripts/check-google-sheets.ts",
     "sync:sheets": "tsx src/cli/syncSheets.ts",
     "smoke:queue": "tsx scripts/smoke-queue.ts",

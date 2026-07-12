@@ -30,6 +30,7 @@ import {
   eventToUpsertInput,
 } from "@/agent/summary";
 import { formatSearchPlan, planSearchQueries } from "@/agent/planSearchQueries";
+import { formatXPlan, planXQueries } from "@/agent/planXQueries";
 
 const SUPABASE_ENV_MESSAGE =
   "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in .env.local, or run with --dry-run.";
@@ -44,6 +45,7 @@ export type RunDiscoveryOptions = {
   sourceTimeoutMs?: number;
   totalTimeoutMs?: number;
   showSearchPlan?: boolean;
+  showXPlan?: boolean;
   dryRunPlan?: boolean;
   verbose?: boolean;
   now?: Date;
@@ -98,6 +100,13 @@ export async function runDiscovery(
     const queries = planSearchQueries(preferences);
     console.log("Search plan:");
     console.log(formatSearchPlan(queries));
+    console.log("");
+  }
+
+  if (options.showXPlan || (options.dryRunPlan && preferences.sources.includes("x"))) {
+    const xQueries = planXQueries(preferences);
+    console.log("X plan:");
+    console.log(formatXPlan(xQueries));
     console.log("");
   }
 
@@ -181,6 +190,22 @@ export async function runDiscovery(
       stats.warnings.push(...result.warnings);
       summary.warnings.push(...result.warnings.map((warning) => `[${result.source}] ${warning}`));
       summary.errors.push(...result.errors.map((error) => `[${result.source}] ${error}`));
+
+      if (result.source === "x" && result.metrics) {
+        const m = result.metrics;
+        summary.xDiscovery = {
+          queriesPlanned: m.queriesPlanned ?? 0,
+          queriesExecuted: m.queriesExecuted ?? 0,
+          postsReturned: m.postsReturned ?? 0,
+          postsDeduped: m.postsDeduped ?? 0,
+          postsWithLinks: m.postsWithLinks ?? 0,
+          postsKept: m.postsKept ?? result.leads.length,
+          postsRejectedNoise: m.postsRejectedNoise ?? 0,
+          pagesEnriched: 0,
+          durationMs: result.durationMs,
+          rateQuotaWarnings: m.rateQuotaWarnings ?? 0,
+        };
+      }
     }
 
     const enrichment = await enrichPromisingLeads(leads, {
@@ -192,6 +217,13 @@ export async function runDiscovery(
     summary.enriched = enrichment.enrichedCount;
     summary.warnings.push(...enrichment.warnings.map((warning) => `[enrich] ${warning}`));
 
+    if (summary.xDiscovery) {
+      const xLeadsAfter = leads.filter((lead) => lead.source === "x");
+      summary.xDiscovery.pagesEnriched = xLeadsAfter.filter((lead) => {
+        const meta = lead.metadata ?? {};
+        return Boolean(meta.officialUrl || meta.enriched);
+      }).length;
+    }
     const extracted = extractHackathonEvents(leads, { now });
     const merged = mergeCrossSourceEvents(extracted);
     summary.extracted = extracted.length;

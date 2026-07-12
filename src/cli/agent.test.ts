@@ -60,4 +60,18 @@ describe("parseAgentArgs", () => {
       /Unknown source\(s\): not-a-source/,
     );
   });
+
+  it("parses show-x-plan flag", () => {
+    const options = parseAgentArgs([
+      "node",
+      "agent.ts",
+      "find hackathons on x",
+      "--",
+      "--sources=x",
+      "--show-x-plan",
+      "--dry-run",
+    ]);
+    assert.equal(options.showXPlan, true);
+    assert.deepEqual(options.sources, ["x"]);
+  });
 });
