@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { planDiscoveryWithLlm } from "@/agent/llm/planWithLlm";
 import type { DiscoveryPreferences } from "@/core/discovery/types";
-import type { LlmGenerateRequest, LlmGenerateResult, LlmProvider } from "@/lib/llm/types";
+import type { LlmGenerateResult, LlmProvider } from "@/lib/llm/types";
 
 function preferences(): DiscoveryPreferences {
   return {
@@ -22,7 +22,7 @@ describe("planDiscoveryWithLlm", () => {
     let calls = 0;
     const provider: LlmProvider = {
       name: "mock",
-      async generate(_input: LlmGenerateRequest): Promise<LlmGenerateResult> {
+      async generate(): Promise<LlmGenerateResult> {
         calls += 1;
         return {
           provider: "mock",
