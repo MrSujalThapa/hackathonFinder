@@ -4,10 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { CandidateDetail } from "@/core/candidates/types";
 import {
-  readPersistedAskPayload,
-  type DecisionRecommendation,
-} from "@/core/candidateAskDecision";
-import {
   CandidatesApiError,
   askCandidate,
   decideCandidate,
@@ -37,6 +33,7 @@ import {
   getDetailDescription,
   getQueueSummary,
 } from "@/lib/candidates/displayContent";
+import { AskComposer } from "@/components/candidates/ask";
 import { CandidateEvidenceLinks } from "@/components/candidates/CandidateEvidenceLinks";
 import { CandidateEvidencePanel } from "@/components/candidates/CandidateEvidencePanel";
 import { CandidateActionHistory } from "@/components/candidates/CandidateActionHistory";
@@ -69,98 +66,6 @@ function actionButtonClass(action: CandidateActionDef, fullWidth = false): strin
   ]
     .filter(Boolean)
     .join(" ");
-}
-
-function recommendationLabel(level: DecisionRecommendation["recommendation"]): string {
-  return level.replace(/_/g, " ");
-}
-
-function AskAnswerCard({
-  answer,
-}: {
-  answer: CandidateDetail["answers"][number];
-}) {
-  const payload = readPersistedAskPayload(answer.sources);
-  const decision = payload.decision;
-  const links = payload.links;
-
-  return (
-    <li className="rounded-[var(--radius-lg)] border border-border-subtle bg-inset/80 px-3 py-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-medium text-foreground">{answer.question}</p>
-        <span className="text-[11px] uppercase tracking-wider text-muted">
-          {payload.kind === "decision" ? "decision · " : ""}
-          {answer.confidence ?? "low"}
-          {payload.liveVerification ? " · live check" : ""}
-        </span>
-      </div>
-
-      {decision ? (
-        <div className="mt-2 space-y-2 text-sm text-foreground/85">
-          <p className="font-medium text-foreground">
-            <span className="mr-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
-              {recommendationLabel(decision.recommendation)}
-            </span>
-            {decision.headline}
-          </p>
-          {decision.reasons.length > 0 ? (
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted">Why</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                {decision.reasons.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {decision.concerns.length > 0 ? (
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted">Concerns</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                {decision.concerns.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {decision.missingInformation.length > 0 ? (
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted">Missing</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                {decision.missingInformation.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          <p>
-            <span className="text-[11px] uppercase tracking-wider text-muted">
-              Next step{" "}
-            </span>
-            {decision.nextStep}
-          </p>
-        </div>
-      ) : (
-        <p className="mt-1 text-sm text-foreground/80">{answer.answer}</p>
-      )}
-
-      {links.length > 0 ? (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {links.map((source) => (
-            <a
-              key={`${answer.id}-${source.url}`}
-              href={source.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-sky-300 hover:underline"
-            >
-              {source.label || "Source"}
-            </a>
-          ))}
-        </div>
-      ) : null}
-    </li>
-  );
 }
 
 export function CandidateDetailView({ id }: { id: string }) {
@@ -508,47 +413,14 @@ export function CandidateDetailView({ id }: { id: string }) {
 
         <CandidateEvidencePanel evidence={candidate.evidence} />
 
-        <section className="hf-panel px-4 py-3">
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitQuestion(question);
-            }}
-          >
-            <textarea
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void submitQuestion(question);
-                }
-              }}
-              disabled={askLoading}
-              rows={3}
-              placeholder="Ask about this event…"
-              className="hf-input min-h-[4.5rem] w-full resize-y"
-              aria-label="Ask a question about this candidate"
-            />
-            {askLoading ? (
-              <p className="mt-2 text-xs text-muted" role="status">
-                Thinking…
-              </p>
-            ) : null}
-          </form>
-          {askError ? (
-            <p className="mt-2 text-xs text-amber-100/90" role="alert">
-              {askError}
-            </p>
-          ) : null}
-          {candidate.answers.length > 0 ? (
-            <ul className="mt-4 space-y-3">
-              {candidate.answers.map((answer) => (
-                <AskAnswerCard key={answer.id} answer={answer} />
-              ))}
-            </ul>
-          ) : null}
-        </section>
+        <AskComposer
+          question={question}
+          onQuestionChange={setQuestion}
+          onSubmit={(value) => void submitQuestion(value)}
+          loading={askLoading}
+          error={askError}
+          answers={candidate.answers}
+        />
 
         <CandidateActionHistory actions={candidate.actions} />
 
