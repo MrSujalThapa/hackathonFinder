@@ -110,3 +110,148 @@ Official Figma MCP: **not found**. Local design lab used instead.
 
 - Fixed mock UUID detail sometimes returned “Candidate not found” after store churn; queue list screenshots remain authoritative for review chrome.
 - `loading__390x844.png` captured; error/empty captured in follow-up script after route-handler fix.
+
+---
+
+## Failed redesign review
+
+Branch: `step-10-2-design-overhaul` (post Phase 10.2 implementation, pre-corrective pass)  
+Date: 2026-07-12  
+Artifacts: `artifacts/design/failed-redesign-audit/`  
+Viewports inspected: 390×844, 768×1024, 1440×1000, 1728×900  
+Method: webapp-testing skill path (`with_server.py --help` — Python unavailable on host); Node Playwright capture scripts; code audit of production components. No production component edits in this step.
+
+Skills consulted for this review (opened): Impeccable, Clean, Editorial, GSAP core/react/timeline/performance, webapp-testing.
+
+### Layout measurements (queue)
+
+| Viewport | Observed behavior |
+|----------|-------------------|
+| 390×844 | Single column; card ~full content width; bottom nav + Reject/Save/Approve + “More details” compete for thumb space |
+| 768×1024 | Card still capped by `--content-queue: 27.5rem` (~440px); unused side canvas grows |
+| 1440×1000 | Narrow centered review column inside `max-w-5xl` shell; large empty grid background left/right of ~440px card |
+| 1728×900 | Same narrow card; unused canvas dominates; sidebar 14rem; primary workspace does not expand |
+
+Hard caps in code: `--content-queue: 27.5rem`, `SwipeDeck`/`CandidateProgress` `max-w-[420px]`, shell `max-w-5xl`.
+
+### Issue matrix
+
+#### 1. Desktop wastes canvas; review trapped in narrow column
+- **Page/state:** Queue @ 1440 / 1728
+- **Current behavior:** Candidate card forced to ~420–440px while main canvas is 1000px+; empty drafting-grid background fills the rest.
+- **User impact:** Slow scanning; product feels like a mobile mockup on a desktop monitor.
+- **Severity:** Critical
+- **Applicable skill guidance:** Editorial (structured grids, intentional width); Clean (hierarchy without empty decoration); Impeccable (consistency of workspace)
+- **Intended correction:** Fluid workspace — nav ~220–250px, primary review ~720–900px, optional context rail ~260–320px; expand with viewport; no shrink-from-mobile-only layout.
+
+#### 2. Queue card visually weak / too small
+- **Page/state:** Queue at rest (all viewports; worst on desktop)
+- **Current behavior:** Compact card, modest type, score badge competes; decision chrome dominates lower half.
+- **User impact:** Candidate is not the hero of the review moment.
+- **Severity:** High
+- **Applicable skill guidance:** Editorial (title hierarchy); Clean (reduce competing chrome); Impeccable (interaction states without noise)
+- **Intended correction:** Larger primary content area; stronger title/summary hierarchy; remove permanent decision button row.
+
+#### 3. Permanent instructional clutter
+- **Page/state:** Queue
+- **Current behavior:** Simultaneously shows: “One candidate at a time…”, desktop “Keyboard: Left reject…”, progress “Swipe or use buttons”, footer “← reject · → approve · S save · Enter details”, and button titles with shortcut hints.
+- **User impact:** Cognitive load; instructions crowd the decision surface.
+- **Severity:** High
+- **Applicable skill guidance:** Clean (remove clutter); Impeccable (clear but not redundant writing)
+- **Intended correction:** Keep shortcuts functional; move help to `?` / tooltip / settings disclosure only.
+
+#### 4. Descriptions raw, repetitive, or mid-truncated
+- **Page/state:** Queue summary; detail description
+- **Current behavior:** `summarize()` only swaps pipes and hard-slices at 220 chars (`CandidateCard.tsx`); no boilerplate strip, sentence-aware clamp, or grounded-summary preference.
+- **User impact:** Unreadable scrapings; truncated mid-word; weak trust.
+- **Severity:** Critical
+- **Applicable skill guidance:** Editorial (readable prose); Clean (signal over scrapings)
+- **Intended correction:** Display-content normalization layer (no raw evidence mutation); sentence-aware queue summary (2–4 sentences); readable detail paragraphs.
+
+#### 5. Visible Approve / Reject / Save button row on queue
+- **Page/state:** Queue card
+- **Current behavior:** Full `CandidateActions` decision bar always rendered.
+- **User impact:** Feels like a form, not a review gesture; fights mobile thumb space.
+- **Severity:** High
+- **Applicable skill guidance:** Clean restraint; GSAP (gesture motion with reduced-motion); a11y (non-swipe routes required)
+- **Intended correction:** Swipe-first + keyboard; subtle accessible menu/SR controls; no large visible decision row.
+
+#### 6. Detail actions not state-aware
+- **Page/state:** Candidate detail (APPROVED / REJECTED / SAVED_FOR_LATER)
+- **Current behavior:** Mobile bar + desktop Actions rail always show Approve, Save, Reject; only Restore is gated (`status !== "NEW"`). No Unsave label.
+- **User impact:** No-op / confusing actions (Approve on approved, Save on saved, Reject on rejected).
+- **Severity:** Critical
+- **Applicable skill guidance:** Impeccable (explicit states); Clean (no ambiguous actions)
+- **Intended correction:** Central `getCandidateActions(candidate)` used everywhere; hide current-state no-ops; Unsave when saved.
+
+#### 7. Ask looks like a generic chatbot form
+- **Page/state:** Candidate detail Ask
+- **Current behavior:** Heading “Ask anything about this event”, helper “suggestions are shortcuts…”, up to 6 chips, visible “Ask” button, empty-state tutorial copy.
+- **User impact:** Feels bolted-on; chips imply allowlist; free-text undervalued.
+- **Severity:** High
+- **Applicable skill guidance:** Clean (one composer); Editorial (investigation document field)
+- **Intended correction:** Single quiet composer + research thread; Enter submit / Shift+Enter newline; no chips/heading/explanatory copy.
+
+#### 8. Ask does not reason on decision questions
+- **Page/state:** Ask — e.g. “Should I do this hackathon?”
+- **Current behavior:** Deterministic regex templates + optional live-search snippet dump; no LLM path; decision questions fall through to low-confidence concatenated stored text.
+- **User impact:** No recommendation, trade-offs, or next step; pasted fragments.
+- **Severity:** Critical
+- **Applicable skill guidance:** Impeccable completeness of investigation; product PRD Ask intent
+- **Intended correction:** Classify factual vs decision; LLM-first structured decision response with reasons/concerns/missing/next step/citations; preserve rate limits and no status/Sheets mutation.
+
+#### 9. Generic dark dashboard aesthetic
+- **Page/state:** Global shell, queue, detail, history
+- **Current behavior:** Near-black SaaS neutrals (`#0a0a0c` / `#16161a`), soft cards, generic accents; faint slate grid; not a distinctive blueprint system.
+- **User impact:** Feels vibecoded; weak product identity for a private ops tool.
+- **Severity:** High
+- **Applicable skill guidance:** Clean (limited palette, restraint); Editorial (document feel); Impeccable (token consistency) — adapted toward blueprint tokens, not warm cream/orange brand defaults where they conflict with the blueprint brief
+- **Intended correction:** Compare Restrained vs Expressive Blueprint variants in design lab; implement selected token system across surfaces.
+
+#### 10. Large “More details” button competes with decision flow
+- **Page/state:** Queue card
+- **Current behavior:** Full-width bordered “More details” above decision bar.
+- **User impact:** Extra chrome; accidental opens; weak subtle affordance.
+- **Severity:** Medium
+- **Applicable skill guidance:** Clean hierarchy; Editorial investigation entry
+- **Intended correction:** Subtle handle/chevron; tap body / Enter; mobile bottom sheet; desktop expanded workspace.
+
+#### 11. Score as unexplained product signal
+- **Page/state:** Queue card + detail Facts rail
+- **Current behavior:** Large “86 / score” badge with color bands; no plain-language meaning.
+- **User impact:** Users may treat discovery score as quality/verdict.
+- **Severity:** Medium
+- **Applicable skill guidance:** Clean (quiet secondary data); Impeccable (unambiguous labels)
+- **Intended correction:** Rename to “Discovery relevance” or demote/remove from primary UI; keep quiet + accessible explanation.
+
+#### 12. Facts/actions rail tiny labels + stacked buttons
+- **Page/state:** Candidate detail desktop aside
+- **Current behavior:** All-caps micro labels; score block; full-width Approve/Save/Reject stack duplicates mobile actions.
+- **User impact:** Secondary rail visually competes with investigation document.
+- **Severity:** High
+- **Applicable skill guidance:** Editorial document + rail; Clean de-emphasis
+- **Intended correction:** Quiet facts; compact contextual actions via policy; evidence priority ordered.
+
+#### 13. Save model clarity (audit finding)
+- **Page/state:** Data model / Saved page
+- **Current behavior:** Save is status `SAVED_FOR_LATER` plus `saved_at` timestamp — not an independent `is_saved` flag. UI does not expose Unsave; Restore returns to `NEW`.
+- **User impact:** Spec/UI mismatch risk if treated as a boolean overlay.
+- **Severity:** Medium (correctness for Step 7)
+- **Applicable skill guidance:** Impeccable completeness; functional correctness first
+- **Intended correction:** Policy treats SAVED_FOR_LATER as saved state; Unsave maps to existing restore/API behavior without inventing a new flag.
+
+#### 14. No owner preference storage for personalization
+- **Page/state:** Settings / Ask
+- **Current behavior:** Settings is diagnostics only. `DiscoveryPreferences` exist on agent runs only — not loaded into Ask.
+- **User impact:** Decision answers cannot personalize; must state generic recommendation when prefs absent.
+- **Severity:** Medium (Step 11 — do not block)
+- **Applicable skill guidance:** Functional correctness; no migration without approval
+- **Intended correction:** Decision path works without prefs; propose lightweight settings schema later; no migration this phase.
+
+### Console / requests (capture session)
+- Login + queue/history routes returned 200 with mock candidates.
+- Occasional `net::ERR_ABORTED` during rapid viewport navigation coincided with Next Fast Refresh — not a product regression.
+- No unexpected auth/Sheets/discovery mutations during read-only audit.
+
+### Acceptance implication
+The Phase 10.2 redesign fails acceptance criteria for fluid layout, instructional clutter, swipe-first queue, state-aware actions, description quality, Ask decision reasoning, and blueprint visual direction. Corrective Steps 2–17 address these without weakening auth, rate limits, Sheets sync, evidence grounding, or persistence.
