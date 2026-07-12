@@ -48,6 +48,7 @@ export type RunDiscoveryOptions = {
   showXPlan?: boolean;
   dryRunPlan?: boolean;
   verbose?: boolean;
+  agentObservability?: AgentRunSummary["agent"];
   now?: Date;
 };
 
@@ -95,6 +96,7 @@ export async function runDiscovery(
   const effectiveSourceTimeout = Math.min(sourceTimeoutMs, totalTimeoutMs);
   const now = options.now ?? new Date();
   summary.verbose = options.verbose === true;
+  summary.agent = options.agentObservability;
 
   if (options.showSearchPlan || options.dryRunPlan) {
     const queries = planSearchQueries(preferences);

@@ -204,6 +204,7 @@ export type Database = {
           updated_candidates_count: number;
           rejected_count: number;
           errors: Json;
+          metadata: Json;
           started_at: string;
           finished_at: string | null;
         };
@@ -219,6 +220,7 @@ export type Database = {
           updated_candidates_count?: number;
           rejected_count?: number;
           errors?: Json;
+          metadata?: Json;
           started_at?: string;
           finished_at?: string | null;
         };

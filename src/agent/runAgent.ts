@@ -64,6 +64,9 @@ export async function runAgent(
   const agentMode = shouldUseAgentMode(dryRun || Boolean(cliOptions.dryRunPlan), cliOptions);
   const warnings: string[] = [];
   if (agentMode.warning) warnings.push(agentMode.warning);
+  const config = readLlmConfig();
+  let agentToolCalls = 0;
+  let agentStopReason = agentMode.useAgent ? "deterministic handoff complete" : "deterministic fallback";
 
   if (agentMode.useAgent || cliOptions.showAgentPlan || cliOptions.showAgentTrace) {
     const intent = parseIntent(rawCommand);
@@ -105,7 +108,21 @@ export async function runAgent(
     }
 
     if (loop.stopReason) warnings.push(`Agent planning stopped: ${loop.stopReason}`);
+    agentToolCalls = loop.runtime.toolCallCount;
+    agentStopReason = loop.stopReason ?? agentStopReason;
   }
+
+  const agentObservability = {
+    mode: agentMode.useAgent ? "AGENT" as const : "DETERMINISTIC" as const,
+    provider: config?.provider,
+    model: config?.model,
+    llmCalls: 0,
+    toolCalls: agentToolCalls,
+    sourcesSelected: preferences.sources,
+    stopReason: agentStopReason,
+    fallbackUsed: !agentMode.useAgent,
+    warnings,
+  };
 
   const summary = await runDiscovery(preferences, dryRun || Boolean(cliOptions.dryRunPlan), {
     allowMockWrites: cliOptions.allowMockWrites,
@@ -115,18 +132,9 @@ export async function runAgent(
     showXPlan: cliOptions.showXPlan,
     dryRunPlan: cliOptions.dryRunPlan,
     verbose: cliOptions.verbose,
+    agentObservability,
   });
-  summary.agent = {
-    mode: agentMode.useAgent ? "AGENT" : "DETERMINISTIC",
-    provider: readLlmConfig()?.provider,
-    model: readLlmConfig()?.model,
-    llmCalls: 0,
-    toolCalls: 0,
-    sourcesSelected: preferences.sources,
-    stopReason: agentMode.useAgent ? "deterministic handoff complete" : "deterministic fallback",
-    fallbackUsed: !agentMode.useAgent,
-    warnings,
-  };
+  summary.agent = agentObservability;
   summary.warnings.push(...warnings);
   printAgentSummary(summary);
 }

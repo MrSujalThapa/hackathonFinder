@@ -42,6 +42,21 @@ export async function completeAgentRun(
       updated_candidates_count: summary.duplicatesUpdated,
       rejected_count: summary.rejected,
       errors: summary.errors,
+      metadata: {
+        agent: summary.agent ?? null,
+        quality: summary.quality,
+        sourceStats: summary.sourceStats,
+        xDiscovery: summary.xDiscovery ?? null,
+        counts: {
+          created: summary.created,
+          updated: summary.updated,
+          wouldCreate: summary.wouldCreate,
+          wouldUpdate: summary.wouldUpdate,
+          evidenceWritten: summary.evidenceWritten,
+          wouldAttachEvidence: summary.wouldAttachEvidence,
+          storageFailures: summary.storageFailures,
+        },
+      } as Json,
       finished_at: new Date().toISOString(),
     })
     .eq("id", runId);

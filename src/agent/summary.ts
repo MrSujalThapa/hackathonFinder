@@ -170,7 +170,7 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   console.log("Discovery summary:");
   if (summary.agent) {
     console.log(`- mode: ${summary.agent.mode}`);
-    if (summary.agent.provider) {
+    if (summary.agent.mode === "AGENT" && summary.agent.provider) {
       console.log(`- provider/model: ${summary.agent.provider}/${summary.agent.model ?? "(default)"}`);
     }
     console.log(`- agent tool calls: ${summary.agent.toolCalls}`);
