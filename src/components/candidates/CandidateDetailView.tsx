@@ -241,22 +241,19 @@ export function CandidateDetailView({ id }: { id: string }) {
     });
 
   return (
-    <section className="mx-auto w-full max-w-2xl">
+    <section className="mx-auto w-full max-w-[var(--content-detail)]">
       <PageHeader
         eyebrow="Candidate"
         title={candidate.name}
         description={candidate.summary ?? "No summary available."}
         actions={
-          <Link
-            href="/queue"
-            className="rounded-xl border border-border px-3 py-2 text-sm text-muted transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
-          >
+          <Link href="/queue" className="hf-btn hf-btn-ghost">
             Back to queue
           </Link>
         }
       />
 
-      <div className="space-y-5 rounded-3xl border border-border bg-card/80 p-5 sm:p-6">
+      <div className="hf-card space-y-5 p-5 sm:space-y-6 sm:p-6">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
@@ -276,10 +273,8 @@ export function CandidateDetailView({ id }: { id: string }) {
         <CandidateTags themes={candidate.themes} />
 
         {candidate.status === "NEEDS_REVIEW" ? (
-          <section className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
-            <h2 className="text-xs font-semibold uppercase tracking-wider">
-              Needs review
-            </h2>
+          <section className="rounded-[var(--radius-xl)] border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+            <h2 className="hf-section-label text-amber-200/90">Needs review</h2>
             <p className="mt-1 text-amber-100/85">
               This candidate was not confident enough for normal scoring. Check
               official/apply links and evidence before approving.
@@ -288,11 +283,9 @@ export function CandidateDetailView({ id }: { id: string }) {
         ) : null}
 
         {candidate.status === "APPROVED" ? (
-          <section className="rounded-2xl border border-border/70 bg-black/20 px-4 py-3">
+          <section className="hf-panel px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-                Google Sheet
-              </h2>
+              <h2 className="hf-section-label">Google Sheet</h2>
               <SheetSyncBadge
                 sheetRowId={candidate.sheetRowId}
                 sheetAppendedAt={candidate.sheetAppendedAt}
@@ -330,7 +323,7 @@ export function CandidateDetailView({ id }: { id: string }) {
                 type="button"
                 disabled={busy}
                 onClick={() => void retrySync()}
-                className="mt-3 rounded-xl border border-amber-500/40 px-3 py-2 text-sm text-amber-100 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60 disabled:opacity-40"
+                className="hf-btn mt-3 border-amber-500/40 text-amber-100 hover:bg-amber-500/10"
               >
                 Retry Sync
               </button>
@@ -346,9 +339,7 @@ export function CandidateDetailView({ id }: { id: string }) {
 
         {candidate.whyMatch.length > 0 ? (
           <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-              Why it matches
-            </h2>
+            <h2 className="hf-section-label">Why it matches</h2>
             <ul className="mt-2 list-disc space-y-1 pl-4 text-sm">
               {candidate.whyMatch.map((item) => (
                 <li key={item}>{item}</li>
@@ -359,9 +350,7 @@ export function CandidateDetailView({ id }: { id: string }) {
 
         {candidate.redFlags.length > 0 ? (
           <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-amber-300/80">
-              Red flags
-            </h2>
+            <h2 className="hf-section-label text-amber-300/80">Red flags</h2>
             <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-amber-100/80">
               {candidate.redFlags.map((item) => (
                 <li key={item}>{item}</li>
@@ -374,10 +363,8 @@ export function CandidateDetailView({ id }: { id: string }) {
 
         <CandidateEvidencePanel evidence={candidate.evidence} />
 
-        <section className="rounded-2xl border border-border/70 bg-black/20 px-4 py-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-            Ask anything about this event
-          </h2>
+        <section className="hf-panel px-4 py-3">
+          <h2 className="hf-section-label">Ask anything about this event</h2>
           <p className="mt-1 text-xs text-muted">
             Type any question — suggestions are shortcuts, not limits.
           </p>
@@ -388,7 +375,7 @@ export function CandidateDetailView({ id }: { id: string }) {
                 type="button"
                 disabled={askLoading}
                 onClick={() => void submitQuestion(item)}
-                className="rounded-xl border border-border px-3 py-2 text-xs text-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:opacity-40"
+                className="hf-chip"
               >
                 {item}
               </button>
@@ -406,12 +393,13 @@ export function CandidateDetailView({ id }: { id: string }) {
               onChange={(event) => setQuestion(event.target.value)}
               disabled={askLoading}
               placeholder="e.g. Am I eligible as a Waterloo student?"
-              className="min-w-0 flex-1 rounded-xl border border-border bg-black/30 px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted focus:border-sky-400/70"
+              className="hf-input min-w-0 flex-1"
+              aria-label="Ask a question about this candidate"
             />
             <button
               type="submit"
               disabled={askLoading || !question.trim()}
-              className="rounded-xl border border-sky-500/40 px-3 py-2 text-sm text-sky-200 hover:bg-sky-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60 disabled:opacity-40"
+              className="hf-btn hf-btn-save shrink-0"
             >
               {askLoading ? "Asking" : "Ask"}
             </button>
@@ -427,7 +415,7 @@ export function CandidateDetailView({ id }: { id: string }) {
                 return (
                   <li
                     key={answer.id}
-                    className="rounded-xl border border-border/60 bg-black/20 px-3 py-2"
+                    className="rounded-[var(--radius-lg)] border border-border-subtle bg-inset/80 px-3 py-2"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-medium text-foreground">
@@ -491,12 +479,12 @@ export function CandidateDetailView({ id }: { id: string }) {
 
         <CandidateActionHistory actions={candidate.actions} />
 
-        <div className="flex flex-wrap gap-2 border-t border-border/70 pt-4">
+        <div className="flex flex-wrap gap-2 border-t border-border-subtle pt-4">
           <button
             type="button"
             disabled={busy}
             onClick={() => void apply("approve")}
-            className="rounded-xl border border-emerald-500/40 px-3 py-2 text-sm text-emerald-200 hover:bg-emerald-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 disabled:opacity-40"
+            className="hf-btn hf-btn-approve"
           >
             Approve
           </button>
@@ -504,7 +492,7 @@ export function CandidateDetailView({ id }: { id: string }) {
             type="button"
             disabled={busy}
             onClick={() => void apply("save")}
-            className="rounded-xl border border-sky-500/40 px-3 py-2 text-sm text-sky-200 hover:bg-sky-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60 disabled:opacity-40"
+            className="hf-btn hf-btn-save"
           >
             Save
           </button>
@@ -512,7 +500,7 @@ export function CandidateDetailView({ id }: { id: string }) {
             type="button"
             disabled={busy}
             onClick={() => void apply("reject")}
-            className="rounded-xl border border-slate-400/40 px-3 py-2 text-sm text-slate-200 hover:bg-slate-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300/60 disabled:opacity-40"
+            className="hf-btn hf-btn-reject"
           >
             Reject
           </button>
@@ -521,7 +509,7 @@ export function CandidateDetailView({ id }: { id: string }) {
               type="button"
               disabled={busy}
               onClick={() => void apply("restore")}
-              className="rounded-xl border border-border px-3 py-2 text-sm text-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:opacity-40"
+              className="hf-btn hf-btn-ghost"
             >
               Restore to queue
             </button>

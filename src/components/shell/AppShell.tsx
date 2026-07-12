@@ -13,7 +13,7 @@ export function AppShell({ children, queueCount }: AppShellProps) {
   const pathname = usePathname();
   if (pathname === "/login") {
     return (
-      <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-4 py-6 sm:px-6">
+      <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col px-4 py-8 sm:px-6">
         {children}
       </div>
     );

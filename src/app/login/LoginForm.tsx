@@ -47,7 +47,7 @@ export function LoginForm() {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           autoComplete="current-password"
-          className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-3 text-base outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
+          className="hf-input mt-2 text-base"
           required
         />
       </div>
@@ -55,15 +55,14 @@ export function LoginForm() {
         Access is limited to the owner. Your session is stored in a secure HTTP-only cookie.
       </p>
       {error ? (
-        <p role="alert" className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+        <p
+          role="alert"
+          className="rounded-[var(--radius-lg)] border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100"
+        >
           {error}
         </p>
       ) : null}
-      <button
-        type="submit"
-        disabled={busy}
-        className="min-h-11 w-full rounded-xl bg-sky-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
-      >
+      <button type="submit" disabled={busy} className="hf-btn hf-btn-primary w-full">
         {busy ? "Signing in..." : "Sign in"}
       </button>
     </form>

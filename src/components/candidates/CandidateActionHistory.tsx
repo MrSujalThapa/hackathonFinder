@@ -6,6 +6,7 @@ import {
   buildActionHistory,
   formatTechnicalRefreshSummary,
 } from "@/lib/candidates/actionHistory";
+import { useExpandMotion } from "@/lib/ui/useExpandMotion";
 
 const DEFAULT_LIMIT = 20;
 
@@ -16,6 +17,7 @@ export function CandidateActionHistory({
 }) {
   const [showTechnical, setShowTechnical] = useState(false);
   const [showAllMeaningful, setShowAllMeaningful] = useState(false);
+  const expandRef = useExpandMotion(showTechnical);
 
   const history = useMemo(
     () =>
@@ -29,9 +31,7 @@ export function CandidateActionHistory({
 
   return (
     <section className="space-y-3">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-        Activity
-      </h2>
+      <h2 className="hf-section-label">Activity</h2>
       <ul className="space-y-3">
         {history.visible.map((bucket) => {
           if (bucket.kind === "action") {
@@ -61,20 +61,24 @@ export function CandidateActionHistory({
           }
 
           return (
-            <li
-              key="technical-summary"
-              className="rounded-xl border border-border/70 bg-black/20 px-3 py-2 text-sm text-foreground/75"
-            >
+            <li key="technical-summary" className="hf-panel px-3 py-2.5 text-sm text-foreground/75">
               <p>{formatTechnicalRefreshSummary(bucket.count, bucket.lastAt)}</p>
               <button
                 type="button"
-                className="mt-2 text-xs text-sky-300 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+                className="hf-link-quiet mt-2"
                 aria-expanded={showTechnical}
                 onClick={() => setShowTechnical((value) => !value)}
               >
-                {showTechnical ? "Hide technical history" : "View technical history"}
+                {showTechnical
+                  ? "Hide technical history"
+                  : "View technical history"}
               </button>
-              {showTechnical ? (
+              <div
+                ref={expandRef}
+                className="hf-expand"
+                aria-hidden={!showTechnical}
+                inert={!showTechnical || undefined}
+              >
                 <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto border-t border-border/60 pt-2">
                   {bucket.actions.slice(0, 50).map((action) => (
                     <li key={action.id} className="text-xs text-muted">
@@ -93,7 +97,7 @@ export function CandidateActionHistory({
                     </li>
                   ) : null}
                 </ul>
-              ) : null}
+              </div>
             </li>
           );
         })}
@@ -101,7 +105,7 @@ export function CandidateActionHistory({
       {history.truncatedMeaningful > 0 && !showAllMeaningful ? (
         <button
           type="button"
-          className="text-xs text-sky-300 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+          className="hf-link-quiet"
           onClick={() => setShowAllMeaningful(true)}
         >
           Show {history.truncatedMeaningful} older events

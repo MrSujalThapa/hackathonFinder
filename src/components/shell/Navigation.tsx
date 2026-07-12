@@ -17,11 +17,11 @@ const NAV_ITEMS = [
 
 function navClass(active: boolean): string {
   return [
-    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60",
+    "flex items-center gap-3 rounded-[var(--radius-lg)] px-3 py-2.5 text-sm transition-colors duration-[var(--duration-fast)]",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--accent-focus)_70%,transparent)]",
     active
-      ? "bg-white/10 text-foreground"
-      : "text-muted hover:bg-white/5 hover:text-foreground",
+      ? "bg-white/[0.08] text-foreground"
+      : "text-muted hover:bg-white/[0.04] hover:text-foreground",
   ].join(" ");
 }
 
@@ -47,15 +47,15 @@ export function DesktopSidebar({ queueCount }: { queueCount?: number }) {
   const resolvedCount = useQueueCount(queueCount);
 
   return (
-    <aside className="hidden w-56 shrink-0 flex-col border-r border-border/70 bg-card/40 px-3 py-6 lg:flex">
+    <aside className="hidden w-[var(--sidebar-width)] shrink-0 flex-col border-r border-border-subtle bg-surface/80 px-3 py-6 lg:flex">
       <div className="mb-8 px-2">
         <Link
           href="/queue"
-          className="block text-lg font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+          className="block text-lg font-semibold tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--accent-focus)_70%,transparent)]"
         >
           Hackathon Radar
         </Link>
-        <p className="mt-1 text-xs text-muted">Review & approve</p>
+        <p className="mt-1 text-xs text-muted">Review workspace</p>
       </div>
 
       <nav className="flex flex-1 flex-col gap-1" aria-label="Primary">
@@ -95,7 +95,7 @@ export function MobileNavigation({ queueCount }: { queueCount?: number }) {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border-subtle bg-background/96 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm lg:hidden"
       aria-label="Primary mobile"
     >
       <ul className="mx-auto flex max-w-lg items-stretch justify-between px-1">
