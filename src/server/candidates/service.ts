@@ -56,7 +56,9 @@ export function isMockCandidatesEnabled(): boolean {
   if (!env.USE_MOCK_CANDIDATES) {
     return false;
   }
-  if (env.NODE_ENV === "production") {
+  const previewMockAllowed =
+    env.VERCEL_ENV === "preview" && env.ALLOW_MOCK_CANDIDATES_IN_PREVIEW;
+  if (env.NODE_ENV === "production" && !previewMockAllowed) {
     throw new Error(
       "USE_MOCK_CANDIDATES=true is not allowed in production. Configure a reachable Supabase project instead.",
     );

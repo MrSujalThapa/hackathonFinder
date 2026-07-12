@@ -13,6 +13,7 @@
     "check:x": "tsx scripts/check-x-mcp.ts",
     "check:llm": "tsx scripts/check-llm.ts",
     "check:sheets": "tsx scripts/check-google-sheets.ts",
+    "check:prod": "tsx scripts/check-production-config.ts",
     "sync:sheets": "tsx src/cli/syncSheets.ts",
     "smoke:queue": "tsx scripts/smoke-queue.ts",
     "candidates:audit-sources": "tsx scripts/audit-candidate-sources.ts",

@@ -23,15 +23,41 @@ npx playwright install chromium
 cp .env.example .env.local
 ```
 
-3. Configure Supabase **or** enable explicit mock mode for local UI work:
+3. Configure environment variables.
+
+Public browser-safe values:
 
 ```bash
-# Real database (default when reachable)
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...
+NEXT_PUBLIC_GOOGLE_SHEET_URL=...
+```
 
-# Explicit local UI fallback when Supabase is unreachable
+Server-only values:
+
+```bash
+SUPABASE_SERVICE_ROLE_KEY=...
+GOOGLE_SHEET_ID=...
+GOOGLE_SHEET_TAB=Hackathons
+GOOGLE_SERVICE_ACCOUNT_JSON=...
+SEARCH_PROVIDER=...
+SEARCH_API_KEY=...
+LLM_PROVIDER=openai
+LLM_API_KEY=...
+LLM_MODEL=gpt-4o-mini
+```
+
+Owner-only web access:
+
+```bash
+npm run hash:password -- "your-long-password"
+APP_OWNER_PASSWORD_HASH=...
+APP_SESSION_SECRET=... # 32+ random chars
+```
+
+Optional local UI fallback when Supabase is unreachable:
+
+```bash
 USE_MOCK_CANDIDATES=true
 ```
 
@@ -90,6 +116,12 @@ Verify read-only connectivity:
 npm run check:sheets
 ```
 
+Validate deployment-critical configuration without printing secrets:
+
+```bash
+npm run check:prod
+```
+
 Recover approved-but-unsynced candidates (idempotent):
 
 ```bash
@@ -145,7 +177,9 @@ X/Twitter MCP arrives in a later project step.
 | `npm run typecheck` | TypeScript check |
 | `npm run check` | Lint + typecheck + build |
 | `npm run check:supabase` | Read-only Supabase connectivity diagnostics |
+| `npm run check:llm` | Live/mock LLM connectivity diagnostics |
 | `npm run check:sheets` | Read-only Google Sheets diagnostics (no writes) |
+| `npm run check:prod` | Production environment validation (no live writes) |
 | `npm run candidates:audit-sources` | Read-only audit of candidate `source` values (lists `source='mock'`) |
 | `npm run sync:sheets` | Idempotent recovery for approved unsynced candidates |
 | `npm run test` | Unit / component tests |
