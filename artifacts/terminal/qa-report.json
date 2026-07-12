@@ -1,0 +1,809 @@
+{
+  "base": "http://localhost:3000",
+  "capturedAt": "2026-07-12T23:57:06.513Z",
+  "viewports": [
+    "390x844",
+    "430x932",
+    "768x1024",
+    "1024x900",
+    "1440x1000",
+    "1728x900"
+  ],
+  "checks": [
+    {
+      "id": "auth.login",
+      "pass": true,
+      "detail": "API login → /queue"
+    },
+    {
+      "id": "terminal.empty_state",
+      "pass": true,
+      "detail": "Ready banner + command input present"
+    },
+    {
+      "id": "terminal.command_input",
+      "pass": true,
+      "detail": "#discovery-terminal-input focusable"
+    },
+    {
+      "id": "terminal.help",
+      "pass": true,
+      "detail": "/help listed commands"
+    },
+    {
+      "id": "terminal.sources",
+      "pass": true,
+      "detail": "/sources rendered health lines"
+    },
+    {
+      "id": "terminal.status",
+      "pass": true,
+      "detail": "/status produced output"
+    },
+    {
+      "id": "terminal.history",
+      "pass": true,
+      "detail": "/history produced output"
+    },
+    {
+      "id": "terminal.shell_reject",
+      "pass": true,
+      "detail": "shell-like input rejected"
+    },
+    {
+      "id": "terminal.mobile_layout",
+      "pass": true,
+      "detail": "overflowX=false inputH=44 showRail=false inputBottom=1548/844"
+    },
+    {
+      "id": "terminal.no_secret_leak_dom",
+      "pass": true,
+      "detail": "no browser profile paths in body text"
+    },
+    {
+      "id": "terminal.discovery_dry_run",
+      "pass": true,
+      "detail": "POST /api/discovery/jobs dryRun → 201"
+    },
+    {
+      "id": "terminal.ui_find_attempt",
+      "pass": true,
+      "detail": "UI /find produced a response line"
+    },
+    {
+      "id": "sources.all_cards",
+      "pass": true,
+      "detail": "All six source cards present"
+    },
+    {
+      "id": "sources.hakku_connect",
+      "pass": true,
+      "detail": "Hakku connect instructions present"
+    },
+    {
+      "id": "sources.luma_public",
+      "pass": true,
+      "detail": "Luma public-mode note present"
+    },
+    {
+      "id": "sources.status_display",
+      "pass": true,
+      "detail": "Status labels visible"
+    },
+    {
+      "id": "sources.no_secret_leak",
+      "pass": true,
+      "detail": "no profile paths / cookies in settings DOM"
+    },
+    {
+      "id": "console.no_errors",
+      "pass": true,
+      "detail": "no console errors/pageerrors"
+    },
+    {
+      "id": "console.no_secret_leak",
+      "pass": true,
+      "detail": "no secret-like console text"
+    }
+  ],
+  "blockers": [],
+  "screenshots": [
+    "artifacts/terminal/empty__390x844.png",
+    "artifacts/terminal/empty__430x932.png",
+    "artifacts/terminal/empty__768x1024.png",
+    "artifacts/terminal/empty__1024x900.png",
+    "artifacts/terminal/empty__1440x1000.png",
+    "artifacts/terminal/empty__1728x900.png",
+    "artifacts/terminal/input-focus__390x844.png",
+    "artifacts/terminal/input-focus__430x932.png",
+    "artifacts/terminal/input-focus__768x1024.png",
+    "artifacts/terminal/input-focus__1024x900.png",
+    "artifacts/terminal/input-focus__1440x1000.png",
+    "artifacts/terminal/input-focus__1728x900.png",
+    "artifacts/terminal/help__390x844.png",
+    "artifacts/terminal/help__430x932.png",
+    "artifacts/terminal/help__768x1024.png",
+    "artifacts/terminal/help__1024x900.png",
+    "artifacts/terminal/help__1440x1000.png",
+    "artifacts/terminal/help__1728x900.png",
+    "artifacts/terminal/sources__390x844.png",
+    "artifacts/terminal/sources__430x932.png",
+    "artifacts/terminal/sources__768x1024.png",
+    "artifacts/terminal/sources__1024x900.png",
+    "artifacts/terminal/sources__1440x1000.png",
+    "artifacts/terminal/sources__1728x900.png",
+    "artifacts/terminal/status__390x844.png",
+    "artifacts/terminal/status__430x932.png",
+    "artifacts/terminal/status__768x1024.png",
+    "artifacts/terminal/status__1024x900.png",
+    "artifacts/terminal/status__1440x1000.png",
+    "artifacts/terminal/status__1728x900.png",
+    "artifacts/terminal/history__390x844.png",
+    "artifacts/terminal/history__430x932.png",
+    "artifacts/terminal/history__768x1024.png",
+    "artifacts/terminal/history__1024x900.png",
+    "artifacts/terminal/history__1440x1000.png",
+    "artifacts/terminal/history__1728x900.png",
+    "artifacts/terminal/shell-reject__390x844.png",
+    "artifacts/terminal/shell-reject__430x932.png",
+    "artifacts/terminal/shell-reject__768x1024.png",
+    "artifacts/terminal/shell-reject__1024x900.png",
+    "artifacts/terminal/shell-reject__1440x1000.png",
+    "artifacts/terminal/shell-reject__1728x900.png",
+    "artifacts/terminal/find-dryrun-status__390x844.png",
+    "artifacts/terminal/find-dryrun-status__430x932.png",
+    "artifacts/terminal/find-dryrun-status__768x1024.png",
+    "artifacts/terminal/find-dryrun-status__1024x900.png",
+    "artifacts/terminal/find-dryrun-status__1440x1000.png",
+    "artifacts/terminal/find-dryrun-status__1728x900.png",
+    "artifacts/terminal/find-dryrun-history__390x844.png",
+    "artifacts/terminal/find-dryrun-history__430x932.png",
+    "artifacts/terminal/find-dryrun-history__768x1024.png",
+    "artifacts/terminal/find-dryrun-history__1024x900.png",
+    "artifacts/terminal/find-dryrun-history__1440x1000.png",
+    "artifacts/terminal/find-dryrun-history__1728x900.png",
+    "artifacts/terminal/ui-find__390x844.png",
+    "artifacts/terminal/ui-find__430x932.png",
+    "artifacts/terminal/ui-find__768x1024.png",
+    "artifacts/terminal/ui-find__1024x900.png",
+    "artifacts/terminal/ui-find__1440x1000.png",
+    "artifacts/terminal/ui-find__1728x900.png",
+    "artifacts/sources/settings-sources__390x844.png",
+    "artifacts/sources/settings-sources__430x932.png",
+    "artifacts/sources/settings-sources__768x1024.png",
+    "artifacts/sources/settings-sources__1024x900.png",
+    "artifacts/sources/settings-sources__1440x1000.png",
+    "artifacts/sources/settings-sources__1728x900.png",
+    "artifacts/sources/luma-card-phone__390x844.png",
+    "artifacts/sources/luma-card-laptop__1440x1000.png",
+    "artifacts/sources/hakku-card-phone__390x844.png",
+    "artifacts/sources/hakku-card-laptop__1440x1000.png"
+  ],
+  "console": [
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js",
+      "when": "2026-07-12T23:56:22.359Z"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js",
+      "when": "2026-07-12T23:56:24.657Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:25.199Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 508ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:25.706Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:25.813Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 443ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:26.256Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:26.448Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 448ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:26.897Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:27.186Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 435ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:27.620Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:27.770Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 465ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:28.235Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:28.395Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 457ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:28.853Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:29.509Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 428ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:29.937Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:30.086Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 430ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:30.517Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:30.656Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 412ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:31.068Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:31.331Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 468ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:31.798Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:32.673Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 439ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:33.109Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:33.261Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:33.663Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 55ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:33.718Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 569ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:34.232Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:34.417Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:34.831Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 13ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:34.843Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 529ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:35.358Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:36.936Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 391ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:37.325Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:37.581Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:37.985Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 16ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:38.001Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:38.353Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 127ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:38.481Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 544ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:38.897Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:41.253Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 549ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:41.802Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:41.945Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:42.334Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 53ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:42.387Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 546ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:42.879Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:43.133Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 393ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:43.525Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:44.957Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 427ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:45.384Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:45.636Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:46.075Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 54ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:46.128Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 510ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:46.584Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:46.850Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 411ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:47.260Z"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js",
+      "when": "2026-07-12T23:56:48.186Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:50.403Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 415ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:50.817Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:50.986Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 399ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:51.385Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:51.626Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:51.986Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 53ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:52.038Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 437ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:52.422Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:53.406Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 395ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:53.801Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:54.056Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 392ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:54.448Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:54.625Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 395ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:55.017Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:55.281Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:55.661Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 55ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:55.717Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 508ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:56.169Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:56.418Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 382ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:56.799Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:57.079Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 555ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:57.633Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:57.669Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 467ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:58.135Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:58.300Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 446ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:58.740Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:58.880Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 416ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:59.296Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:59.523Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:56:59.893Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 57ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:56:59.950Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 416ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:57:00.310Z"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js",
+      "when": "2026-07-12T23:57:01.504Z"
+    },
+    {
+      "type": "pageerror",
+      "text": "Error: Hydration failed because the server rendered text didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:\n\n- A server/client branch `if (typeof window !== 'undefined')`.\n- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n- Date formatting in a user's locale which doesn't match the server.\n- External changing data without sending a snapshot of it along with the HTML.\n- In",
+      "when": "2026-07-12T23:57:01.741Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:57:02.593Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:57:02.962Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 66ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:57:03.028Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 453ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:57:03.415Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:57:03.546Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 432ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:57:03.977Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:57:04.333Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:57:04.855Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 64ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:57:04.919Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 420ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:57:05.276Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:57:05.678Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js",
+      "when": "2026-07-12T23:57:06.069Z"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 25ms",
+      "location": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js",
+      "when": "2026-07-12T23:57:06.092Z"
+    }
+  ],
+  "consoleErrorCount": 0,
+  "consoleLeakCount": 0
+}
