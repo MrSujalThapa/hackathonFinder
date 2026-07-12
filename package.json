@@ -24,7 +24,10 @@
     "skills:sync": "tsx scripts/sync-agent-skills.ts",
     "skills:check": "tsx scripts/check-agent-skills.ts",
     "test": "tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",
-    "agent": "tsx src/cli/agent.ts"
+    "agent": "tsx src/cli/agent.ts",
+    "source:connect": "tsx scripts/source-browser.ts connect",
+    "source:status": "tsx scripts/source-browser.ts status",
+    "source:disconnect": "tsx scripts/source-browser.ts disconnect"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",

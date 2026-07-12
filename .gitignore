@@ -32,6 +32,9 @@ yarn-error.log*
 .env
 .env*.local
 
+# Playwright persistent browser profiles (may contain session cookies)
+.data/browser-profiles/
+
 # vercel
 .vercel
 
