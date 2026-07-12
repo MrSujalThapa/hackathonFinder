@@ -1,0 +1,46 @@
+{
+  "tools": [
+    {
+      "name": "search_posts",
+      "description": "Search recent public posts / tweets",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" },
+          "max_results": { "type": "integer" }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "get_post",
+      "description": "Retrieve a public post by id"
+    },
+    {
+      "name": "create_tweet",
+      "description": "Create a new tweet"
+    },
+    {
+      "name": "like_post",
+      "description": "Like a post"
+    }
+  ],
+  "searchCallResult": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"data\": [\n    {\n      \"id\": \"1900000000000000001\",\n      \"text\": \"Applications open for Toronto AI Hackathon 2026! Register now: https://t.co/abc123 Prize pool announced.\",\n      \"created_at\": \"2026-07-01T15:00:00.000Z\",\n      \"author_id\": \"1001\",\n      \"entities\": {\n        \"urls\": [\n          {\n            \"url\": \"https://t.co/abc123\",\n            \"expanded_url\": \"https://hackto.example.com/ai-2026\",\n            \"display_url\": \"hackto.example.com/ai-2026\"\n          }\n        ]\n      }\n    },\n    {\n      \"id\": \"1900000000000000002\",\n      \"text\": \"What is a hackathon? Tips for beginners — wikipedia style guide\",\n      \"created_at\": \"2026-06-20T12:00:00.000Z\",\n      \"author_id\": \"1002\",\n      \"entities\": { \"urls\": [] }\n    },\n    {\n      \"id\": \"1900000000000000003\",\n      \"text\": \"Throwback! I attended last year — recap of 2021 hackathon weekend. No registration this time.\",\n      \"created_at\": \"2026-05-01T09:00:00.000Z\",\n      \"author_id\": \"1003\",\n      \"entities\": { \"urls\": [] }\n    },\n    {\n      \"id\": \"1900000000000000001\",\n      \"text\": \"Duplicate of applications open post\",\n      \"created_at\": \"2026-07-01T15:01:00.000Z\",\n      \"author_id\": \"1001\",\n      \"entities\": {\n        \"urls\": [\n          {\n            \"url\": \"https://t.co/abc123\",\n            \"expanded_url\": \"https://hackto.example.com/ai-2026\"\n          }\n        ]\n      }\n    },\n    {\n      \"id\": \"1900000000000000004\",\n      \"text\": \"MLH buildathon registration open this weekend — join us building!\",\n      \"created_at\": \"2026-07-02T10:00:00.000Z\",\n      \"author_id\": \"1004\",\n      \"entities\": { \"urls\": [] }\n    }\n  ],\n  \"includes\": {\n    \"users\": [\n      { \"id\": \"1001\", \"username\": \"HackTO\" },\n      { \"id\": \"1002\", \"username\": \"tipsbot\" },\n      { \"id\": \"1003\", \"username\": \"nostalgia\" },\n      { \"id\": \"1004\", \"username\": \"MLHacks\" }\n    ]\n  }\n}"
+      }
+    ],
+    "isError": false
+  },
+  "malformedCallResult": {
+    "content": [
+      {
+        "type": "text",
+        "text": "not-json {{{"
+      }
+    ],
+    "isError": false
+  }
+}
