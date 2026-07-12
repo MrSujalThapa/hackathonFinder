@@ -7,8 +7,10 @@ import {
   buildXSearchToolArgs,
   canonicalizeXPostUrl,
   createXMcpCollector,
+  describeToolCallError,
   expandPostUrls,
   isPromisingXPost,
+  isToolCallQuotaFailure,
   parseXPostsFromCallResult,
   xMcpCollector,
   xPostToLead,
@@ -275,6 +277,47 @@ describe("buildXSearchToolArgs", () => {
   });
 });
 
+describe("describeToolCallError", () => {
+  it("classifies credits depleted and rate limits", () => {
+    const credits = describeToolCallError({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            detail: "credits depleted",
+            status: 402,
+            title: "Payment Required",
+          }),
+        },
+      ],
+      isError: true,
+    });
+    assert.match(credits, /credits|quota/i);
+    assert.equal(
+      isToolCallQuotaFailure({
+        content: [{ type: "text", text: credits }],
+        isError: true,
+      }),
+      true,
+    );
+
+    const rate = describeToolCallError({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            detail: "Too Many Requests",
+            status: 429,
+            title: "Too Many Requests",
+          }),
+        },
+      ],
+      isError: true,
+    });
+    assert.match(rate, /rate limited/i);
+  });
+});
+
 describe("createXMcpCollector", () => {
   it("warns and returns empty leads when X config is missing", async () => {
     const collector = createXMcpCollector({
@@ -370,9 +413,12 @@ describe("createXMcpCollector", () => {
     const ids = result.leads.map((l) => l.id);
     assert.equal(new Set(ids).size, ids.length);
 
-    assert.ok(calledTools.every((name) => name === "search_posts"));
-    assert.ok(!calledTools.includes("create_tweet"));
-    assert.ok(!calledTools.includes("like_post"));
+    assert.deepEqual(
+      [...new Set(calledTools)],
+      ["search_posts"],
+    );
+    assert.equal(calledTools.includes("create_tweet" as string), false);
+    assert.equal(calledTools.includes("like_post" as string), false);
   });
 
   it("never calls blocked mutation tools (real allowlist on client)", async () => {

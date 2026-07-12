@@ -9,6 +9,7 @@ import {
   evaluateXToolPolicy,
   selectAllowedXTools,
   selectPublicPostSearchTools,
+  xReadOnlyToolPolicy,
 } from "../src/lib/mcp/allowlist";
 import { McpClient } from "../src/lib/mcp/client";
 import { McpError, redactSecrets } from "../src/lib/mcp/errors";
@@ -61,7 +62,10 @@ async function main(): Promise<number> {
     bearerToken: token!,
     timeoutMs: config.requestTimeoutMs,
   });
-  const client = new McpClient({ transport });
+  const client = new McpClient({
+    transport,
+    toolPolicy: xReadOnlyToolPolicy,
+  });
 
   try {
     const init = await client.initialize();

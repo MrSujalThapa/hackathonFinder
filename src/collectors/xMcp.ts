@@ -107,7 +107,68 @@ export function buildXSearchToolArgs(
     args.max_results = maxPosts;
     args.limit = maxPosts;
   }
+
+  // Prefer recent posts + useful expansions when the discovered schema allows them.
+  if (lower.has("sort_order")) args[lower.get("sort_order")!] = "recency";
+  if (lower.has("expansions")) {
+    args[lower.get("expansions")!] = "author_id,entities.mentions.username";
+  }
+  const postFieldsKey =
+    lower.get("post.fields") ?? lower.get("tweet.fields") ?? lower.get("post_fields");
+  if (postFieldsKey) {
+    args[postFieldsKey] = "created_at,entities,author_id,note_tweet";
+  }
+  const userFieldsKey = lower.get("user.fields") ?? lower.get("user_fields");
+  if (userFieldsKey) {
+    args[userFieldsKey] = "username,name";
+  }
+
   return args;
+}
+
+/** Extract a short human message from MCP tool isError content. */
+export function describeToolCallError(result: McpCallToolResult): string {
+  const texts = result.content
+    .filter((block): block is { type: "text"; text: string } => block.type === "text")
+    .map((block) => block.text.trim())
+    .filter(Boolean);
+  const joined = texts.join(" ");
+  if (!joined) return "tool returned isError with empty content";
+
+  const parsed = tryParseJson(joined);
+  const obj = asRecord(parsed);
+  if (obj) {
+    const status = typeof obj.status === "number" ? obj.status : undefined;
+    const detail =
+      (typeof obj.detail === "string" && obj.detail) ||
+      (typeof obj.title === "string" && obj.title) ||
+      undefined;
+    if (status === 402 || /credits?\s*deplet/i.test(joined)) {
+      return `credits/quota exhausted${detail ? ` (${detail})` : ""}`;
+    }
+    if (status === 429 || /too many requests|rate.?limit/i.test(joined)) {
+      return `rate limited${detail ? ` (${detail})` : ""}`;
+    }
+    if (status === 401 || status === 403) {
+      return `auth failed${detail ? ` (${detail})` : ""}`;
+    }
+    if (detail) return detail;
+  }
+
+  if (/credits?\s*deplet/i.test(joined)) return "credits/quota exhausted";
+  if (/too many requests|rate.?limit/i.test(joined)) return "rate limited";
+  return joined.slice(0, 240);
+}
+
+export function isToolCallQuotaFailure(result: McpCallToolResult): boolean {
+  const message = describeToolCallError(result).toLowerCase();
+  return (
+    message.includes("credits") ||
+    message.includes("quota") ||
+    message.includes("rate limited") ||
+    message.includes("402") ||
+    message.includes("429")
+  );
 }
 
 function tryParseJson(text: string): unknown {
@@ -387,10 +448,7 @@ export function isPromisingXPost(
 }
 
 export function expandPostUrls(post: ParsedXPost, socialUrl: string): string[] {
-  return uniqueUrls([...post.expandedUrls, socialUrl]).filter((url) => {
-    // Prefer expanded destinations; keep social canonical for evidence
-    return true;
-  });
+  return uniqueUrls([...post.expandedUrls, socialUrl]);
 }
 
 function pickOfficialUrl(urls: string[]): string | undefined {
@@ -551,13 +609,22 @@ export function createXMcpCollector(deps: XMcpCollectorDeps = {}): Collector {
             queriesExecuted += 1;
             const callResult = await client.callTool(searchTool.name, args);
             if (callResult.isError) {
+              const detail = describeToolCallError(callResult);
               result.warnings.push(
-                `X MCP search tool returned isError for query "${query}".`,
+                `X MCP search failed for query "${query}": ${detail}`,
               );
+              if (isToolCallQuotaFailure(callResult)) {
+                rateQuotaWarnings += 1;
+                // Stop burning remaining queries when credits/rate are exhausted.
+                break;
+              }
               continue;
             }
 
-            const posts = parseXPostsFromCallResult(callResult);
+            const posts = parseXPostsFromCallResult(callResult).slice(
+              0,
+              maxPosts,
+            );
             postsReturned += posts.length;
             for (const post of posts) {
               if (seenIds.has(post.id)) continue;
