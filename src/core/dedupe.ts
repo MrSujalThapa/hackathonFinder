@@ -76,15 +76,31 @@ export function normalizeDatePart(value?: string | null): string | null {
   return normalizeText(trimmed) || null;
 }
 
+function sourceIdValues(value: unknown): string[] {
+  if (value === null || value === undefined) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => normalizeText(String(entry)))
+      .filter(Boolean)
+      .sort();
+  }
+  const single = normalizeText(String(value));
+  return single ? [single] : [];
+}
+
 export function createSourceIdIdentity(
   sourceIds?: Record<string, unknown>,
 ): string | null {
   if (!sourceIds) return null;
 
   const parts = Object.entries(sourceIds)
-    .filter(([, value]) => value !== null && value !== undefined && String(value).trim())
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}:${normalizeText(String(value))}`);
+    .map(([key, value]) => {
+      const ids = sourceIdValues(value);
+      if (ids.length === 0) return null;
+      return `${key}:${ids.join(",")}`;
+    })
+    .filter((part): part is string => Boolean(part))
+    .sort((left, right) => left.localeCompare(right));
 
   if (parts.length === 0) return null;
   return `source-id:${parts.join("|")}`;
@@ -217,10 +233,17 @@ export function preferUrl(
   return incomingScore > existingScore ? incoming : existing;
 }
 
-/** Prefer ISO-looking dates and non-empty stronger values over weak/empty. */
+/**
+ * Prefer ISO-looking dates and non-empty stronger values over weak/empty.
+ * When sources are provided, a lower-authority source cannot overwrite a
+ * higher-authority value (X cannot replace MLH/Devpost/Luma/web dates, etc.).
+ * Missing fields may still be filled from weaker sources.
+ */
 export function preferStrongerText(
   existing?: string | null,
   incoming?: string | null,
+  existingSource?: string,
+  incomingSource?: string,
 ): string | undefined {
   const left = existing?.trim() || undefined;
   const right = incoming?.trim() || undefined;
@@ -229,9 +252,42 @@ export function preferStrongerText(
 
   const leftIso = Boolean(normalizeDatePart(left)?.match(/^\d{4}-\d{2}-\d{2}$/));
   const rightIso = Boolean(normalizeDatePart(right)?.match(/^\d{4}-\d{2}-\d{2}$/));
+
+  // Data-quality upgrade: ISO date beats vague text regardless of source.
   if (rightIso && !leftIso) return normalizeDatePart(right) ?? right;
   if (leftIso && !rightIso) return normalizeDatePart(left) ?? left;
+
+  if (existingSource !== undefined || incomingSource !== undefined) {
+    const leftAuth = sourceAuthority(existingSource ?? "");
+    const rightAuth = sourceAuthority(incomingSource ?? "");
+    if (rightAuth > leftAuth) {
+      return rightIso ? (normalizeDatePart(right) ?? right) : right;
+    }
+    if (leftAuth > rightAuth) {
+      return leftIso ? (normalizeDatePart(left) ?? left) : left;
+    }
+  }
+
   if (right.length > left.length * 1.5) return right;
-  return left;
+  return leftIso ? (normalizeDatePart(left) ?? left) : left;
+}
+
+/** Prefer known mode from the higher-authority source. */
+export function preferMode(
+  existing?: string | null,
+  incoming?: string | null,
+  existingSource?: string,
+  incomingSource?: string,
+): string | undefined {
+  const leftOk = existing && existing !== "unknown" ? existing : undefined;
+  const rightOk = incoming && incoming !== "unknown" ? incoming : undefined;
+  if (!leftOk) return rightOk;
+  if (!rightOk) return leftOk;
+  if (
+    sourceAuthority(incomingSource ?? "") > sourceAuthority(existingSource ?? "")
+  ) {
+    return rightOk;
+  }
+  return leftOk;
 }
 

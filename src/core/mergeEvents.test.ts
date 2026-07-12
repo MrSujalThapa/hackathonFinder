@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { mergeCrossSourceEvents, mergeHackathonEventPair } from "@/core/mergeEvents";
+import { mergeCrossSourceEvents, mergeHackathonEventPair, mergeSourceIds } from "@/core/mergeEvents";
 import type { HackathonEvent } from "@/core/discovery/types";
 
 function event(partial: Partial<HackathonEvent> & Pick<HackathonEvent, "name" | "source">): HackathonEvent {
@@ -174,5 +174,217 @@ describe("mergeCrossSourceEvents", () => {
     ]);
     assert.equal(result.events.length, 1);
     assert.ok(result.events[0]?.sourceIds?.hacklist && result.events[0]?.sourceIds?.web);
+  });
+
+  it("merges MLH + X: primary stays mlh, X evidence attached, X cannot replace officialUrl", () => {
+    const mlhOfficial = "https://events.mlh.io/events/42";
+    const result = mergeCrossSourceEvents([
+      event({
+        name: "Toronto Agent Cup",
+        source: "mlh",
+        city: "Toronto",
+        country: "Canada",
+        startDate: "2026-09-13",
+        deadline: "2026-08-01",
+        officialUrl: mlhOfficial,
+        applyUrl: "https://events.mlh.io/events/42/register",
+        evidence: [{ type: "source_card", url: mlhOfficial }],
+        sourceIds: { mlh: "42" },
+      }),
+      event({
+        name: "Toronto Agent Cup",
+        source: "x",
+        city: "Toronto",
+        country: "Canada",
+        startDate: "2026-09-13",
+        officialUrl: "https://random-blog.example.com/maybe-related",
+        socialUrl: "https://x.com/org/status/123",
+        evidence: [
+          {
+            type: "x_post",
+            url: "https://x.com/org/status/123",
+            snippet: "Apply to Toronto Agent Cup!",
+          },
+        ],
+        sourceIds: { x: "123" },
+      }),
+    ]);
+
+    assert.equal(result.events.length, 1);
+    assert.equal(result.mergeCount, 1);
+    assert.equal(result.events[0]?.source, "mlh");
+    assert.equal(result.events[0]?.officialUrl, mlhOfficial);
+    assert.equal(result.events[0]?.sourceIds?.mlh, "42");
+    assert.equal(result.events[0]?.sourceIds?.x, "123");
+    assert.ok(
+      result.events[0]?.evidence.some(
+        (item) => item.type === "x_post" && item.url === "https://x.com/org/status/123",
+      ),
+    );
+    assert.ok(result.events[0]?.evidence.some((item) => item.type === "source_card"));
+  });
+
+  it("merges multiple X posts into one event evidence list and sourceIds", () => {
+    const result = mergeCrossSourceEvents([
+      event({
+        name: "Waterloo Build Night",
+        source: "x",
+        city: "Waterloo",
+        startDate: "2026-10-05",
+        socialUrl: "https://x.com/a/status/111",
+        evidence: [{ type: "x_post", url: "https://x.com/a/status/111", snippet: "post 1" }],
+        sourceIds: { x: "111" },
+      }),
+      event({
+        name: "Waterloo Build Night",
+        source: "x",
+        city: "Waterloo",
+        startDate: "2026-10-05",
+        socialUrl: "https://x.com/b/status/222",
+        evidence: [{ type: "x_post", url: "https://x.com/b/status/222", snippet: "post 2" }],
+        sourceIds: { x: "222" },
+      }),
+    ]);
+
+    assert.equal(result.events.length, 1);
+    assert.equal(result.mergeCount, 1);
+    const xIds = result.events[0]?.sourceIds?.x;
+    assert.ok(Array.isArray(xIds));
+    assert.deepEqual([...(xIds as string[])].sort(), ["111", "222"]);
+    const xPosts = result.events[0]?.evidence.filter((item) => item.type === "x_post") ?? [];
+    assert.equal(xPosts.length, 2);
+  });
+
+  it("lets X fill a missing deadline on a stronger source", () => {
+    const merged = mergeHackathonEventPair(
+      event({
+        name: "Sparse MLH Event",
+        source: "mlh",
+        city: "Toronto",
+        startDate: "2026-09-13",
+        officialUrl: "https://events.mlh.io/events/9",
+      }),
+      event({
+        name: "Sparse MLH Event",
+        source: "x",
+        city: "Toronto",
+        startDate: "2026-09-13",
+        deadline: "2026-08-20",
+        socialUrl: "https://x.com/org/status/9",
+      }),
+    );
+    assert.equal(merged.source, "mlh");
+    assert.equal(merged.deadline, "2026-08-20");
+  });
+
+  it("blocks X from overwriting a stronger ISO deadline with another guess", () => {
+    const merged = mergeHackathonEventPair(
+      event({
+        name: "Guarded Event",
+        source: "mlh",
+        deadline: "2026-08-01",
+        startDate: "2026-09-13",
+        city: "Toronto",
+      }),
+      event({
+        name: "Guarded Event",
+        source: "x",
+        deadline: "2026-09-30",
+        startDate: "2026-10-01",
+        city: "Toronto",
+      }),
+    );
+    assert.equal(merged.deadline, "2026-08-01");
+    assert.equal(merged.startDate, "2026-09-13");
+  });
+
+  it("blocks X-first merge order from keeping weaker dates over MLH", () => {
+    const merged = mergeHackathonEventPair(
+      event({
+        name: "Order Event",
+        source: "x",
+        deadline: "2026-09-30",
+        startDate: "2026-10-01",
+        city: "Toronto",
+        socialUrl: "https://x.com/org/status/1",
+      }),
+      event({
+        name: "Order Event",
+        source: "mlh",
+        deadline: "2026-08-01",
+        startDate: "2026-09-13",
+        city: "Toronto",
+        officialUrl: "https://events.mlh.io/events/1",
+      }),
+    );
+    assert.equal(merged.source, "mlh");
+    assert.equal(merged.deadline, "2026-08-01");
+    assert.equal(merged.startDate, "2026-09-13");
+  });
+
+  it("prefers web over x as primary source when merging", () => {
+    const result = mergeCrossSourceEvents([
+      event({
+        name: "Cloud Agents Jam",
+        source: "x",
+        city: "Toronto",
+        startDate: "2026-11-01",
+        socialUrl: "https://x.com/org/status/77",
+        evidence: [{ type: "x_post", url: "https://x.com/org/status/77" }],
+        sourceIds: { x: "77" },
+      }),
+      event({
+        name: "Cloud Agents Jam",
+        source: "web",
+        city: "Toronto",
+        startDate: "2026-11-01",
+        officialUrl: "https://agents.example.com/jam",
+        evidence: [{ type: "search_result", url: "https://agents.example.com/jam" }],
+        sourceIds: { web: "https://agents.example.com/jam" },
+      }),
+    ]);
+    assert.equal(result.events.length, 1);
+    assert.equal(result.events[0]?.source, "web");
+    assert.ok(result.events[0]?.sourceIds?.x);
+    assert.ok(result.events[0]?.sourceIds?.web);
+  });
+
+  it("does not create a duplicate solely because the same event was found on X", () => {
+    const official = "https://hackto.example.com/ai";
+    const result = mergeCrossSourceEvents([
+      event({
+        name: "HackTO AI Challenge",
+        source: "web",
+        city: "Toronto",
+        startDate: "2026-09-13",
+        officialUrl: official,
+        evidence: [{ type: "search_result", url: official }],
+        sourceIds: { web: official },
+      }),
+      event({
+        name: "HackTO AI Challenge",
+        source: "x",
+        city: "Toronto",
+        startDate: "2026-09-13",
+        officialUrl: official,
+        socialUrl: "https://x.com/hackto/status/999",
+        evidence: [{ type: "x_post", url: "https://x.com/hackto/status/999" }],
+        sourceIds: { x: "999" },
+      }),
+    ]);
+    assert.equal(result.events.length, 1);
+    assert.equal(result.mergeCount, 1);
+  });
+});
+
+describe("mergeSourceIds", () => {
+  it("accumulates multiple X post IDs without dropping earlier ones", () => {
+    assert.deepEqual(mergeSourceIds({ x: "1", mlh: "a" }, { x: "2" }), {
+      x: ["1", "2"],
+      mlh: "a",
+    });
+    assert.deepEqual(mergeSourceIds({ x: ["1", "2"] }, { x: "2" }), {
+      x: ["1", "2"],
+    });
   });
 });

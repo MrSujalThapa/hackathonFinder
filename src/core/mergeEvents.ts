@@ -1,7 +1,13 @@
-import type { HackathonEvent, HackathonEvidence, SourceName } from "@/core/discovery/types";
+import type {
+  DiscoveryMode,
+  HackathonEvent,
+  HackathonEvidence,
+  SourceName,
+} from "@/core/discovery/types";
 import {
   createCandidateFingerprint,
   createSoftEventKey,
+  preferMode,
   preferStrongerText,
   preferUrl,
   softEventsMatch,
@@ -23,6 +29,44 @@ function mergeEvidence(
   return merged;
 }
 
+function asIdList(value: unknown): string[] {
+  if (value === null || value === undefined) return [];
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).trim()).filter(Boolean);
+  }
+  const single = String(value).trim();
+  return single ? [single] : [];
+}
+
+/**
+ * Merge source_ids maps. Same-source IDs accumulate as a string or string[]
+ * (e.g. multiple X post IDs → { x: ["123", "456"] }).
+ */
+export function mergeSourceIds(
+  left?: Record<string, unknown>,
+  right?: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (!left && !right) return undefined;
+
+  const merged: Record<string, unknown> = { ...(left ?? {}) };
+  for (const [key, value] of Object.entries(right ?? {})) {
+    if (value === null || value === undefined) continue;
+    const existing = merged[key];
+    if (existing === null || existing === undefined) {
+      merged[key] = Array.isArray(value)
+        ? [...new Set(asIdList(value))].length === 1
+          ? asIdList(value)[0]!
+          : [...new Set(asIdList(value))]
+        : value;
+      continue;
+    }
+
+    const combined = [...new Set([...asIdList(existing), ...asIdList(value)])];
+    merged[key] = combined.length === 1 ? combined[0]! : combined;
+  }
+  return merged;
+}
+
 function pickPrimarySource(existing: SourceName, incoming: SourceName): SourceName {
   return sourceAuthority(incoming) > sourceAuthority(existing) ? incoming : existing;
 }
@@ -32,38 +76,49 @@ export function mergeHackathonEventPair(
   incoming: HackathonEvent,
 ): HackathonEvent {
   const primarySource = pickPrimarySource(existing.source, incoming.source);
+  const left = existing.source;
+  const right = incoming.source;
 
   return {
-    name: existing.name || incoming.name,
+    name: preferStrongerText(existing.name, incoming.name, left, right) ?? existing.name,
     source: primarySource,
     officialUrl: preferUrl(
       existing.officialUrl,
       incoming.officialUrl,
-      existing.source,
-      incoming.source,
+      left,
+      right,
     ),
     applyUrl: preferUrl(
       existing.applyUrl,
       incoming.applyUrl,
-      existing.source,
-      incoming.source,
+      left,
+      right,
     ),
-    socialUrl: preferUrl(existing.socialUrl, incoming.socialUrl),
-    startDate: preferStrongerText(existing.startDate, incoming.startDate),
-    endDate: preferStrongerText(existing.endDate, incoming.endDate),
-    deadline: preferStrongerText(existing.deadline, incoming.deadline),
-    location: preferStrongerText(existing.location, incoming.location),
-    mode: existing.mode && existing.mode !== "unknown" ? existing.mode : incoming.mode,
-    city: preferStrongerText(existing.city, incoming.city),
-    country: preferStrongerText(existing.country, incoming.country),
-    prize: preferStrongerText(existing.prize, incoming.prize),
+    socialUrl: preferUrl(existing.socialUrl, incoming.socialUrl, left, right),
+    startDate: preferStrongerText(existing.startDate, incoming.startDate, left, right),
+    endDate: preferStrongerText(existing.endDate, incoming.endDate, left, right),
+    deadline: preferStrongerText(existing.deadline, incoming.deadline, left, right),
+    location: preferStrongerText(existing.location, incoming.location, left, right),
+    mode: preferMode(existing.mode, incoming.mode, left, right) as
+      | DiscoveryMode
+      | undefined,
+    city: preferStrongerText(existing.city, incoming.city, left, right),
+    country: preferStrongerText(existing.country, incoming.country, left, right),
+    prize: preferStrongerText(existing.prize, incoming.prize, left, right),
     themes: [...new Set([...(existing.themes ?? []), ...(incoming.themes ?? [])])],
-    eligibility: preferStrongerText(existing.eligibility, incoming.eligibility),
-    description: preferStrongerText(existing.description, incoming.description),
-    sourceIds: {
-      ...(existing.sourceIds ?? {}),
-      ...(incoming.sourceIds ?? {}),
-    },
+    eligibility: preferStrongerText(
+      existing.eligibility,
+      incoming.eligibility,
+      left,
+      right,
+    ),
+    description: preferStrongerText(
+      existing.description,
+      incoming.description,
+      left,
+      right,
+    ),
+    sourceIds: mergeSourceIds(existing.sourceIds, incoming.sourceIds),
     evidence: mergeEvidence(existing.evidence ?? [], incoming.evidence ?? []),
   };
 }
@@ -75,6 +130,8 @@ export type CrossSourceMergeResult = {
 
 /**
  * Collapse cross-source duplicates while keeping yearly editions / cities separate.
+ * Authority: official page → MLH/Devpost → Luma → HackList → X → generic web snippet.
+ * X attaches evidence/sourceIds and may fill missing fields only.
  */
 export function mergeCrossSourceEvents(events: HackathonEvent[]): CrossSourceMergeResult {
   const merged: HackathonEvent[] = [];
