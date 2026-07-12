@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Source_Serif_4 } from "next/font/google";
 import { MockModeBanner } from "@/components/shell/MockModeBanner";
 import "./globals.css";
 
@@ -13,9 +13,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const sourceSerif = Source_Serif_4({
+  variable: "--font-source-serif",
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+});
+
 export const metadata: Metadata = {
   title: "Hackathon Radar",
-  description: "Responsive Tinder-style approval queue for hackathons",
+  description: "Editorial operations workspace for hackathon review",
 };
 
 export default function RootLayout({
@@ -26,7 +32,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} grid-background antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${sourceSerif.variable} grid-background antialiased`}
       >
         <MockModeBanner />
         {children}

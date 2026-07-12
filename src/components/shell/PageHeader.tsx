@@ -3,6 +3,7 @@ type PageHeaderProps = {
   eyebrow?: string;
   description?: string;
   actions?: React.ReactNode;
+  titleClassName?: string;
 };
 
 export function PageHeader({
@@ -10,16 +11,24 @@ export function PageHeader({
   eyebrow,
   description,
   actions,
+  titleClassName = "",
 }: PageHeaderProps) {
   return (
     <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         {eyebrow ? (
-          <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted">
+          <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-muted">
             {eyebrow}
           </p>
         ) : null}
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[1.75rem]">
+        <h1
+          className={[
+            "text-2xl font-semibold tracking-tight text-foreground sm:text-[1.75rem]",
+            titleClassName,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           {title}
         </h1>
         {description ? (

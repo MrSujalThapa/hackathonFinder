@@ -6,32 +6,32 @@
 */
 
 :root {
-  /* Surfaces */
-  --background: #07070b;
-  --surface: #0c0c12;
-  --card: #101018;
-  --inset: #0a0a10;
-  --elevated: #16161f;
-  --foreground: #f4f4f5;
-  --muted: #8b8b98;
+  /* Surfaces — editorial operations */
+  --background: #0a0a0c;
+  --surface: #111114;
+  --card: #16161a;
+  --inset: #0d0d10;
+  --elevated: #1a1a1f;
+  --foreground: #f2f2f4;
+  --muted: #8e8e9a;
   --muted-strong: #a8a8b5;
 
   /* Borders */
-  --border: #2a2a35;
-  --border-subtle: #1e1e28;
-  --border-strong: #3a3a48;
+  --border: #2a2a32;
+  --border-subtle: #1e1e24;
+  --border-strong: #3a3a46;
 
   /* Semantic */
-  --accent-approve: #22c55e;
-  --accent-reject: #94a3b8;
-  --accent-save: #38bdf8;
-  --accent-warn: #f59e0b;
-  --accent-danger: #f87171;
-  --accent-focus: #7dd3fc;
+  --accent-approve: #3dcf7a;
+  --accent-reject: #9aa3b2;
+  --accent-save: #6ec8ff;
+  --accent-warn: #e0a54f;
+  --accent-danger: #f07178;
+  --accent-focus: #6ec8ff;
 
-  /* Hero (queue card only — restrained) */
-  --hero-from: #1a2332;
-  --hero-to: #0c121c;
+  /* Hero restrained — near-panel, no glow brand */
+  --hero-from: #141418;
+  --hero-to: #0d0d10;
 
   /* Spacing scale */
   --space-1: 0.25rem;
@@ -55,16 +55,16 @@
   --text-3xl: 1.875rem;
 
   /* Radii */
-  --radius-sm: 0.375rem;
-  --radius-md: 0.625rem;
-  --radius-lg: 0.875rem;
-  --radius-xl: 1.25rem;
-  --radius-2xl: 1.5rem;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1rem;
   --radius-full: 9999px;
 
   /* Shadows */
-  --shadow-card: 0 20px 48px rgba(0, 0, 0, 0.42);
-  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-card: 0 12px 32px rgba(0, 0, 0, 0.35);
+  --shadow-soft: 0 8px 20px rgba(0, 0, 0, 0.28);
 
   /* Motion */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -75,6 +75,7 @@
   /* Layout */
   --content-queue: 27.5rem;
   --content-detail: 42rem;
+  --content-rail: 18rem;
   --sidebar-width: 14rem;
   --nav-mobile-height: 4.25rem;
 }
@@ -98,6 +99,7 @@
   --color-accent-focus: var(--accent-focus);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-source-serif);
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
@@ -120,14 +122,26 @@ body {
 .grid-background {
   background-color: var(--background);
   background-image:
-    radial-gradient(
-      ellipse 70% 42% at 50% -18%,
-      rgba(56, 189, 248, 0.07),
-      transparent 55%
-    ),
-    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
-  background-size: auto, 32px 32px, 32px 32px;
+    linear-gradient(rgba(148, 163, 184, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.028) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.hf-doc-title {
+  font-family: var(--font-source-serif), Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.hf-decision-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.15fr;
+  gap: var(--space-2);
+}
+
+.hf-touch {
+  min-height: 44px;
+  min-width: 44px;
 }
 
 /* Shared interactive primitives */
