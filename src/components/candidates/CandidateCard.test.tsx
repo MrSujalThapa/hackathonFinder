@@ -78,7 +78,7 @@ describe("CandidateCardView", () => {
     );
 
     assert.ok(screen.getByText("Sparse Summit"));
-    assert.ok(screen.getByText("No summary available yet."));
+    assert.ok(screen.getByText("No reliable description available"));
     assert.ok(screen.getByText("Date unclear"));
     assert.ok(screen.getAllByText(/Needs official link/i).length >= 1);
     cleanup();
