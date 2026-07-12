@@ -1,37 +1,38 @@
 @import "tailwindcss";
 
 /*
-  Hackathon Radar — review workspace design system
-  Focused decision UI: calm neutrals, clear hierarchy, one primary action.
+  Hackathon Finder — review workspace design system
+  Restrained technical blueprint: navy canvas, paper text, cyan structure.
+  Selected over Expressive Blueprint for readability (docs/design/DESIGN_REVIEW.md).
 */
 
 :root {
-  /* Surfaces — editorial operations */
-  --background: #0a0a0c;
-  --surface: #111114;
-  --card: #16161a;
-  --inset: #0d0d10;
-  --elevated: #1a1a1f;
-  --foreground: #f2f2f4;
-  --muted: #8e8e9a;
-  --muted-strong: #a8a8b5;
+  /* Surfaces — restrained blueprint */
+  --background: #0b1524;
+  --surface: #101c2e;
+  --card: #142338;
+  --inset: #0d1829;
+  --elevated: #182a40;
+  --foreground: #ebe8e0;
+  --muted: #8fa3b8;
+  --muted-strong: #a8b8c8;
 
-  /* Borders */
-  --border: #2a2a32;
-  --border-subtle: #1e1e24;
-  --border-strong: #3a3a46;
+  /* Borders — fine cyan-blue structural lines */
+  --border: #2a3f56;
+  --border-subtle: #1a2b3e;
+  --border-strong: #3d5570;
 
   /* Semantic */
-  --accent-approve: #3dcf7a;
-  --accent-reject: #9aa3b2;
-  --accent-save: #6ec8ff;
-  --accent-warn: #e0a54f;
-  --accent-danger: #f07178;
-  --accent-focus: #6ec8ff;
+  --accent-approve: #3db87a;
+  --accent-reject: #d97868;
+  --accent-save: #5ba8c9;
+  --accent-warn: #d4a04a;
+  --accent-danger: #d97868;
+  --accent-focus: #5eb0d4;
 
-  /* Hero restrained — near-panel, no glow brand */
-  --hero-from: #141418;
-  --hero-to: #0d0d10;
+  /* Hero — near-panel navy, no glow brand */
+  --hero-from: #142338;
+  --hero-to: #0d1829;
 
   /* Spacing scale */
   --space-1: 0.25rem;
@@ -62,9 +63,9 @@
   --radius-2xl: 1rem;
   --radius-full: 9999px;
 
-  /* Shadows */
-  --shadow-card: 0 12px 32px rgba(0, 0, 0, 0.35);
-  --shadow-soft: 0 8px 20px rgba(0, 0, 0, 0.28);
+  /* Shadows — navy depth, no glow */
+  --shadow-card: 0 12px 32px rgba(4, 12, 24, 0.42);
+  --shadow-soft: 0 8px 20px rgba(4, 12, 24, 0.32);
 
   /* Motion */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -72,12 +73,31 @@
   --duration-normal: 220ms;
   --duration-slow: 320ms;
 
-  /* Layout */
-  --content-queue: 27.5rem;
-  --content-detail: 42rem;
-  --content-rail: 18rem;
-  --sidebar-width: 14rem;
+  /* Layout — fluid review workspace */
+  --content-queue: 40rem;
+  --content-queue-max: 56rem;
+  --content-detail: 48rem;
+  --content-rail: 17.5rem;
+  --sidebar-width: 14.5rem;
   --nav-mobile-height: 4.25rem;
+  --shell-max: 90rem;
+}
+
+.hf-shell-main {
+  max-width: var(--shell-max);
+  container-type: inline-size;
+  container-name: review;
+}
+
+.hf-review-workspace {
+  width: 100%;
+  max-width: var(--content-queue-max);
+}
+
+@container review (min-width: 56rem) {
+  .hf-review-workspace {
+    max-width: min(56rem, 100%);
+  }
 }
 
 @theme inline {
@@ -122,8 +142,8 @@ body {
 .grid-background {
   background-color: var(--background);
   background-image:
-    linear-gradient(rgba(148, 163, 184, 0.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.028) 1px, transparent 1px);
+    linear-gradient(rgba(94, 176, 212, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(94, 176, 212, 0.035) 1px, transparent 1px);
   background-size: 32px 32px;
 }
 
@@ -154,15 +174,15 @@ body {
 }
 
 .hf-panel {
-  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 85%, var(--accent-focus));
   border-radius: var(--radius-xl);
-  background: color-mix(in oklab, var(--inset) 88%, transparent);
+  background: color-mix(in oklab, var(--inset) 92%, var(--surface));
 }
 
 .hf-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
-  background: color-mix(in oklab, var(--card) 92%, transparent);
+  background: color-mix(in oklab, var(--card) 94%, var(--surface));
   box-shadow: var(--shadow-soft);
 }
 
@@ -209,37 +229,37 @@ body {
 }
 
 .hf-btn-primary {
-  border-color: color-mix(in oklab, var(--accent-save) 45%, transparent);
-  background: color-mix(in oklab, var(--accent-save) 88%, white);
-  color: #0b1220;
+  border-color: color-mix(in oklab, var(--accent-save) 50%, transparent);
+  background: color-mix(in oklab, var(--accent-save) 86%, white);
+  color: #0b1524;
   font-weight: 600;
 }
 .hf-btn-primary:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--accent-save) 78%, white);
+  background: color-mix(in oklab, var(--accent-save) 76%, white);
 }
 
 .hf-btn-approve {
-  border-color: color-mix(in oklab, var(--accent-approve) 45%, transparent);
-  color: color-mix(in oklab, var(--accent-approve) 85%, white);
+  border-color: color-mix(in oklab, var(--accent-approve) 50%, transparent);
+  color: color-mix(in oklab, var(--accent-approve) 88%, white);
 }
 .hf-btn-approve:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--accent-approve) 12%, transparent);
+  background: color-mix(in oklab, var(--accent-approve) 14%, transparent);
 }
 
 .hf-btn-save {
-  border-color: color-mix(in oklab, var(--accent-save) 40%, transparent);
-  color: color-mix(in oklab, var(--accent-save) 85%, white);
+  border-color: color-mix(in oklab, var(--accent-save) 45%, transparent);
+  color: color-mix(in oklab, var(--accent-save) 88%, white);
 }
 .hf-btn-save:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--accent-save) 12%, transparent);
+  background: color-mix(in oklab, var(--accent-save) 14%, transparent);
 }
 
 .hf-btn-reject {
-  border-color: color-mix(in oklab, var(--accent-reject) 45%, transparent);
-  color: color-mix(in oklab, var(--accent-reject) 90%, white);
+  border-color: color-mix(in oklab, var(--accent-reject) 50%, transparent);
+  color: color-mix(in oklab, var(--accent-reject) 92%, white);
 }
 .hf-btn-reject:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--accent-reject) 12%, transparent);
+  background: color-mix(in oklab, var(--accent-reject) 14%, transparent);
 }
 
 .hf-input {
@@ -247,7 +267,7 @@ body {
   min-height: 2.5rem;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
-  background: color-mix(in oklab, var(--inset) 90%, transparent);
+  background: color-mix(in oklab, var(--inset) 94%, var(--surface));
   padding: 0.5rem 0.75rem;
   font-size: var(--text-sm);
   color: var(--foreground);
@@ -260,8 +280,8 @@ body {
   color: var(--muted);
 }
 .hf-input:focus {
-  border-color: color-mix(in oklab, var(--accent-save) 65%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent-save) 18%, transparent);
+  border-color: color-mix(in oklab, var(--accent-focus) 65%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent-focus) 16%, transparent);
 }
 
 .hf-chip {
