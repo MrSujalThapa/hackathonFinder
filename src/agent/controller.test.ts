@@ -33,8 +33,10 @@ describe("runDiscovery", () => {
     assert.equal(summary.crossSourceMerges, 1);
     assert.ok(summary.accepted >= 3);
     assert.ok(summary.rejected >= 3);
+    assert.equal(summary.wouldCreate, 3);
+    assert.equal(summary.wouldUpdate, 0);
     assert.equal(summary.stored, 3);
-    assert.equal(summary.duplicatesUpdated, 0);
+    assert.equal(summary.created, 0);
     assert.equal(summary.dryRun, true);
     assert.ok(summary.sourceStats.some((stats) => stats.source === "mock"));
   });

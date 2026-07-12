@@ -1,11 +1,12 @@
 import type { CandidateStatus } from "@/lib/supabase/database.types";
 import type { UpsertCandidateInput } from "@/core/candidates/types";
-import { createCandidateFingerprint } from "@/core/dedupe";
+import { createCandidateFingerprint, sourceAuthority } from "@/core/dedupe";
 import type { Json } from "@/lib/supabase/database.types";
 import type {
   AcceptedCandidate,
   AgentRunSummary,
   DiscoveryPreferences,
+  DiscoveryQualityStats,
   HackathonEvent,
   HackathonEvidence,
   ScoringResult,
@@ -13,6 +14,7 @@ import type {
 } from "@/core/discovery/types";
 import type { EvidenceType } from "@/lib/supabase/database.types";
 import type { AddEvidenceInput } from "@/core/candidates/types";
+import { normalizeDatePart } from "@/core/dedupe";
 
 export function mapEvidenceType(type: HackathonEvidence["type"]): EvidenceType {
   switch (type) {
@@ -96,6 +98,16 @@ export function formatLocation(event: HackathonEvent): string {
   return [event.city, event.country].filter(Boolean).join(", ") || event.location || "Unknown";
 }
 
+export function deadlineStateFor(
+  event: HackathonEvent,
+  now = new Date(),
+): AcceptedCandidate["deadlineState"] {
+  const deadline = normalizeDatePart(event.deadline);
+  if (!deadline) return event.deadline ? "unclear" : "missing";
+  const today = now.toISOString().slice(0, 10);
+  return deadline < today ? "closed" : "open";
+}
+
 export function buildAcceptedSummary(
   accepted: AcceptedCandidate[],
 ): AgentRunSummary["acceptedCandidates"] {
@@ -105,7 +117,25 @@ export function buildAcceptedSummary(
     location: formatLocation(item.event),
     deadline: item.event.deadline ?? item.event.startDate ?? "unclear",
     status: item.status,
+    classification: item.classification,
+    sourceAuthority: item.sourceAuthority ?? sourceAuthority(item.event.source),
+    deadlineState: item.deadlineState,
+    hasOfficialUrl: item.hasOfficialUrl ?? Boolean(item.event.officialUrl),
+    hasApplyUrl: item.hasApplyUrl ?? Boolean(item.event.applyUrl),
   }));
+}
+
+export function emptyQualityStats(): DiscoveryQualityStats {
+  return {
+    individualEvents: 0,
+    directoriesFiltered: 0,
+    articlesFiltered: 0,
+    historicalOrExpiredFiltered: 0,
+    uncertainNeedsReview: 0,
+    crossSourceMerges: 0,
+    missingDeadlines: 0,
+    missingApplyLinks: 0,
+  };
 }
 
 export function printAgentSummary(summary: AgentRunSummary): void {
@@ -113,7 +143,9 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   console.log("========================");
   console.log(`Raw command: ${summary.rawCommand}`);
   if (summary.dryRun) {
-    console.log("Mode: dry-run (no database writes)");
+    console.log("[DRY RUN — NO DATABASE CHANGES]");
+  } else {
+    console.log("[LIVE MODE — WRITING TO SUPABASE]");
   }
   console.log("");
 
@@ -142,10 +174,34 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   console.log(`- extracted: ${summary.extracted}`);
   console.log(`- accepted: ${summary.accepted}`);
   console.log(`- rejected: ${summary.rejected}`);
-  console.log(`- stored: ${summary.stored}`);
-  console.log(`- duplicates/updates: ${summary.duplicatesUpdated}`);
   console.log(`- needs review: ${summary.needsReview}`);
+
+  if (summary.dryRun) {
+    console.log(`- would create: ${summary.wouldCreate}`);
+    console.log(`- would update: ${summary.wouldUpdate}`);
+    console.log(`- would attach evidence: ${summary.wouldAttachEvidence}`);
+    console.log("- stored: 0");
+  } else {
+    console.log(`- created: ${summary.created}`);
+    console.log(`- updated: ${summary.updated}`);
+    console.log(`- evidence written: ${summary.evidenceWritten}`);
+    console.log(`- storage failures: ${summary.storageFailures}`);
+  }
+
   console.log(`- duration: ${summary.durationMs}ms`);
+  console.log("");
+
+  console.log("Quality filters:");
+  console.log(`- individual events: ${summary.quality.individualEvents}`);
+  console.log(`- directories filtered: ${summary.quality.directoriesFiltered}`);
+  console.log(`- articles filtered: ${summary.quality.articlesFiltered}`);
+  console.log(
+    `- historical/expired filtered: ${summary.quality.historicalOrExpiredFiltered}`,
+  );
+  console.log(`- uncertain/needs review: ${summary.quality.uncertainNeedsReview}`);
+  console.log(`- cross-source merges: ${summary.quality.crossSourceMerges}`);
+  console.log(`- missing deadlines: ${summary.quality.missingDeadlines}`);
+  console.log(`- missing apply links: ${summary.quality.missingApplyLinks}`);
   console.log("");
 
   if (summary.sourceStats.length > 0) {
@@ -167,17 +223,31 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   if (summary.acceptedCandidates.length > 0) {
     console.log("Accepted:");
     summary.acceptedCandidates.forEach((candidate, index) => {
-      console.log(
-        `${index + 1}. ${candidate.name} — score ${candidate.score} — ${candidate.location} — deadline ${candidate.deadline}`,
-      );
+      const base = `${index + 1}. ${candidate.name} — score ${candidate.score} — ${candidate.location} — deadline ${candidate.deadline}`;
+      console.log(base);
+      if (summary.verbose) {
+        console.log(
+          `   classification=${candidate.classification ?? "n/a"} authority=${candidate.sourceAuthority ?? "n/a"} deadlineState=${candidate.deadlineState ?? "n/a"} official=${candidate.hasOfficialUrl ? "yes" : "no"} apply=${candidate.hasApplyUrl ? "yes" : "no"}`,
+        );
+      } else {
+        console.log(
+          `   ${candidate.classification ?? "EVENT"} · deadline ${candidate.deadlineState ?? "n/a"} · apply ${candidate.hasApplyUrl ? "yes" : "no"}`,
+        );
+      }
     });
     console.log("");
   }
 
   if (summary.rejectedCandidates.length > 0) {
     console.log("Rejected:");
-    for (const rejected of summary.rejectedCandidates) {
-      console.log(`- ${rejected.name} — ${rejected.reason}`);
+    const rejected = summary.verbose
+      ? summary.rejectedCandidates
+      : summary.rejectedCandidates.slice(0, 25);
+    for (const item of rejected) {
+      console.log(`- ${item.name} — ${item.reason}`);
+    }
+    if (!summary.verbose && summary.rejectedCandidates.length > 25) {
+      console.log(`- … ${summary.rejectedCandidates.length - 25} more (use --verbose)`);
     }
     console.log("");
   }
@@ -208,6 +278,7 @@ export function emptySummary(
     rawCommand,
     preferences,
     dryRun,
+    verbose: false,
     rawLeads: 0,
     uniqueLeads: 0,
     crossSourceMerges: 0,
@@ -215,10 +286,18 @@ export function emptySummary(
     extracted: 0,
     accepted: 0,
     rejected: 0,
+    created: 0,
+    updated: 0,
+    wouldCreate: 0,
+    wouldUpdate: 0,
+    evidenceWritten: 0,
+    wouldAttachEvidence: 0,
+    storageFailures: 0,
     stored: 0,
     duplicatesUpdated: 0,
     needsReview: 0,
     durationMs: 0,
+    quality: emptyQualityStats(),
     acceptedCandidates: [],
     rejectedCandidates: [],
     sourceStats: [],

@@ -97,12 +97,37 @@ export type AcceptedCandidate = {
   score: ScoringResult;
   fingerprint: string;
   status: "NEW" | "NEEDS_REVIEW";
+  classification?: EventPageClassification;
+  sourceAuthority?: number;
+  deadlineState?: "open" | "closed" | "missing" | "unclear";
+  hasOfficialUrl?: boolean;
+  hasApplyUrl?: boolean;
+};
+
+export type EventPageClassification =
+  | "INDIVIDUAL_EVENT"
+  | "EVENT_DIRECTORY"
+  | "ARTICLE"
+  | "ORGANIZATION_PAGE"
+  | "HISTORICAL_EVENT"
+  | "UNCERTAIN";
+
+export type DiscoveryQualityStats = {
+  individualEvents: number;
+  directoriesFiltered: number;
+  articlesFiltered: number;
+  historicalOrExpiredFiltered: number;
+  uncertainNeedsReview: number;
+  crossSourceMerges: number;
+  missingDeadlines: number;
+  missingApplyLinks: number;
 };
 
 export type AgentRunSummary = {
   rawCommand: string;
   preferences: DiscoveryPreferences;
   dryRun: boolean;
+  verbose?: boolean;
   rawLeads: number;
   uniqueLeads: number;
   crossSourceMerges: number;
@@ -110,16 +135,36 @@ export type AgentRunSummary = {
   extracted: number;
   accepted: number;
   rejected: number;
+  /** Live: candidates created. Dry-run: always 0. */
+  created: number;
+  /** Live: candidates updated. Dry-run: always 0. */
+  updated: number;
+  /** Dry-run only: would-be creates. */
+  wouldCreate: number;
+  /** Dry-run only: would-be updates. */
+  wouldUpdate: number;
+  /** Dry-run: evidence rows that would be attached. Live: evidence rows written. */
+  evidenceWritten: number;
+  wouldAttachEvidence: number;
+  storageFailures: number;
+  /** @deprecated Prefer created/wouldCreate — kept for agent_runs mapping. */
   stored: number;
+  /** @deprecated Prefer updated/wouldUpdate */
   duplicatesUpdated: number;
   needsReview: number;
   durationMs: number;
+  quality: DiscoveryQualityStats;
   acceptedCandidates: Array<{
     name: string;
     score: number;
     location: string;
     deadline: string;
     status: string;
+    classification?: EventPageClassification;
+    sourceAuthority?: number;
+    deadlineState?: string;
+    hasOfficialUrl?: boolean;
+    hasApplyUrl?: boolean;
   }>;
   rejectedCandidates: RejectedCandidate[];
   sourceStats: SourceRunStats[];

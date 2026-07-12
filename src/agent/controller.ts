@@ -10,15 +10,21 @@ import type {
   SourceName,
   SourceRunStats,
 } from "@/core/discovery/types";
+import {
+  classifyHackathonEvent,
+  shouldEnterNormalScoring,
+} from "@/core/classifyEventPage";
 import { enrichPromisingLeads } from "@/core/enrichLead";
 import { extractHackathonEvents } from "@/core/extract";
 import { mergeCrossSourceEvents } from "@/core/mergeEvents";
 import { scoreHackathonEvent } from "@/core/score";
 import { verifyHackathonEvent } from "@/core/verify";
+import { sourceAuthority } from "@/core/dedupe";
 import { addEvidence, upsertCandidateByFingerprint } from "@/server/candidates/repository";
 import { completeAgentRun, createAgentRun } from "@/server/agent/runs";
 import {
   buildAcceptedSummary,
+  deadlineStateFor,
   emptySummary,
   eventEvidenceToAddInput,
   eventToUpsertInput,
@@ -39,6 +45,8 @@ export type RunDiscoveryOptions = {
   totalTimeoutMs?: number;
   showSearchPlan?: boolean;
   dryRunPlan?: boolean;
+  verbose?: boolean;
+  now?: Date;
 };
 
 function initSourceStats(sources: SourceName[]): Map<SourceName, SourceRunStats> {
@@ -83,6 +91,8 @@ export async function runDiscovery(
   const sourceTimeoutMs = options.sourceTimeoutMs ?? DEFAULT_COLLECTOR_TIMEOUT_MS;
   const totalTimeoutMs = options.totalTimeoutMs ?? DEFAULT_TOTAL_TIMEOUT_MS;
   const effectiveSourceTimeout = Math.min(sourceTimeoutMs, totalTimeoutMs);
+  const now = options.now ?? new Date();
+  summary.verbose = options.verbose === true;
 
   if (options.showSearchPlan || options.dryRunPlan) {
     const queries = planSearchQueries(preferences);
@@ -182,11 +192,12 @@ export async function runDiscovery(
     summary.enriched = enrichment.enrichedCount;
     summary.warnings.push(...enrichment.warnings.map((warning) => `[enrich] ${warning}`));
 
-    const extracted = extractHackathonEvents(leads);
+    const extracted = extractHackathonEvents(leads, { now });
     const merged = mergeCrossSourceEvents(extracted);
     summary.extracted = extracted.length;
     summary.uniqueLeads = merged.events.length;
     summary.crossSourceMerges = merged.mergeCount;
+    summary.quality.crossSourceMerges = merged.mergeCount;
 
     const accepted: AcceptedCandidate[] = [];
     const rejected: RejectedCandidate[] = [];
@@ -198,8 +209,107 @@ export async function runDiscovery(
 
     for (const event of merged.events) {
       try {
-        const verification = verifyHackathonEvent(event);
+        const classified = classifyHackathonEvent(event);
+
+        if (classified.classification === "EVENT_DIRECTORY") {
+          summary.quality.directoriesFiltered += 1;
+          rejected.push({
+            name: event.name,
+            source: event.source,
+            stage: "verification",
+            reason: `Directory/category page — ${classified.reasons[0] ?? "not an individual event"}`,
+          });
+          bump(event.source, "rejected");
+          continue;
+        }
+
+        if (classified.classification === "ARTICLE") {
+          summary.quality.articlesFiltered += 1;
+          rejected.push({
+            name: event.name,
+            source: event.source,
+            stage: "verification",
+            reason: `Article/listicle — ${classified.reasons[0] ?? "not an individual event"}`,
+          });
+          bump(event.source, "rejected");
+          continue;
+        }
+
+        if (
+          classified.classification === "ORGANIZATION_PAGE" ||
+          classified.classification === "HISTORICAL_EVENT"
+        ) {
+          summary.quality.historicalOrExpiredFiltered += 1;
+          rejected.push({
+            name: event.name,
+            source: event.source,
+            stage: "verification",
+            reason: `${classified.classification} — ${classified.reasons[0] ?? "filtered"}`,
+          });
+          bump(event.source, "rejected");
+          continue;
+        }
+
+        if (classified.classification === "UNCERTAIN") {
+          summary.quality.uncertainNeedsReview += 1;
+          const verification = verifyHackathonEvent(event, { now });
+          if (verification.status === "rejected") {
+            summary.quality.historicalOrExpiredFiltered += 1;
+            rejected.push({
+              name: event.name,
+              source: event.source,
+              stage: "verification",
+              reason: verification.reasons[0] ?? "Failed verification",
+            });
+            bump(event.source, "rejected");
+            continue;
+          }
+
+          const score = scoreHackathonEvent(event, preferences, { now });
+          if (score.rejected) {
+            rejected.push({
+              name: event.name,
+              source: event.source,
+              stage: "scoring",
+              reason: score.rejectionReason ?? "Rejected by eligibility/scoring",
+            });
+            bump(event.source, "rejected");
+            continue;
+          }
+
+          accepted.push({
+            event,
+            score,
+            fingerprint: "",
+            status: "NEEDS_REVIEW",
+            classification: classified.classification,
+            sourceAuthority: sourceAuthority(event.source),
+            deadlineState: deadlineStateFor(event, now),
+            hasOfficialUrl: Boolean(event.officialUrl),
+            hasApplyUrl: Boolean(event.applyUrl),
+          });
+          bump(event.source, "accepted");
+          continue;
+        }
+
+        if (!shouldEnterNormalScoring(classified.classification)) {
+          rejected.push({
+            name: event.name,
+            source: event.source,
+            stage: "verification",
+            reason: `Unsupported classification ${classified.classification}`,
+          });
+          bump(event.source, "rejected");
+          continue;
+        }
+
+        summary.quality.individualEvents += 1;
+
+        const verification = verifyHackathonEvent(event, { now });
         if (verification.status === "rejected") {
+          if (/deadline|ended|stale title/i.test(verification.reasons.join(" "))) {
+            summary.quality.historicalOrExpiredFiltered += 1;
+          }
           rejected.push({
             name: event.name,
             source: event.source,
@@ -210,20 +320,33 @@ export async function runDiscovery(
           continue;
         }
 
-        const score = scoreHackathonEvent(event, preferences);
+        const score = scoreHackathonEvent(event, preferences, { now });
         if (score.rejected) {
           rejected.push({
             name: event.name,
             source: event.source,
             stage: "scoring",
-            reason: score.rejectionReason ?? "Rejected by scoring rules",
+            reason: score.rejectionReason ?? "Rejected by eligibility/scoring",
           });
           bump(event.source, "rejected");
           continue;
         }
 
+        if (!event.deadline) summary.quality.missingDeadlines += 1;
+        if (!event.applyUrl) summary.quality.missingApplyLinks += 1;
+
         const status = verification.status === "needs_review" ? "NEEDS_REVIEW" : "NEW";
-        accepted.push({ event, score, fingerprint: "", status });
+        accepted.push({
+          event,
+          score,
+          fingerprint: "",
+          status,
+          classification: classified.classification,
+          sourceAuthority: sourceAuthority(event.source),
+          deadlineState: deadlineStateFor(event, now),
+          hasOfficialUrl: Boolean(event.officialUrl),
+          hasApplyUrl: Boolean(event.applyUrl),
+        });
         bump(event.source, "accepted");
       } catch (error) {
         summary.errors.push(
@@ -240,7 +363,7 @@ export async function runDiscovery(
     const seenFingerprints = new Set<string>();
 
     for (const item of accepted) {
-      const verification = verifyHackathonEvent(item.event);
+      const verification = verifyHackathonEvent(item.event, { now });
       const upsertInput = eventToUpsertInput(
         item.event,
         item.score,
@@ -251,26 +374,33 @@ export async function runDiscovery(
 
       if (dryRun) {
         if (seenFingerprints.has(upsertInput.fingerprint)) {
+          summary.wouldUpdate += 1;
           summary.duplicatesUpdated += 1;
         } else {
           seenFingerprints.add(upsertInput.fingerprint);
+          summary.wouldCreate += 1;
           summary.stored += 1;
         }
+        summary.wouldAttachEvidence += item.event.evidence.length;
         continue;
       }
 
       try {
         const result = await upsertCandidateByFingerprint(upsertInput);
         if (result.isNew) {
+          summary.created += 1;
           summary.stored += 1;
         } else {
+          summary.updated += 1;
           summary.duplicatesUpdated += 1;
         }
 
         for (const evidence of item.event.evidence) {
           try {
             await addEvidence(result.candidate.id, eventEvidenceToAddInput(evidence));
+            summary.evidenceWritten += 1;
           } catch (error) {
+            summary.storageFailures += 1;
             summary.warnings.push(
               `Evidence write failed for ${item.event.name}: ${
                 error instanceof Error ? error.message : "unknown error"
@@ -279,6 +409,7 @@ export async function runDiscovery(
           }
         }
       } catch (error) {
+        summary.storageFailures += 1;
         summary.errors.push(
           `Upsert failed for ${item.event.name}: ${
             error instanceof Error ? error.message : "unknown error"
