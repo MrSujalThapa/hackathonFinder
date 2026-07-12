@@ -27,7 +27,9 @@
     "agent": "tsx src/cli/agent.ts",
     "source:connect": "tsx scripts/source-browser.ts connect",
     "source:status": "tsx scripts/source-browser.ts status",
-    "source:disconnect": "tsx scripts/source-browser.ts disconnect"
+    "source:disconnect": "tsx scripts/source-browser.ts disconnect",
+    "check:sources": "tsx scripts/check-sources.ts",
+    "check:source": "tsx scripts/check-source.ts"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
