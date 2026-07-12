@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+/**
+ * CLI adapter — discovery logic lives in `@/discovery` via `runAgent`.
+ */
+
 import { loadLocalEnv } from "@/cli/loadEnv";
 import { runAgent } from "@/agent/runAgent";
 import { parseAgentArgs } from "@/cli/parseAgentArgs";
