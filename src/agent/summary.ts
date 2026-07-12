@@ -176,6 +176,10 @@ export function printAgentSummary(summary: AgentRunSummary): void {
     console.log(`- agent tool calls: ${summary.agent.toolCalls}`);
     console.log(`- agent LLM calls: ${summary.agent.llmCalls}`);
     console.log(`- planning calls: ${summary.agent.planningCalls ?? 0}`);
+    console.log(`- extraction calls: ${summary.agent.extractionCalls ?? 0}`);
+    console.log(`- verification calls: ${summary.agent.verificationCalls ?? 0}`);
+    console.log(`- summary calls: ${summary.agent.summaryCalls ?? 0}`);
+    console.log(`- planner succeeded: ${summary.agent.plannerSucceeded ? "true" : "false"}`);
     console.log(`- fallback used: ${summary.agent.fallbackUsed ? "true" : "false"}`);
     if (summary.agent.plannerLatencyMs != null) {
       console.log(`- planner latency: ${summary.agent.plannerLatencyMs}ms`);
