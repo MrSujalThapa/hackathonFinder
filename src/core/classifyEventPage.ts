@@ -23,10 +23,10 @@ export type ClassifyEventPageResult = {
 };
 
 const DIRECTORY_HOST_PATH =
-  /mlh\.(io|com)\/?(seasons|events)?\/?$|mlh\.(io|com)\/seasons\/\d+\/events\/?$|devpost\.com\/hackathons|devpost\.com\/hackathons\/search|lablab\.ai\/(ai-hackathons|events)\/?$|eventbrite\.[^/]+\/d\/|eventbrite\.[^/]+\/.*\/hackathon|unstop\.com\/hackathons|hackathon\.com\/?$/i;
+  /mlh\.(io|com)\/?(seasons|events)?\/?$|mlh\.(io|com)\/seasons\/\d+\/events\/?$|devpost\.com\/hackathons|devpost\.com\/hackathons\/search|lablab\.ai\/(ai-hackathons|events)\/?$|eventbrite\.[^/]+\/d\/|eventbrite\.[^/]+\/.*\/hackathon|unstop\.com\/hackathons|hackathon\.com\/?$|lu\.ma\/calendar\/?|lu\.ma\/discover\/?/i;
 
 const DIRECTORY_TITLE =
-  /\b(hackathons?|events?)\b.*\b(directory|listing|browse|search|category|categories|platform|upcoming)\b|\b(major league hacking|ai hackathons|machine learning\/ai)\b|\bon\s+devpost\b|\blablab\.ai\b/i;
+  /\b(hackathons?|events?)\b.*\b(directory|listing|browse|search|category|categories|platform|upcoming|calendar)\b|\b(events?\s+calendar|search results?|profiles?|portfolio)\b|\b(major league hacking|ai hackathons|machine learning\/ai)\b|\bon\s+devpost\b|\blablab\.ai\b/i;
 
 const ARTICLE_HINT =
   /\b(what is a hackathon|how to (win|prepare)|tips for|recap|wrap[- ]?up|listicle|best hackathons of|top \d+ hackathons|wikipedia)\b/i;
@@ -39,6 +39,12 @@ const MULTI_EVENT_HINT =
 
 const HISTORICAL_HINT =
   /\b(recap|winners? announced|completed|archives?|past event|previously held)\b/i;
+
+const GENERIC_SOCIAL_TITLE =
+  /^(facebook|instagram|linkedin|x|twitter|devpost|luma|lu\.ma)$/i;
+
+const SOCIAL_OR_PROFILE_HOST_PATH =
+  /(^|\.)facebook\.com\/?$|(^|\.)facebook\.com\/(profile\.php|people|groups|pages|events|search)\/?|(^|\.)instagram\.com\/?$|(^|\.)linkedin\.com\/?$|(^|\.)linkedin\.com\/(in|company|school|feed|search)\/?|(^|\.)x\.com\/?$|(^|\.)twitter\.com\/?$|devpost\.com\/[^/?#]+\/?$|devpost\.com\/software\/[^/?#]+\/?$/i;
 
 function hostnamePath(url?: string): string {
   if (!url) return "";
@@ -80,6 +86,20 @@ function hasApplySignal(input: ClassifyEventPageInput): boolean {
   return Boolean(input.applyUrl) || /\b(apply|register|registration|sign\s*up)\b/i.test(blob);
 }
 
+function isGenericSocialOrProfilePage(
+  input: ClassifyEventPageInput,
+  urlKey: string,
+  title: string,
+  body: string,
+): boolean {
+  if (GENERIC_SOCIAL_TITLE.test(title.trim())) return true;
+  if (!SOCIAL_OR_PROFILE_HOST_PATH.test(urlKey)) return false;
+  if (hasConcreteDate(input) || /\b(hackathons?|apply|register|deadline)\b/i.test(body)) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Deterministic page/event classifier used before scoring.
  */
@@ -92,6 +112,11 @@ export function classifyEventPage(input: ClassifyEventPageInput): ClassifyEventP
   if (DIRECTORY_HOST_PATH.test(urlKey) || DIRECTORY_TITLE.test(title) || MULTI_EVENT_HINT.test(body)) {
     reasons.push("Looks like a directory/category/listing page");
     return { classification: "EVENT_DIRECTORY", reasons, confidence: "high" };
+  }
+
+  if (isGenericSocialOrProfilePage(input, urlKey, title, body)) {
+    reasons.push("Looks like a generic social/profile page, not a concrete event");
+    return { classification: "UNCERTAIN", reasons, confidence: "high" };
   }
 
   if (ARTICLE_HINT.test(body)) {
