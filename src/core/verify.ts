@@ -1,13 +1,16 @@
 import type { HackathonEvent, VerificationResult } from "@/core/discovery/types";
 import { normalizeDatePart } from "@/core/dedupe";
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import {
+  isDeadlineClosed,
+  isEventEnded,
+  isStaleTitleYear,
+  todayIso,
+} from "@/core/dates";
 
 function isValidIsoDate(value?: string): boolean {
   if (!value) return false;
-  return Boolean(normalizeDatePart(value));
+  const part = normalizeDatePart(value);
+  return Boolean(part && /^\d{4}-\d{2}-\d{2}$/.test(part));
 }
 
 function hasUsefulUrl(event: HackathonEvent): boolean {
@@ -18,19 +21,15 @@ function isSocialOnly(event: HackathonEvent): boolean {
   return Boolean(event.socialUrl && !event.officialUrl && !event.applyUrl);
 }
 
-function isClearlyPast(event: HackathonEvent): boolean {
-  const dates = [event.endDate, event.deadline, event.startDate]
-    .map((value) => normalizeDatePart(value))
-    .filter(Boolean) as string[];
+export type VerifyOptions = {
+  now?: Date;
+};
 
-  if (dates.length === 0) {
-    return false;
-  }
-
-  return dates.sort().at(-1)! < todayIso();
-}
-
-export function verifyHackathonEvent(event: HackathonEvent): VerificationResult {
+export function verifyHackathonEvent(
+  event: HackathonEvent,
+  options: VerifyOptions = {},
+): VerificationResult {
+  const now = options.now ?? new Date();
   const reasons: string[] = [];
   const redFlags: string[] = [];
 
@@ -44,13 +43,33 @@ export function verifyHackathonEvent(event: HackathonEvent): VerificationResult 
     };
   }
 
-  if (isClearlyPast(event)) {
+  if (isDeadlineClosed(event.deadline, now)) {
+    return {
+      valid: false,
+      confidence: "high",
+      status: "rejected",
+      reasons: ["Registration deadline has passed"],
+      redFlags: ["Registration closed"],
+    };
+  }
+
+  if (isEventEnded(event, now)) {
     return {
       valid: false,
       confidence: "high",
       status: "rejected",
       reasons: ["Event already ended"],
       redFlags: ["Event already ended"],
+    };
+  }
+
+  if (isStaleTitleYear(event.name, event, now)) {
+    return {
+      valid: false,
+      confidence: "high",
+      status: "rejected",
+      reasons: ["Title year is in the past without a verified current edition"],
+      redFlags: ["Stale title year"],
     };
   }
 
@@ -103,3 +122,5 @@ export function verifyHackathonEvent(event: HackathonEvent): VerificationResult 
     redFlags,
   };
 }
+
+export { todayIso };

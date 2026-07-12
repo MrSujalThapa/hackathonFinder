@@ -5,6 +5,7 @@ import type {
   RawLead,
 } from "@/core/discovery/types";
 import { normalizeDatePart } from "@/core/dedupe";
+import { parseDatesFromText } from "@/core/dates";
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -81,63 +82,6 @@ function parseIsoDate(value: string): string | undefined {
   return normalizeDatePart(value) ?? undefined;
 }
 
-function parseDatesFromText(text: string): {
-  startDate?: string;
-  endDate?: string;
-  deadline?: string;
-} {
-  const result: { startDate?: string; endDate?: string; deadline?: string } = {};
-
-  const iso = text.match(/\b(20\d{2}-\d{2}-\d{2})\b/g);
-  if (iso?.length) {
-    result.startDate = parseIsoDate(iso[0]);
-    if (iso.length > 1) {
-      result.endDate = parseIsoDate(iso[1]);
-    }
-  }
-
-  const monthRange = text.match(
-    /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:\s*[–—-]\s*(?:([A-Za-z]+)\s+)?(\d{1,2}))?,?\s*(20\d{2})\b/i,
-  );
-  if (monthRange) {
-    const start = `${monthRange[1]} ${monthRange[2]}, ${monthRange[5]}`;
-    const endMonth = monthRange[3] ?? monthRange[1];
-    const endDay = monthRange[4] ?? monthRange[2];
-    const end = `${endMonth} ${endDay}, ${monthRange[5]}`;
-    result.startDate = parseIsoDate(start) ?? result.startDate;
-    result.endDate = parseIsoDate(end) ?? result.endDate;
-  }
-
-  const deadlineMatch = text.match(
-    /\b(?:deadline|closes|close date|apply by|registration closes|register by|submission deadline)\s*[:\-]?\s*((?:20\d{2}-\d{2}-\d{2})|(?:[A-Za-z]+\s+\d{1,2},?\s+20\d{2})|\d+\s+days?\s+left)/i,
-  );
-  if (deadlineMatch?.[1]) {
-    const raw = deadlineMatch[1].trim();
-    if (/days?\s+left/i.test(raw)) {
-      const days = Number.parseInt(raw, 10);
-      if (!Number.isNaN(days)) {
-        const date = new Date();
-        date.setDate(date.getDate() + days);
-        result.deadline = date.toISOString().slice(0, 10);
-      }
-    } else {
-      result.deadline = parseIsoDate(raw) ?? result.deadline;
-    }
-  } else {
-    const daysLeft = text.match(/\b(\d+)\s+days?\s+left\b/i);
-    if (daysLeft?.[1]) {
-      const days = Number.parseInt(daysLeft[1], 10);
-      if (!Number.isNaN(days)) {
-        const date = new Date();
-        date.setDate(date.getDate() + days);
-        result.deadline = date.toISOString().slice(0, 10);
-      }
-    }
-  }
-
-  return result;
-}
-
 function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): HackathonEvidence[] {
   const evidence: HackathonEvidence[] = [];
   const metadata = lead.metadata ?? {};
@@ -197,10 +141,13 @@ function isSocialUrl(url?: string): boolean {
   return Boolean(url && /x\.com|twitter\.com/i.test(url));
 }
 
-export function extractHackathonEvent(lead: RawLead): HackathonEvent | null {
+export function extractHackathonEvent(
+  lead: RawLead,
+  options: { now?: Date } = {},
+): HackathonEvent | null {
   const metadata = lead.metadata ?? {};
   const combinedText = [lead.title, lead.text, JSON.stringify(metadata)].filter(Boolean).join(" ");
-  const parsedDates = parseDatesFromText(combinedText);
+  const parsedDates = parseDatesFromText(combinedText, options.now ?? new Date());
   const parsedLocation = detectLocationFromText(combinedText);
 
   const name = asString(metadata.name) ?? lead.title?.trim();
@@ -266,12 +213,15 @@ export function extractHackathonEvent(lead: RawLead): HackathonEvent | null {
   return event;
 }
 
-export function extractHackathonEvents(leads: RawLead[]): HackathonEvent[] {
+export function extractHackathonEvents(
+  leads: RawLead[],
+  options: { now?: Date } = {},
+): HackathonEvent[] {
   const events: HackathonEvent[] = [];
 
   for (const lead of leads) {
     try {
-      const event = extractHackathonEvent(lead);
+      const event = extractHackathonEvent(lead, options);
       if (event) {
         events.push(event);
       }
