@@ -51,7 +51,8 @@ Owner-only web access:
 
 ```bash
 npm run hash:password -- "your-long-password"
-APP_OWNER_PASSWORD_HASH=...
+# paste the printed APP_OWNER_PASSWORD_HASH_B64=... line into .env.local
+npm run verify:password -- "your-long-password"
 APP_SESSION_SECRET=... # 32+ random chars
 ```
 

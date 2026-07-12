@@ -1,0 +1,14 @@
+{
+  "name": "webapp-testing",
+  "sourceRepository": "https://github.com/ComposioHQ/awesome-codex-skills",
+  "sourcePath": "webapp-testing",
+  "sourceCommit": "9c9da64cf1bbea611d43dd14a10788d55369b353",
+  "license": "Apache-2.0",
+  "vendoredAt": "2026-07-12T17:55:00.000Z",
+  "scriptHashes": {
+    "scripts/with_server.py": "529b5f10f6ecf2e6234747be6d6601be7ef9011ee29a3eee0879e7823f608238",
+    "examples/console_logging.py": "f06fbca7cdfa44ecf5bae40813b30fc758ec3280af1aab5586aa2dd384db7ad6",
+    "examples/element_discovery.py": "7e99c7caf1593a75a8b2e36847128c41962fefc604f7947426581c2b9fc2361b",
+    "examples/static_html_automation.py": "6633d0b7c3b3bef31e6baa9cef6fac57490767ee481702fe11c281d8d013b769"
+  }
+}

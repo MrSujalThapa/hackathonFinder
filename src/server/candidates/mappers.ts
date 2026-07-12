@@ -52,6 +52,10 @@ export function mapEvidenceRow(row: EvidenceRow): CandidateEvidence {
     snippet: row.snippet,
     raw: row.raw,
     foundAt: row.found_at,
+    firstSeenAt: row.first_seen_at ?? row.found_at,
+    lastSeenAt: row.last_seen_at ?? row.found_at,
+    seenCount: row.seen_count ?? 1,
+    agentRunId: row.agent_run_id ?? null,
   };
 }
 

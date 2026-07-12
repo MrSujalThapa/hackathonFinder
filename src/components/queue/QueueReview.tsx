@@ -37,7 +37,7 @@ export function QueueReview() {
 
   return (
     <section className="flex flex-1 flex-col items-center">
-      <div className="w-full max-w-[440px]">
+      <div className="w-full max-w-[var(--content-queue)]">
         <PageHeader
           eyebrow="Review"
           title="Queue"
@@ -46,14 +46,14 @@ export function QueueReview() {
             <button
               type="button"
               onClick={() => void queue.refresh()}
-              className="rounded-xl border border-border px-3 py-2 text-sm text-muted transition-colors hover:border-sky-500/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+              className="hf-btn hf-btn-ghost"
             >
               Refresh
             </button>
           }
         />
 
-        <div className="mb-4 hidden rounded-xl border border-border/70 bg-card/50 px-3 py-2 text-xs text-muted sm:block">
+        <div className="hf-panel mb-4 hidden px-3 py-2 text-xs text-muted sm:block">
           Keyboard: <span className="text-foreground">Left</span> reject,{" "}
           <span className="text-foreground">Right</span> approve,{" "}
           <span className="text-foreground">S</span> save,{" "}
@@ -66,7 +66,7 @@ export function QueueReview() {
             <select
               value={sourceFilter}
               onChange={(event) => setSourceFilter(event.target.value)}
-              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+              className="hf-input"
             >
               <option value="">All sources</option>
               {sources.map((source) => (

@@ -27,7 +27,8 @@ Public browser-safe:
 Server-only:
 
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `APP_OWNER_PASSWORD_HASH`
+- `APP_OWNER_PASSWORD_HASH_B64` (preferred)
+- `APP_OWNER_PASSWORD_HASH` (legacy fallback)
 - `APP_SESSION_SECRET`
 - `GOOGLE_SHEET_ID`
 - `GOOGLE_SHEET_TAB`
@@ -46,11 +47,14 @@ Generate owner auth:
 
 ```bash
 npm run hash:password -- "your-long-owner-password"
+# prints: APP_OWNER_PASSWORD_HASH_B64=<env-safe value>
+npm run verify:password -- "your-long-owner-password"
+# prints: MATCH
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 ```
 
-Use the first output for `APP_OWNER_PASSWORD_HASH` and the second for
-`APP_SESSION_SECRET`.
+Paste the `APP_OWNER_PASSWORD_HASH_B64=...` line into Vercel env (no `$` escaping).
+Use the random output for `APP_SESSION_SECRET`.
 
 ## 3. Supabase
 

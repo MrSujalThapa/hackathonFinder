@@ -26,6 +26,8 @@ import {
   formatMode,
 } from "@/lib/candidates/format";
 import { CandidateEvidenceLinks } from "@/components/candidates/CandidateEvidenceLinks";
+import { CandidateEvidencePanel } from "@/components/candidates/CandidateEvidencePanel";
+import { CandidateActionHistory } from "@/components/candidates/CandidateActionHistory";
 import { CandidateScore } from "@/components/candidates/CandidateScore";
 import { CandidateTags } from "@/components/candidates/CandidateTags";
 import {
@@ -36,6 +38,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { messageForSheetSync } from "@/hooks/useCandidateQueue";
+import { suggestedCandidateQuestions } from "@/core/candidateQuestionAnswer";
 
 export function CandidateDetailView({ id }: { id: string }) {
   const [candidate, setCandidate] = useState<CandidateDetail | null>(null);
@@ -238,22 +241,19 @@ export function CandidateDetailView({ id }: { id: string }) {
     });
 
   return (
-    <section className="mx-auto w-full max-w-2xl">
+    <section className="mx-auto w-full max-w-[var(--content-detail)]">
       <PageHeader
         eyebrow="Candidate"
         title={candidate.name}
         description={candidate.summary ?? "No summary available."}
         actions={
-          <Link
-            href="/queue"
-            className="rounded-xl border border-border px-3 py-2 text-sm text-muted transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
-          >
+          <Link href="/queue" className="hf-btn hf-btn-ghost">
             Back to queue
           </Link>
         }
       />
 
-      <div className="space-y-5 rounded-3xl border border-border bg-card/80 p-5 sm:p-6">
+      <div className="hf-card space-y-5 p-5 sm:space-y-6 sm:p-6">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
@@ -273,10 +273,8 @@ export function CandidateDetailView({ id }: { id: string }) {
         <CandidateTags themes={candidate.themes} />
 
         {candidate.status === "NEEDS_REVIEW" ? (
-          <section className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
-            <h2 className="text-xs font-semibold uppercase tracking-wider">
-              Needs review
-            </h2>
+          <section className="rounded-[var(--radius-xl)] border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+            <h2 className="hf-section-label text-amber-200/90">Needs review</h2>
             <p className="mt-1 text-amber-100/85">
               This candidate was not confident enough for normal scoring. Check
               official/apply links and evidence before approving.
@@ -285,11 +283,9 @@ export function CandidateDetailView({ id }: { id: string }) {
         ) : null}
 
         {candidate.status === "APPROVED" ? (
-          <section className="rounded-2xl border border-border/70 bg-black/20 px-4 py-3">
+          <section className="hf-panel px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-                Google Sheet
-              </h2>
+              <h2 className="hf-section-label">Google Sheet</h2>
               <SheetSyncBadge
                 sheetRowId={candidate.sheetRowId}
                 sheetAppendedAt={candidate.sheetAppendedAt}
@@ -327,7 +323,7 @@ export function CandidateDetailView({ id }: { id: string }) {
                 type="button"
                 disabled={busy}
                 onClick={() => void retrySync()}
-                className="mt-3 rounded-xl border border-amber-500/40 px-3 py-2 text-sm text-amber-100 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60 disabled:opacity-40"
+                className="hf-btn mt-3 border-amber-500/40 text-amber-100 hover:bg-amber-500/10"
               >
                 Retry Sync
               </button>
@@ -343,9 +339,7 @@ export function CandidateDetailView({ id }: { id: string }) {
 
         {candidate.whyMatch.length > 0 ? (
           <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-              Why it matches
-            </h2>
+            <h2 className="hf-section-label">Why it matches</h2>
             <ul className="mt-2 list-disc space-y-1 pl-4 text-sm">
               {candidate.whyMatch.map((item) => (
                 <li key={item}>{item}</li>
@@ -356,9 +350,7 @@ export function CandidateDetailView({ id }: { id: string }) {
 
         {candidate.redFlags.length > 0 ? (
           <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-amber-300/80">
-              Red flags
-            </h2>
+            <h2 className="hf-section-label text-amber-300/80">Red flags</h2>
             <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-amber-100/80">
               {candidate.redFlags.map((item) => (
                 <li key={item}>{item}</li>
@@ -369,24 +361,21 @@ export function CandidateDetailView({ id }: { id: string }) {
 
         <CandidateEvidenceLinks candidate={candidate} />
 
-        <section className="rounded-2xl border border-border/70 bg-black/20 px-4 py-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-            Ask
-          </h2>
+        <CandidateEvidencePanel evidence={candidate.evidence} />
+
+        <section className="hf-panel px-4 py-3">
+          <h2 className="hf-section-label">Ask anything about this event</h2>
+          <p className="mt-1 text-xs text-muted">
+            Type any question — suggestions are shortcuts, not limits.
+          </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {[
-              "Deadline?",
-              "Remote?",
-              "Prizes?",
-              "Eligibility?",
-              "Official application link?",
-            ].map((item) => (
+            {suggestedCandidateQuestions(candidate).map((item) => (
               <button
                 key={item}
                 type="button"
                 disabled={askLoading}
                 onClick={() => void submitQuestion(item)}
-                className="rounded-xl border border-border px-3 py-2 text-xs text-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:opacity-40"
+                className="hf-chip"
               >
                 {item}
               </button>
@@ -403,13 +392,14 @@ export function CandidateDetailView({ id }: { id: string }) {
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
               disabled={askLoading}
-              placeholder="Ask about deadline, remote, prizes..."
-              className="min-w-0 flex-1 rounded-xl border border-border bg-black/30 px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted focus:border-sky-400/70"
+              placeholder="e.g. Am I eligible as a Waterloo student?"
+              className="hf-input min-w-0 flex-1"
+              aria-label="Ask a question about this candidate"
             />
             <button
               type="submit"
               disabled={askLoading || !question.trim()}
-              className="rounded-xl border border-sky-500/40 px-3 py-2 text-sm text-sky-200 hover:bg-sky-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60 disabled:opacity-40"
+              className="hf-btn hf-btn-save shrink-0"
             >
               {askLoading ? "Asking" : "Ask"}
             </button>
@@ -422,109 +412,79 @@ export function CandidateDetailView({ id }: { id: string }) {
           {candidate.answers.length > 0 ? (
             <ul className="mt-4 space-y-3">
               {candidate.answers.map((answer) => {
-                const sources = Array.isArray(answer.sources)
-                  ? answer.sources as Array<{ url?: string; label?: string }>
-                  : [];
                 return (
-                  <li key={answer.id} className="rounded-xl border border-border/60 bg-black/20 px-3 py-2">
+                  <li
+                    key={answer.id}
+                    className="rounded-[var(--radius-lg)] border border-border-subtle bg-inset/80 px-3 py-2"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-foreground">{answer.question}</p>
+                      <p className="text-sm font-medium text-foreground">
+                        {answer.question}
+                      </p>
                       <span className="text-[11px] uppercase tracking-wider text-muted">
                         {answer.confidence ?? "low"}
+                        {typeof answer.sources === "object" &&
+                        answer.sources &&
+                        !Array.isArray(answer.sources) &&
+                        (answer.sources as { liveVerification?: boolean })
+                          .liveVerification
+                          ? " · live check"
+                          : ""}
                       </span>
                     </div>
-                    <p className="mt-1 text-sm text-foreground/80">{answer.answer}</p>
-                    {sources.length > 0 ? (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {sources
-                          .filter((source) => source.url)
-                          .map((source) => (
-                            <a
-                              key={`${answer.id}-${source.url}`}
-                              href={source.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-sky-300 hover:underline"
-                            >
-                              {source.label ?? "Source"}
-                            </a>
-                          ))}
-                      </div>
-                    ) : null}
+                    <p className="mt-1 text-sm text-foreground/80">
+                      {answer.answer}
+                    </p>
+                    {(() => {
+                      const raw = answer.sources;
+                      const links = Array.isArray(raw)
+                        ? (raw as Array<{ url?: string; label?: string }>)
+                        : raw &&
+                            typeof raw === "object" &&
+                            Array.isArray(
+                              (raw as { links?: unknown }).links,
+                            )
+                          ? ((raw as { links: Array<{ url?: string; label?: string }> })
+                              .links)
+                          : [];
+                      return links.length > 0 ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {links
+                            .filter((source) => source.url)
+                            .map((source) => (
+                              <a
+                                key={`${answer.id}-${source.url}`}
+                                href={source.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-sky-300 hover:underline"
+                              >
+                                {source.label ?? "Source"}
+                              </a>
+                            ))}
+                        </div>
+                      ) : null;
+                    })()}
                   </li>
                 );
               })}
             </ul>
-          ) : null}
+          ) : (
+            <p className="mt-3 text-xs text-muted">
+              No questions yet. Ask about eligibility, teams, prizes, deadlines,
+              or anything still unclear.
+            </p>
+          )}
         </section>
 
-        {candidate.evidence.length > 0 ? (
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-              Evidence
-            </h2>
-            <ul className="mt-2 space-y-2">
-              {candidate.evidence.map((item) => (
-                <li
-                  key={item.id}
-                  className="rounded-xl border border-border/70 bg-black/20 px-3 py-2 text-sm"
-                >
-                  <p className="text-xs uppercase tracking-wider text-muted">
-                    {item.type}
-                  </p>
-                  <p className="mt-1">{item.title ?? item.snippet ?? "Evidence item"}</p>
-                  {item.url ? (
-                    <a
-                      href={item.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 inline-block text-sky-300 hover:underline"
-                    >
-                      Open source
-                    </a>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        <CandidateActionHistory actions={candidate.actions} />
 
-        {candidate.actions.length > 0 ? (
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-              Action history
-            </h2>
-            <ul className="mt-3 space-y-3">
-              {candidate.actions.map((action) => (
-                <li
-                  key={action.id}
-                  className="border-l border-border pl-3 text-sm text-foreground/75"
-                >
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="font-medium text-foreground">
-                      {action.action}
-                    </span>
-                    <span className="text-xs text-muted">
-                      {new Date(action.createdAt).toLocaleString()}
-                    </span>
-                  </div>
-                  {action.previousStatus && action.newStatus ? (
-                    <p className="mt-1 text-xs text-muted">
-                      {action.previousStatus} -&gt; {action.newStatus}
-                    </p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-
-        <div className="flex flex-wrap gap-2 border-t border-border/70 pt-4">
+        <div className="flex flex-wrap gap-2 border-t border-border-subtle pt-4">
           <button
             type="button"
             disabled={busy}
             onClick={() => void apply("approve")}
-            className="rounded-xl border border-emerald-500/40 px-3 py-2 text-sm text-emerald-200 hover:bg-emerald-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 disabled:opacity-40"
+            className="hf-btn hf-btn-approve"
           >
             Approve
           </button>
@@ -532,7 +492,7 @@ export function CandidateDetailView({ id }: { id: string }) {
             type="button"
             disabled={busy}
             onClick={() => void apply("save")}
-            className="rounded-xl border border-sky-500/40 px-3 py-2 text-sm text-sky-200 hover:bg-sky-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60 disabled:opacity-40"
+            className="hf-btn hf-btn-save"
           >
             Save
           </button>
@@ -540,7 +500,7 @@ export function CandidateDetailView({ id }: { id: string }) {
             type="button"
             disabled={busy}
             onClick={() => void apply("reject")}
-            className="rounded-xl border border-slate-400/40 px-3 py-2 text-sm text-slate-200 hover:bg-slate-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300/60 disabled:opacity-40"
+            className="hf-btn hf-btn-reject"
           >
             Reject
           </button>
@@ -549,7 +509,7 @@ export function CandidateDetailView({ id }: { id: string }) {
               type="button"
               disabled={busy}
               onClick={() => void apply("restore")}
-              className="rounded-xl border border-border px-3 py-2 text-sm text-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:opacity-40"
+              className="hf-btn hf-btn-ghost"
             >
               Restore to queue
             </button>

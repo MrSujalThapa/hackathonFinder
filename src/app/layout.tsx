@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { AppShell } from "@/components/shell/AppShell";
 import { MockModeBanner } from "@/components/shell/MockModeBanner";
 import "./globals.css";
 
@@ -30,7 +29,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} grid-background antialiased`}
       >
         <MockModeBanner />
-        <AppShell>{children}</AppShell>
+        {children}
       </body>
     </html>
   );

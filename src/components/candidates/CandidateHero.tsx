@@ -19,7 +19,7 @@ export function CandidateHero({ candidate }: { candidate: CandidateCard }) {
       />
       <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-card to-transparent" />
       <div className="absolute right-4 top-4">
-        <span className="rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/90 backdrop-blur-sm">
+        <span className="rounded-full border border-white/12 bg-black/40 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/90">
           {formatSourceLabel(candidate.source)}
         </span>
       </div>

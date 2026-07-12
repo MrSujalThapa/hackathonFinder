@@ -429,7 +429,10 @@ export async function runDiscovery(
 
         for (const evidence of item.event.evidence) {
           try {
-            await addEvidence(result.candidate.id, eventEvidenceToAddInput(evidence));
+            await addEvidence(result.candidate.id, {
+              ...eventEvidenceToAddInput(evidence),
+              agentRunId: runId,
+            });
             summary.evidenceWritten += 1;
           } catch (error) {
             summary.storageFailures += 1;

@@ -1,5 +1,6 @@
 import type { CandidateStatus, Database } from "@/lib/supabase/database.types";
 import { createServiceSupabaseClient } from "@/lib/supabase/createServiceClient";
+import { normalizeEvidenceUrlKey } from "@/lib/http/evidenceUrl";
 import type {
   AddActionInput,
   AddCandidateAnswerInput,
@@ -403,6 +404,62 @@ export async function clearSheetMetadata(id: string): Promise<CandidateCard> {
 
 export async function addEvidence(candidateId: string, evidence: AddEvidenceInput) {
   const supabase = createServiceSupabaseClient();
+  const now = evidence.foundAt ?? new Date().toISOString();
+  const urlKey = normalizeEvidenceUrlKey(evidence.url);
+
+  const { data: existing, error: lookupError } = await supabase
+    .from("candidate_evidence")
+    .select("*")
+    .eq("candidate_id", candidateId)
+    .eq("type", evidence.type)
+    .eq("url_key", urlKey)
+    .maybeSingle();
+
+  if (lookupError) {
+    // Pre-migration fallback: column may not exist yet — insert once.
+    if (/url_key|first_seen|seen_count|agent_run/i.test(lookupError.message)) {
+      const { data, error } = await supabase
+        .from("candidate_evidence")
+        .insert({
+          candidate_id: candidateId,
+          type: evidence.type,
+          url: evidence.url ?? null,
+          title: evidence.title ?? null,
+          snippet: evidence.snippet ?? null,
+          raw: evidence.raw ?? {},
+          found_at: now,
+        })
+        .select("*")
+        .single();
+      if (error) {
+        throw new Error(`Failed to add evidence: ${error.message}`);
+      }
+      return mapEvidenceRow(data);
+    }
+    throw new Error(`Failed to lookup evidence: ${lookupError.message}`);
+  }
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from("candidate_evidence")
+      .update({
+        title: evidence.title ?? existing.title,
+        snippet: evidence.snippet ?? existing.snippet,
+        raw: evidence.raw ?? existing.raw,
+        last_seen_at: now,
+        seen_count: (existing.seen_count ?? 1) + 1,
+        agent_run_id: evidence.agentRunId ?? existing.agent_run_id,
+        url: evidence.url ?? existing.url,
+      })
+      .eq("id", existing.id)
+      .select("*")
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update evidence: ${error.message}`);
+    }
+    return mapEvidenceRow(data);
+  }
 
   const { data, error } = await supabase
     .from("candidate_evidence")
@@ -410,15 +467,46 @@ export async function addEvidence(candidateId: string, evidence: AddEvidenceInpu
       candidate_id: candidateId,
       type: evidence.type,
       url: evidence.url ?? null,
+      url_key: urlKey,
       title: evidence.title ?? null,
       snippet: evidence.snippet ?? null,
       raw: evidence.raw ?? {},
-      found_at: evidence.foundAt,
+      found_at: now,
+      first_seen_at: now,
+      last_seen_at: now,
+      seen_count: 1,
+      agent_run_id: evidence.agentRunId ?? null,
     })
     .select("*")
     .single();
 
   if (error) {
+    // Race: unique violation — re-fetch and bump
+    if (/duplicate|unique/i.test(error.message)) {
+      const { data: raced } = await supabase
+        .from("candidate_evidence")
+        .select("*")
+        .eq("candidate_id", candidateId)
+        .eq("type", evidence.type)
+        .eq("url_key", urlKey)
+        .maybeSingle();
+      if (raced) {
+        const { data: bumped, error: bumpError } = await supabase
+          .from("candidate_evidence")
+          .update({
+            last_seen_at: now,
+            seen_count: (raced.seen_count ?? 1) + 1,
+            agent_run_id: evidence.agentRunId ?? raced.agent_run_id,
+          })
+          .eq("id", raced.id)
+          .select("*")
+          .single();
+        if (bumpError) {
+          throw new Error(`Failed to bump evidence: ${bumpError.message}`);
+        }
+        return mapEvidenceRow(bumped);
+      }
+    }
     throw new Error(`Failed to add evidence: ${error.message}`);
   }
 

@@ -52,7 +52,7 @@ export function CandidateCardView({
   return (
     <article
       className={[
-        "flex w-full max-w-[420px] flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-[0_24px_60px_rgba(0,0,0,0.45)]",
+        "flex w-full max-w-[var(--content-queue)] flex-col overflow-hidden rounded-[var(--radius-2xl)] border border-border bg-card shadow-[var(--shadow-card)]",
         className,
       ].join(" ")}
       style={style}

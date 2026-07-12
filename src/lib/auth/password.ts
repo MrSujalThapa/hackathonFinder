@@ -26,6 +26,50 @@ export function hashOwnerPassword(password: string): string {
   ].join("$");
 }
 
+/** Env-safe encoding of the scrypt hash (no `$` delimiters). */
+export function encodeOwnerPasswordHashB64(encodedHash: string): string {
+  return Buffer.from(encodedHash, "utf8").toString("base64url");
+}
+
+export function decodeOwnerPasswordHashB64(value: string): string | null {
+  try {
+    const decoded = Buffer.from(value.trim(), "base64url").toString("utf8");
+    if (!decoded.startsWith("scrypt$")) return null;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the scrypt hash string from env.
+ * Prefers APP_OWNER_PASSWORD_HASH_B64 when set.
+ */
+export function resolveOwnerPasswordHash(env: {
+  APP_OWNER_PASSWORD_HASH_B64?: string;
+  APP_OWNER_PASSWORD_HASH?: string;
+}): { hash: string; source: "b64" | "legacy" } | null {
+  const b64 = env.APP_OWNER_PASSWORD_HASH_B64?.trim();
+  if (b64) {
+    const decoded = decodeOwnerPasswordHashB64(b64);
+    if (!decoded) {
+      throw new Error(
+        "APP_OWNER_PASSWORD_HASH_B64 is malformed. Re-run npm run hash:password.",
+      );
+    }
+    return { hash: decoded, source: "b64" };
+  }
+
+  const legacy = env.APP_OWNER_PASSWORD_HASH?.trim();
+  if (legacy) {
+    // Tolerate accidental wrapping quotes from .env files
+    const unquoted = legacy.replace(/^["']|["']$/g, "");
+    return { hash: unquoted, source: "legacy" };
+  }
+
+  return null;
+}
+
 export function verifyOwnerPassword(password: string, encodedHash: string): boolean {
   const [scheme, version, n, r, p, salt, hash] = encodedHash.split("$");
   if (scheme !== "scrypt" || version !== "1" || !salt || !hash) return false;
