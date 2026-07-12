@@ -10,7 +10,7 @@ export function CandidateProgress({
   const pct = total > 0 ? Math.min(100, (current / total) * 100) : 0;
 
   return (
-    <div className="mb-4 w-full max-w-[var(--content-queue)]">
+    <div className="mb-4 w-full">
       <div className="mb-2 flex items-center justify-between">
         <QueueCounter current={current} total={total} />
       </div>

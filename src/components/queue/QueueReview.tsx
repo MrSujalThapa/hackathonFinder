@@ -37,7 +37,7 @@ export function QueueReview() {
 
   return (
     <section className="hf-review-workspace flex flex-1 flex-col">
-      <div className="w-full max-w-[var(--content-queue)] @[900px]:max-w-none">
+      <div className="w-full">
         <PageHeader
           eyebrow="Review"
           title="Queue"

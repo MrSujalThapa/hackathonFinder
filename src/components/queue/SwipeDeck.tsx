@@ -309,7 +309,7 @@ export function SwipeDeck({
   const cardBusy = busy || exitingRef.current;
 
   return (
-    <div className="relative mx-auto w-full max-w-[var(--content-queue)]">
+    <div className="relative w-full">
       {upcoming ? (
         <div
           aria-hidden
