@@ -275,6 +275,8 @@ export function CandidateDetailView({ id }: { id: string }) {
         <div className="xl:hidden">
           <CandidateTags themes={candidate.themes} />
         </div>
+
+        {candidate.status === "NEEDS_REVIEW" ? (
           <section className="rounded-[var(--radius-xl)] border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
             <h2 className="hf-section-label text-amber-200/90">Needs review</h2>
             <p className="mt-1 text-amber-100/85">
