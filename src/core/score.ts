@@ -3,31 +3,29 @@ import type {
   HackathonEvent,
   ScoringResult,
 } from "@/core/discovery/types";
-import { normalizeDatePart, normalizeText } from "@/core/dedupe";
+import { normalizeText, sourceAuthority } from "@/core/dedupe";
+import {
+  isDeadlineClosed,
+  isEventEnded,
+  isStaleTitleYear,
+} from "@/core/dates";
 
 const THEME_BONUS_CAP = 30;
 const THEME_BONUS_EACH = 10;
-const MIN_ACCEPT_SCORE = 55;
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+export type ScoreOptions = {
+  now?: Date;
+};
 
-function isClearlyPast(event: HackathonEvent): boolean {
-  const dates = [event.endDate, event.deadline, event.startDate]
-    .map((value) => normalizeDatePart(value))
-    .filter(Boolean) as string[];
-
-  if (dates.length === 0) {
-    return false;
-  }
-
-  const latest = dates.sort().at(-1)!;
-  return latest < todayIso();
-}
+export type EligibilityResult = {
+  eligible: boolean;
+  needsReview: boolean;
+  reasons: string[];
+  rejectionReason?: string;
+};
 
 function hasUsefulUrl(event: HackathonEvent): boolean {
-  return Boolean(event.officialUrl || event.applyUrl || event.socialUrl);
+  return Boolean(event.officialUrl || event.applyUrl);
 }
 
 function locationText(event: HackathonEvent): string {
@@ -43,7 +41,13 @@ function matchesPreferredLocation(
   const haystack = locationText(event);
   const preferred = preferences.locations.map((value) => normalizeText(value));
 
-  return preferred.some((needle) => haystack.includes(needle));
+  return preferred.some((needle) => {
+    if (!needle) return false;
+    if (needle === "canada") {
+      return haystack.includes("canada") || haystack.includes("toronto") || haystack.includes("waterloo") || haystack.includes("mississauga");
+    }
+    return haystack.includes(needle);
+  });
 }
 
 function isRemoteEvent(event: HackathonEvent): boolean {
@@ -51,36 +55,126 @@ function isRemoteEvent(event: HackathonEvent): boolean {
   return (
     event.mode === "online" ||
     haystack.includes("remote") ||
-    haystack.includes("online")
+    haystack.includes("online") ||
+    haystack.includes("everywhere") ||
+    haystack.includes("worldwide")
   );
 }
 
 function countThemeMatches(event: HackathonEvent, preferences: DiscoveryPreferences): number {
   const eventThemes = event.themes.map((theme) => normalizeText(theme));
   const preferredThemes = preferences.themes.map((theme) => normalizeText(theme));
+  const blob = normalizeText([event.name, event.description].filter(Boolean).join(" "));
 
-  return preferredThemes.filter((theme) =>
-    eventThemes.some(
-      (eventTheme) => eventTheme.includes(theme) || theme.includes(eventTheme),
-    ),
+  return preferredThemes.filter(
+    (theme) =>
+      eventThemes.some(
+        (eventTheme) => eventTheme.includes(theme) || theme.includes(eventTheme),
+      ) || blob.includes(theme),
   ).length;
 }
 
-export function scoreHackathonEvent(
+function inRequestedDateRange(
   event: HackathonEvent,
   preferences: DiscoveryPreferences,
-): ScoringResult {
-  let score = 0;
-  const whyMatch: string[] = [];
+): boolean {
+  if (!preferences.dateFrom && !preferences.dateTo) return true;
+
+  const eventDay =
+    event.startDate ?? event.deadline ?? event.endDate;
+  if (!eventDay) return true; // unknown dates do not fail eligibility
+
+  if (preferences.dateFrom && eventDay < preferences.dateFrom) return false;
+  if (preferences.dateTo && eventDay > preferences.dateTo) return false;
+  return true;
+}
+
+/**
+ * Hard eligibility gates — separate from preference ranking.
+ */
+export function evaluateEligibility(
+  event: HackathonEvent,
+  preferences: DiscoveryPreferences,
+  options: ScoreOptions = {},
+): EligibilityResult {
+  const now = options.now ?? new Date();
+  const reasons: string[] = [];
+
+  if (isDeadlineClosed(event.deadline, now)) {
+    return {
+      eligible: false,
+      needsReview: false,
+      reasons: ["Registration closed"],
+      rejectionReason: "Registration deadline has passed",
+    };
+  }
+
+  if (isEventEnded(event, now)) {
+    return {
+      eligible: false,
+      needsReview: false,
+      reasons: ["Event ended"],
+      rejectionReason: "Event already ended",
+    };
+  }
+
+  if (isStaleTitleYear(event.name, event, now)) {
+    return {
+      eligible: false,
+      needsReview: false,
+      reasons: ["Stale title year"],
+      rejectionReason: "Title year is in the past without a verified current edition",
+    };
+  }
+
+  if (!hasUsefulUrl(event)) {
+    return {
+      eligible: false,
+      needsReview: false,
+      reasons: ["No official/apply URL"],
+      rejectionReason: "No useful official or apply URL",
+    };
+  }
+
+  const remoteOk = isRemoteEvent(event) && preferences.includeRemote;
+  const locationOk = matchesPreferredLocation(event, preferences);
+  if (!remoteOk && !locationOk) {
+    return {
+      eligible: false,
+      needsReview: false,
+      reasons: ["Outside requested geography"],
+      rejectionReason: "Location does not match requested regions and event is not remote",
+    };
+  }
+
+  if (!inRequestedDateRange(event, preferences)) {
+    return {
+      eligible: false,
+      needsReview: false,
+      reasons: ["Outside requested date range"],
+      rejectionReason: "Event date falls outside the requested range",
+    };
+  }
+
+  reasons.push("Passed hard eligibility");
+  return { eligible: true, needsReview: false, reasons };
+}
+
+function rankPreferences(
+  event: HackathonEvent,
+  preferences: DiscoveryPreferences,
+): { score: number; whyMatch: string[]; redFlags: string[] } {
+  let score = 40; // eligible baseline so Canada/remote events pass without theme
+  const whyMatch: string[] = ["Eligible individual event"];
   const redFlags: string[] = [];
 
   if (matchesPreferredLocation(event, preferences)) {
-    score += 30;
+    score += 25;
     whyMatch.push("Matches preferred location");
   }
 
   if (isRemoteEvent(event) && preferences.includeRemote) {
-    score += 25;
+    score += 20;
     whyMatch.push("Remote/online event");
   }
 
@@ -102,58 +196,57 @@ export function scoreHackathonEvent(
   }
 
   if (event.prize) {
-    score += 10;
+    score += 8;
     whyMatch.push("Prize or sponsor listed");
   }
 
   if (event.eligibility && /student/i.test(event.eligibility)) {
-    score += 10;
+    score += 8;
     whyMatch.push("Student-friendly eligibility");
   }
 
-  if (isClearlyPast(event)) {
-    score -= 50;
-    redFlags.push("Event clearly ended");
-  }
-
-  if (!hasUsefulUrl(event)) {
-    score -= 40;
-    redFlags.push("No official, apply, or social URL");
+  const authority = sourceAuthority(event.source);
+  if (authority >= 70) {
+    score += 8;
+    whyMatch.push("Authoritative source");
   }
 
   if (!event.deadline && !event.startDate) {
-    score -= 25;
+    score -= 10;
     redFlags.push("Date or deadline unclear");
   }
 
   if (
-    !isRemoteEvent(event) &&
-    !matchesPreferredLocation(event, preferences) &&
-    preferences.includeInPerson
+    /toronto|waterloo/i.test(locationText(event))
   ) {
-    score -= 20;
-    redFlags.push("Location not in preferred regions");
+    score += 5;
+    whyMatch.push("Toronto/Waterloo proximity");
   }
 
-  let rejected = false;
-  let rejectionReason: string | undefined;
+  return { score, whyMatch, redFlags };
+}
 
-  if (isClearlyPast(event)) {
-    rejected = true;
-    rejectionReason = "Event already ended";
-  } else if (!hasUsefulUrl(event)) {
-    rejected = true;
-    rejectionReason = "No useful URL exists";
-  } else if (score < MIN_ACCEPT_SCORE) {
-    rejected = true;
-    rejectionReason = `Score below minimum (${score} < ${MIN_ACCEPT_SCORE})`;
+export function scoreHackathonEvent(
+  event: HackathonEvent,
+  preferences: DiscoveryPreferences,
+  options: ScoreOptions = {},
+): ScoringResult {
+  const eligibility = evaluateEligibility(event, preferences, options);
+  if (!eligibility.eligible) {
+    return {
+      score: 0,
+      whyMatch: eligibility.reasons,
+      redFlags: eligibility.reasons,
+      rejected: true,
+      rejectionReason: eligibility.rejectionReason,
+    };
   }
 
+  const ranked = rankPreferences(event, preferences);
   return {
-    score,
-    whyMatch,
-    redFlags,
-    rejected,
-    rejectionReason,
+    score: ranked.score,
+    whyMatch: ranked.whyMatch,
+    redFlags: ranked.redFlags,
+    rejected: false,
   };
 }
