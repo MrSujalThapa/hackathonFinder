@@ -283,6 +283,7 @@ Run `npm run check` before merging each step branch.
 
 Planning docs live in `docs/hackathon_approval_agent_docs/`:
 
+- `docs/DEPLOYMENT.md` — free/near-free production deployment guide
 - `01_PRD.md` — product requirements
 - `02_SYSTEM_ARCHITECTURE.md` — system design
 - `03_API_SPEC.md` — API and CLI contracts
