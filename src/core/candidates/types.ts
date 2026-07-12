@@ -139,6 +139,13 @@ export type AddActionInput = {
   metadata?: Json;
 };
 
+export type AddCandidateAnswerInput = {
+  question: string;
+  answer: string;
+  confidence?: "low" | "medium" | "high" | null;
+  sources?: Json;
+};
+
 export type StatusChangeMetadata = {
   reason?: string;
   metadata?: Json;

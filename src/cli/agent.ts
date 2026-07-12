@@ -25,6 +25,11 @@ async function main(): Promise<void> {
       totalTimeoutMs: options.totalTimeoutMs,
       showSearchPlan: options.showSearchPlan,
       showXPlan: options.showXPlan,
+      agent: options.agent,
+      deterministic: options.deterministic,
+      showAgentPlan: options.showAgentPlan,
+      showAgentTrace: options.showAgentTrace,
+      maxAgentCalls: options.maxAgentCalls,
       dryRunPlan: options.dryRunPlan,
       verbose: options.verbose,
     });

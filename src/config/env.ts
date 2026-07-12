@@ -19,7 +19,7 @@ const searchProviderSchema = z
   .or(emptyToUndefined);
 
 const llmProviderSchema = z
-  .enum(["openai", "anthropic", "mock"])
+  .enum(["openai", "mock"])
   .optional()
   .or(emptyToUndefined);
 
@@ -62,6 +62,11 @@ export const serverEnvSchema = z.object({
   LLM_PROVIDER: llmProviderSchema,
   LLM_API_KEY: optionalString,
   LLM_MODEL: optionalString,
+  LLM_REQUEST_TIMEOUT_MS: optionalString,
+  LLM_MAX_RETRIES: optionalString,
+  LLM_MAX_OUTPUT_TOKENS: optionalString,
+  LLM_MAX_CALLS_PER_RUN: optionalString,
+  LLM_MAX_CALLS_PER_CANDIDATE: optionalString,
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -100,5 +105,5 @@ export function hasXConfig(env: ServerEnv = getServerEnv()): boolean {
 }
 
 export function hasLlmConfig(env: ServerEnv = getServerEnv()): boolean {
-  return Boolean(env.LLM_PROVIDER && env.LLM_API_KEY);
+  return Boolean(env.LLM_PROVIDER === "mock" || (env.LLM_PROVIDER && env.LLM_API_KEY));
 }

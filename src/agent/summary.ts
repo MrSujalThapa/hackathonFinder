@@ -15,6 +15,7 @@ import type {
 import type { EvidenceType } from "@/lib/supabase/database.types";
 import type { AddEvidenceInput } from "@/core/candidates/types";
 import { normalizeDatePart } from "@/core/dedupe";
+import { deterministicCandidateSummary } from "@/core/candidateSummary";
 
 export function mapEvidenceType(type: HackathonEvidence["type"]): EvidenceType {
   switch (type) {
@@ -71,7 +72,7 @@ export function eventToUpsertInput(
     themes: event.themes,
     eligibility: event.eligibility ?? null,
     description: event.description ?? null,
-    summary: event.description?.slice(0, 280) ?? null,
+    summary: deterministicCandidateSummary(event, 280),
     whyMatch: score.whyMatch,
     redFlags,
     sourceIds: event.sourceIds ?? {},
@@ -167,6 +168,15 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   console.log("");
 
   console.log("Discovery summary:");
+  if (summary.agent) {
+    console.log(`- mode: ${summary.agent.mode}`);
+    if (summary.agent.mode === "AGENT" && summary.agent.provider) {
+      console.log(`- provider/model: ${summary.agent.provider}/${summary.agent.model ?? "(default)"}`);
+    }
+    console.log(`- agent tool calls: ${summary.agent.toolCalls}`);
+    console.log(`- agent LLM calls: ${summary.agent.llmCalls}`);
+    console.log(`- stop reason: ${summary.agent.stopReason}`);
+  }
   console.log(`- raw leads: ${summary.rawLeads}`);
   console.log(`- unique leads: ${summary.uniqueLeads}`);
   console.log(`- cross-source merges: ${summary.crossSourceMerges}`);

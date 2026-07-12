@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { CandidateDetail } from "@/core/candidates/types";
 import {
   CandidatesApiError,
+  askCandidate,
   decideCandidate,
   fetchCandidate,
   syncCandidateSheet,
@@ -43,6 +44,9 @@ export function CandidateDetailView({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [lastSyncFailed, setLastSyncFailed] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [question, setQuestion] = useState("");
+  const [askLoading, setAskLoading] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -198,6 +202,24 @@ export function CandidateDetailView({ id }: { id: string }) {
     }
   };
 
+  const submitQuestion = async (value: string) => {
+    const trimmed = value.trim();
+    if (!candidate || !trimmed) return;
+    setAskLoading(true);
+    setAskError(null);
+    const controller = new AbortController();
+    try {
+      const result = await askCandidate(candidate.id, trimmed, controller.signal);
+      setCandidate(result.updatedCandidate);
+      setDetail(result.updatedCandidate);
+      setQuestion("");
+    } catch (err) {
+      setAskError(err instanceof Error ? err.message : "Question failed");
+    } finally {
+      setAskLoading(false);
+    }
+  };
+
   if (loading) return <LoadingState label="Loading candidate…" />;
   if (error && !candidate) {
     return <ErrorState message={error} onRetry={() => void load()} />;
@@ -334,6 +356,95 @@ export function CandidateDetailView({ id }: { id: string }) {
         ) : null}
 
         <CandidateEvidenceLinks candidate={candidate} />
+
+        <section className="rounded-2xl border border-border/70 bg-black/20 px-4 py-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
+            Ask
+          </h2>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[
+              "Deadline?",
+              "Remote?",
+              "Prizes?",
+              "Eligibility?",
+              "Official application link?",
+            ].map((item) => (
+              <button
+                key={item}
+                type="button"
+                disabled={askLoading}
+                onClick={() => void submitQuestion(item)}
+                className="rounded-xl border border-border px-3 py-2 text-xs text-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:opacity-40"
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+          <form
+            className="mt-3 flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitQuestion(question);
+            }}
+          >
+            <input
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              disabled={askLoading}
+              placeholder="Ask about deadline, remote, prizes..."
+              className="min-w-0 flex-1 rounded-xl border border-border bg-black/30 px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted focus:border-sky-400/70"
+            />
+            <button
+              type="submit"
+              disabled={askLoading || !question.trim()}
+              className="rounded-xl border border-sky-500/40 px-3 py-2 text-sm text-sky-200 hover:bg-sky-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60 disabled:opacity-40"
+            >
+              {askLoading ? "Asking" : "Ask"}
+            </button>
+          </form>
+          {askError ? (
+            <p className="mt-2 text-xs text-amber-100/90" role="alert">
+              {askError}
+            </p>
+          ) : null}
+          {candidate.answers.length > 0 ? (
+            <ul className="mt-4 space-y-3">
+              {candidate.answers.map((answer) => {
+                const sources = Array.isArray(answer.sources)
+                  ? answer.sources as Array<{ url?: string; label?: string }>
+                  : [];
+                return (
+                  <li key={answer.id} className="rounded-xl border border-border/60 bg-black/20 px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-foreground">{answer.question}</p>
+                      <span className="text-[11px] uppercase tracking-wider text-muted">
+                        {answer.confidence ?? "low"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-foreground/80">{answer.answer}</p>
+                    {sources.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {sources
+                          .filter((source) => source.url)
+                          .map((source) => (
+                            <a
+                              key={`${answer.id}-${source.url}`}
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-sky-300 hover:underline"
+                            >
+                              {source.label ?? "Source"}
+                            </a>
+                          ))}
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </section>
 
         {candidate.evidence.length > 0 ? (
           <section>

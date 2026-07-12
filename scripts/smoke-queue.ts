@@ -24,16 +24,19 @@ async function main(): Promise<void> {
     console.log(`queue card: ${name}`);
 
     await page.getByRole("button", { name: "Approve" }).click();
-    await page.waitForTimeout(800);
-
     // Confirm via API that status flipped before checking history UI.
-    const approvedApi = await page.request.get(
-      `${baseUrl}/api/candidates?status=APPROVED&limit=50`,
-    );
-    const approvedJson = await approvedApi.json();
-    const found = (approvedJson.data?.candidates ?? []).some(
-      (item: { name: string }) => item.name === name,
-    );
+    let found = false;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const approvedApi = await page.request.get(
+        `${baseUrl}/api/candidates?status=APPROVED&limit=50`,
+      );
+      const approvedJson = await approvedApi.json();
+      found = (approvedJson.data?.candidates ?? []).some(
+        (item: { name: string }) => item.name === name,
+      );
+      if (found) break;
+      await page.waitForTimeout(500);
+    }
     if (!found) {
       throw new Error(`Approved API list missing ${name}`);
     }

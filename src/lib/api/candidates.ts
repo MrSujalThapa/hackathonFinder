@@ -123,3 +123,24 @@ export async function syncApprovedSheets(
   });
   return parseEnvelope<BatchSyncSummary>(response);
 }
+
+export type AskCandidateResponse = {
+  answer: string;
+  confidence: "low" | "medium" | "high";
+  sources: Array<{ url: string; label: string }>;
+  updatedCandidate: CandidateDetail;
+};
+
+export async function askCandidate(
+  id: string,
+  question: string,
+  signal?: AbortSignal,
+): Promise<AskCandidateResponse> {
+  const response = await fetch(`/api/candidates/${id}/ask`, {
+    method: "POST",
+    signal,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  return parseEnvelope<AskCandidateResponse>(response);
+}

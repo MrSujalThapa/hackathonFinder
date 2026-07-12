@@ -11,6 +11,11 @@ export type CliOptions = {
   totalTimeoutMs?: number;
   showSearchPlan: boolean;
   showXPlan: boolean;
+  agent: boolean;
+  deterministic: boolean;
+  showAgentPlan: boolean;
+  showAgentTrace: boolean;
+  maxAgentCalls?: number;
   dryRunPlan: boolean;
   verbose: boolean;
 };
@@ -29,6 +34,10 @@ export function parseAgentArgs(argv: string[]): CliOptions {
   const allowMockWrites = args.includes("--allow-mock-writes");
   const showSearchPlan = args.includes("--show-search-plan");
   const showXPlan = args.includes("--show-x-plan");
+  const agent = args.includes("--agent");
+  const deterministic = args.includes("--deterministic");
+  const showAgentPlan = args.includes("--show-agent-plan");
+  const showAgentTrace = args.includes("--show-agent-trace");
   const dryRunPlan = args.includes("--dry-run-plan");
   const verbose = args.includes("--verbose");
 
@@ -36,6 +45,7 @@ export function parseAgentArgs(argv: string[]): CliOptions {
   const maxResultsArg = args.find((arg) => arg.startsWith("--max-results="));
   const sourceTimeoutArg = args.find((arg) => arg.startsWith("--source-timeout-ms="));
   const totalTimeoutArg = args.find((arg) => arg.startsWith("--total-timeout-ms="));
+  const maxAgentCallsArg = args.find((arg) => arg.startsWith("--max-agent-calls="));
 
   const commandParts = args.filter(
     (arg) =>
@@ -43,13 +53,18 @@ export function parseAgentArgs(argv: string[]): CliOptions {
       arg !== "--allow-mock-writes" &&
       arg !== "--show-search-plan" &&
       arg !== "--show-x-plan" &&
+      arg !== "--agent" &&
+      arg !== "--deterministic" &&
+      arg !== "--show-agent-plan" &&
+      arg !== "--show-agent-trace" &&
       arg !== "--dry-run-plan" &&
       arg !== "--verbose" &&
       arg !== "--" &&
       !arg.startsWith("--sources=") &&
       !arg.startsWith("--max-results=") &&
       !arg.startsWith("--source-timeout-ms=") &&
-      !arg.startsWith("--total-timeout-ms="),
+      !arg.startsWith("--total-timeout-ms=") &&
+      !arg.startsWith("--max-agent-calls="),
   );
 
   const command = commandParts.join(" ").trim();
@@ -80,6 +95,16 @@ export function parseAgentArgs(argv: string[]): CliOptions {
         totalTimeoutArg.slice("--total-timeout-ms=".length),
       )
     : undefined;
+  const maxAgentCalls = maxAgentCallsArg
+    ? parsePositiveInt(
+        "--max-agent-calls",
+        maxAgentCallsArg.slice("--max-agent-calls=".length),
+      )
+    : undefined;
+
+  if (agent && deterministic) {
+    throw new Error("Use either --agent or --deterministic, not both.");
+  }
 
   if (sourcesArg && (!sources || sources.length === 0)) {
     throw new Error("--sources must include at least one registered source");
@@ -95,6 +120,11 @@ export function parseAgentArgs(argv: string[]): CliOptions {
     totalTimeoutMs,
     showSearchPlan,
     showXPlan,
+    agent,
+    deterministic,
+    showAgentPlan,
+    showAgentTrace,
+    maxAgentCalls,
     dryRunPlan,
     verbose,
   };

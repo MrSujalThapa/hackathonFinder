@@ -1,3 +1,4 @@
+import { lookup } from "node:dns/promises";
 import * as cheerio from "cheerio";
 import type { RawLead } from "@/core/discovery/types";
 import {
@@ -17,6 +18,7 @@ const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_MAX_PAGES = 15;
 
 const PRIVATE_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
+const DNS_LOOKUP_TIMEOUT_MS = 1_500;
 
 export type EnrichLeadOptions = {
   timeoutMs?: number;
@@ -74,6 +76,50 @@ export function assertSafePublicHttpUrl(rawUrl: string): URL {
   }
   if (isPrivateIpv4(host)) {
     throw new UnsafeUrlError(`Private or non-public host blocked: ${host}`);
+  }
+
+  return parsed;
+}
+
+type DnsLookup = (hostname: string) => Promise<Array<{ address: string }>>;
+
+async function lookupWithTimeout(hostname: string, dnsLookup: DnsLookup): Promise<Array<{ address: string }>> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      dnsLookup(hostname),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new UnsafeUrlError(`DNS lookup timed out for host: ${hostname}`));
+        }, DNS_LOOKUP_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+export async function assertSafePublicHttpUrlWithDns(
+  rawUrl: string,
+  options: { lookup?: DnsLookup } = {},
+): Promise<URL> {
+  const parsed = assertSafePublicHttpUrl(rawUrl);
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const dnsLookup = options.lookup ?? ((hostname: string) => lookup(hostname, { all: true }));
+
+  let addresses: Array<{ address: string }>;
+  try {
+    addresses = await lookupWithTimeout(host, dnsLookup);
+  } catch (error) {
+    if (error instanceof UnsafeUrlError) throw error;
+    throw new UnsafeUrlError(`DNS lookup failed for host: ${host}`);
+  }
+
+  for (const { address } of addresses) {
+    const normalized = address.toLowerCase().replace(/^\[|\]$/g, "");
+    if (normalized.includes(":") || isPrivateIpv4(normalized) || PRIVATE_HOSTS.has(normalized)) {
+      throw new UnsafeUrlError(`Private or non-public resolved address blocked: ${host}`);
+    }
   }
 
   return parsed;
@@ -241,6 +287,7 @@ async function enrichOne(
   lead: RawLead,
   options: Required<Pick<EnrichLeadOptions, "timeoutMs" | "maxBytes">> & {
     fetchImpl: typeof fetchHtml;
+    validateUrl: (url: string) => unknown | Promise<unknown>;
   },
 ): Promise<RawLead> {
   const target = resolveEnrichmentTarget(lead);
@@ -250,6 +297,8 @@ async function enrichOne(
   const html = await options.fetchImpl(target, {
     timeoutMs: options.timeoutMs,
     retries: 0,
+    maxBytes: options.maxBytes,
+    validateUrl: options.validateUrl,
   });
 
   if (html.length > options.maxBytes) {
@@ -320,6 +369,9 @@ export async function enrichPromisingLeads(
   const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
   const maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
   const fetchImpl = options.fetchImpl ?? fetchHtml;
+  const validateUrl = options.fetchImpl
+    ? (url: string) => assertSafePublicHttpUrl(url)
+    : (url: string) => assertSafePublicHttpUrlWithDns(url);
   const warnings: string[] = [];
 
   // Prepare X leads (soft search for linkless when available) without crashing.
@@ -351,7 +403,7 @@ export async function enrichPromisingLeads(
 
   await mapPool(candidates, concurrency, async (lead) => {
     try {
-      const enriched = await enrichOne(lead, { timeoutMs, maxBytes, fetchImpl });
+      const enriched = await enrichOne(lead, { timeoutMs, maxBytes, fetchImpl, validateUrl });
       enrichedById.set(lead.id, enriched);
       enrichedCount += 1;
     } catch (error) {

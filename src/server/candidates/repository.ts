@@ -2,6 +2,7 @@ import type { CandidateStatus, Database } from "@/lib/supabase/database.types";
 import { createServiceSupabaseClient } from "@/lib/supabase/createServiceClient";
 import type {
   AddActionInput,
+  AddCandidateAnswerInput,
   AddEvidenceInput,
   CandidateCard,
   ListCandidatesParams,
@@ -452,6 +453,38 @@ export async function addAction(candidateId: string, action: AddActionInput) {
     newStatus: data.new_status,
     reason: data.reason,
     metadata: data.metadata,
+    createdAt: data.created_at,
+  };
+}
+
+export async function addCandidateAnswer(
+  candidateId: string,
+  answer: AddCandidateAnswerInput,
+) {
+  const supabase = createServiceSupabaseClient();
+
+  const { data, error } = await supabase
+    .from("candidate_answers")
+    .insert({
+      candidate_id: candidateId,
+      question: answer.question,
+      answer: answer.answer,
+      confidence: answer.confidence ?? null,
+      sources: answer.sources ?? [],
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to add candidate answer: ${error.message}`);
+  }
+
+  return {
+    id: data.id,
+    question: data.question,
+    answer: data.answer,
+    confidence: data.confidence,
+    sources: data.sources,
     createdAt: data.created_at,
   };
 }
