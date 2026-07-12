@@ -5,8 +5,10 @@ import {
   validationError,
 } from "@/server/api/envelope";
 import { getCandidateRepository } from "@/server/candidates/service";
+import { withRequestLogging } from "@/server/observability/logger";
 
 export async function GET(request: Request): Promise<Response> {
+  return withRequestLogging(request, "GET /api/candidates", async () => {
   try {
     const url = new URL(request.url);
     const parsed = listCandidatesQuerySchema.safeParse(
@@ -33,11 +35,12 @@ export async function GET(request: Request): Promise<Response> {
       nextCursor: result.nextCursor ?? null,
       total: result.total ?? null,
     });
-  } catch (error) {
+  } catch {
     return fail(
       "INTERNAL_ERROR",
-      error instanceof Error ? error.message : "Failed to list candidates",
+      "Failed to list candidates",
       500,
     );
   }
+  });
 }

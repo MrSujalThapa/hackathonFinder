@@ -6,6 +6,7 @@ import {
   hasSupabaseConfig,
 } from "@/config/env";
 import { createServiceSupabaseClient } from "@/lib/supabase/createServiceClient";
+import { withRequestLogging } from "@/server/observability/logger";
 
 type HealthResponse = {
   status: "ok" | "degraded";
@@ -31,7 +32,8 @@ async function checkSupabase(): Promise<"ok" | "degraded"> {
   }
 }
 
-export async function GET(): Promise<Response> {
+export async function GET(request: Request): Promise<Response> {
+  return withRequestLogging(request, "GET /api/health", async () => {
   const env = getServerEnv();
   const supabase = await checkSupabase();
   const body: HealthResponse = {
@@ -49,5 +51,6 @@ export async function GET(): Promise<Response> {
   return Response.json(body, {
     status: body.status === "ok" ? 200 : 200,
     headers: { "cache-control": "no-store" },
+  });
   });
 }

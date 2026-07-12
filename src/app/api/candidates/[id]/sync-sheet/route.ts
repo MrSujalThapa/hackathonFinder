@@ -13,6 +13,7 @@ import type {
   SheetSyncStatus,
 } from "@/server/sheets/types";
 import { protectApiRequest } from "@/server/api/protection";
+import { withRequestLogging } from "@/server/observability/logger";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -48,6 +49,7 @@ export async function POST(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
+  return withRequestLogging(request, "POST /api/candidates/[id]/sync-sheet", async () => {
   try {
     const protection = protectApiRequest(request, {
       requireSameOrigin: true,
@@ -77,9 +79,8 @@ export async function POST(
       candidate,
       sheetSync: toSheetSyncResult(reconcile),
     });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to sync candidate to sheet";
-    return fail("INTERNAL_ERROR", message, 500);
+  } catch {
+    return fail("INTERNAL_ERROR", "Failed to sync candidate to sheet", 500);
   }
+  });
 }

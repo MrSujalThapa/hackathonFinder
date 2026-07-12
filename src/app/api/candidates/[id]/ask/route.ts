@@ -8,6 +8,7 @@ import {
 import { answerCandidateQuestion } from "@/core/candidateQuestionAnswer";
 import { getCandidateRepository } from "@/server/candidates/service";
 import { protectApiRequest } from "@/server/api/protection";
+import { withRequestLogging } from "@/server/observability/logger";
 
 const askBodySchema = z.object({
   question: z.string().trim().min(3).max(500),
@@ -21,6 +22,7 @@ export async function POST(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
+  return withRequestLogging(request, "POST /api/candidates/[id]/ask", async () => {
   try {
     const protection = protectApiRequest(request, {
       requireSameOrigin: true,
@@ -59,11 +61,12 @@ export async function POST(
       persistedAnswer: persisted ?? null,
       updatedCandidate: updatedCandidate ?? candidate,
     });
-  } catch (error) {
+  } catch {
     return fail(
       "INTERNAL_ERROR",
-      error instanceof Error ? error.message : "Failed to answer candidate question",
+      "Failed to answer candidate question",
       500,
     );
   }
+  });
 }

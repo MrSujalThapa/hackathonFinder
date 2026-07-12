@@ -2,12 +2,14 @@ import { z } from "zod";
 import { fail, ok, validationError } from "@/server/api/envelope";
 import { protectApiRequest } from "@/server/api/protection";
 import { syncPendingApproved } from "@/server/sheets/syncPendingApproved";
+import { withRequestLogging } from "@/server/observability/logger";
 
 const bodySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional().default(50),
 });
 
 export async function POST(request: Request): Promise<Response> {
+  return withRequestLogging(request, "POST /api/sheets/sync-approved", async () => {
   try {
     const protection = protectApiRequest(request, {
       requireSameOrigin: true,
@@ -33,9 +35,8 @@ export async function POST(request: Request): Promise<Response> {
     });
 
     return ok(summary);
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to sync approved candidates";
-    return fail("INTERNAL_ERROR", message, 500);
+  } catch {
+    return fail("INTERNAL_ERROR", "Failed to sync approved candidates", 500);
   }
+  });
 }

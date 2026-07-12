@@ -5,15 +5,17 @@ import {
   validationError,
 } from "@/server/api/envelope";
 import { getCandidateRepository } from "@/server/candidates/service";
+import { withRequestLogging } from "@/server/observability/logger";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: RouteContext,
 ): Promise<Response> {
+  return withRequestLogging(request, "GET /api/candidates/[id]", async () => {
   try {
     const { id } = await context.params;
     const parsedId = candidateIdSchema.safeParse(id);
@@ -28,11 +30,12 @@ export async function GET(
     }
 
     return ok({ candidate });
-  } catch (error) {
+  } catch {
     return fail(
       "INTERNAL_ERROR",
-      error instanceof Error ? error.message : "Failed to load candidate",
+      "Failed to load candidate",
       500,
     );
   }
+  });
 }

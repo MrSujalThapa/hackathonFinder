@@ -9,6 +9,7 @@ import {
 import { getCandidateRepository } from "@/server/candidates/service";
 import { timedAsync } from "@/lib/perf/timing";
 import { protectApiRequest } from "@/server/api/protection";
+import { withRequestLogging } from "@/server/observability/logger";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -27,6 +28,7 @@ async function applyDecision(
   context: RouteContext,
   action: "approve" | "reject" | "save" | "restore",
 ): Promise<Response> {
+  return withRequestLogging(request, `POST /api/candidates/[id]/${action}`, async () => {
   try {
     const protection = protectApiRequest(request, {
       requireSameOrigin: true,
@@ -80,8 +82,9 @@ async function applyDecision(
     if (message.startsWith("Candidate not found")) {
       return fail("CANDIDATE_NOT_FOUND", message, 404);
     }
-    return fail("INTERNAL_ERROR", message, 500);
+    return fail("INTERNAL_ERROR", "Failed to update candidate", 500);
   }
+  });
 }
 
 export function createDecisionHandler(
