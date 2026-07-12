@@ -241,20 +241,22 @@ export function CandidateDetailView({ id }: { id: string }) {
     });
 
   return (
-    <section className="mx-auto w-full max-w-[var(--content-detail)]">
+    <section className="mx-auto w-full max-w-[calc(var(--content-detail)+var(--content-rail)+2rem)]">
       <PageHeader
         eyebrow="Candidate"
         title={candidate.name}
         description={candidate.summary ?? "No summary available."}
+        titleClassName="hf-doc-title"
         actions={
-          <Link href="/queue" className="hf-btn hf-btn-ghost">
+          <Link href="/queue" className="hf-btn hf-btn-ghost hf-touch">
             Back to queue
           </Link>
         }
       />
 
-      <div className="hf-card space-y-5 p-5 sm:space-y-6 sm:p-6">
-        <div className="flex items-start justify-between gap-3">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,var(--content-detail))_var(--content-rail)] xl:items-start">
+      <div className="space-y-5 border border-border bg-card p-5 sm:space-y-6 sm:p-6 rounded-[var(--radius-xl)]">
+        <div className="flex items-start justify-between gap-3 xl:hidden">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
               {formatLocation(candidate)} · {formatMode(candidate.mode)}
@@ -270,9 +272,9 @@ export function CandidateDetailView({ id }: { id: string }) {
           <CandidateScore score={candidate.score} />
         </div>
 
-        <CandidateTags themes={candidate.themes} />
-
-        {candidate.status === "NEEDS_REVIEW" ? (
+        <div className="xl:hidden">
+          <CandidateTags themes={candidate.themes} />
+        </div>
           <section className="rounded-[var(--radius-xl)] border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
             <h2 className="hf-section-label text-amber-200/90">Needs review</h2>
             <p className="mt-1 text-amber-100/85">
@@ -479,12 +481,12 @@ export function CandidateDetailView({ id }: { id: string }) {
 
         <CandidateActionHistory actions={candidate.actions} />
 
-        <div className="flex flex-wrap gap-2 border-t border-border-subtle pt-4">
+        <div className="flex flex-wrap gap-2 border-t border-border-subtle pt-4 xl:hidden">
           <button
             type="button"
             disabled={busy}
             onClick={() => void apply("approve")}
-            className="hf-btn hf-btn-approve"
+            className="hf-btn hf-btn-approve hf-touch"
           >
             Approve
           </button>
@@ -492,7 +494,7 @@ export function CandidateDetailView({ id }: { id: string }) {
             type="button"
             disabled={busy}
             onClick={() => void apply("save")}
-            className="hf-btn hf-btn-save"
+            className="hf-btn hf-btn-save hf-touch"
           >
             Save
           </button>
@@ -500,7 +502,7 @@ export function CandidateDetailView({ id }: { id: string }) {
             type="button"
             disabled={busy}
             onClick={() => void apply("reject")}
-            className="hf-btn hf-btn-reject"
+            className="hf-btn hf-btn-reject hf-touch"
           >
             Reject
           </button>
@@ -509,12 +511,70 @@ export function CandidateDetailView({ id }: { id: string }) {
               type="button"
               disabled={busy}
               onClick={() => void apply("restore")}
-              className="hf-btn hf-btn-ghost"
+              className="hf-btn hf-btn-ghost hf-touch"
             >
               Restore to queue
             </button>
           ) : null}
         </div>
+      </div>
+
+      <aside className="hidden space-y-3 xl:block">
+        <div className="hf-panel space-y-2 px-4 py-3 text-sm">
+          <p className="hf-section-label">Facts</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
+            {formatLocation(candidate)} · {formatMode(candidate.mode)}
+          </p>
+          <p>{formatDateRange(candidate.startDate, candidate.endDate)}</p>
+          <p className="text-muted">
+            Deadline{" "}
+            {candidate.deadline ? formatDate(candidate.deadline) : "unclear"}
+          </p>
+          <div className="pt-2">
+            <CandidateScore score={candidate.score} />
+          </div>
+          <CandidateTags themes={candidate.themes} />
+        </div>
+        <div className="hf-panel space-y-2 px-4 py-3">
+          <p className="hf-section-label">Actions</p>
+          <div className="grid gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void apply("approve")}
+              className="hf-btn hf-btn-approve hf-touch w-full"
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void apply("save")}
+              className="hf-btn hf-btn-save hf-touch w-full"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void apply("reject")}
+              className="hf-btn hf-btn-reject hf-touch w-full"
+            >
+              Reject
+            </button>
+            {candidate.status !== "NEW" ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void apply("restore")}
+                className="hf-btn hf-btn-ghost hf-touch w-full"
+              >
+                Restore to queue
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </aside>
       </div>
     </section>
   );
