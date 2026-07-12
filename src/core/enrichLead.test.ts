@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   assertSafePublicHttpUrl,
+  assertSafePublicHttpUrlWithDns,
   enrichPromisingLeads,
   parseEnrichedPage,
   resolveEnrichmentTarget,
@@ -20,6 +21,16 @@ describe("enrichLead SSRF protections", () => {
     assert.throws(() => assertSafePublicHttpUrl("http://127.0.0.1/secret"), UnsafeUrlError);
     assert.throws(() => assertSafePublicHttpUrl("http://192.168.1.10/x"), UnsafeUrlError);
     assert.throws(() => assertSafePublicHttpUrl("file:///etc/passwd"), UnsafeUrlError);
+  });
+
+  it("rejects public-looking hosts that resolve to private networks", async () => {
+    await assert.rejects(
+      () =>
+        assertSafePublicHttpUrlWithDns("https://public.example/hack", {
+          lookup: async () => [{ address: "10.0.0.5" }],
+        }),
+      UnsafeUrlError,
+    );
   });
 });
 
