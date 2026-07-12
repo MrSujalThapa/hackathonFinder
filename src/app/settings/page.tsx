@@ -8,9 +8,11 @@ import {
   hasXConfig,
 } from "@/config/env";
 import { isMockCandidatesEnabled } from "@/server/candidates/service";
+import { getOwnerDiagnostics } from "@/server/diagnostics";
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
   const env = getServerEnv();
+  const diagnostics = await getOwnerDiagnostics().catch(() => null);
   const sheetsConfigured = hasGoogleSheetsConfig(env);
   const sheetTab = getGoogleSheetTab(env);
   const publicSheetUrl = env.NEXT_PUBLIC_GOOGLE_SHEET_URL?.trim() || null;
@@ -103,6 +105,40 @@ export default function SettingsPage() {
               <code className="text-foreground/80">npm run check:x</code>)
             </li>
           </ul>
+        </section>
+
+        <section className="rounded-2xl border border-border bg-card/80 p-5">
+          <h2 className="text-sm font-semibold">Production diagnostics</h2>
+          <dl className="mt-3 grid gap-3 text-sm text-muted sm:grid-cols-2">
+            <div>
+              <dt className="text-xs uppercase text-muted/80">Provider/model</dt>
+              <dd className="mt-1 text-foreground">
+                {diagnostics?.config.providerModel ?? "unavailable"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-muted/80">Last Sheet sync</dt>
+              <dd className="mt-1 text-foreground">
+                {diagnostics?.lastSheetSync
+                  ? new Date(
+                      diagnostics.lastSheetSync.sheetAppendedAt,
+                    ).toLocaleString()
+                  : "none recorded"}
+              </dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-xs uppercase text-muted/80">Latest agent run</dt>
+              <dd className="mt-1 text-foreground">
+                {diagnostics?.latestAgentRun
+                  ? `${diagnostics.latestAgentRun.status} · ${diagnostics.latestAgentRun.sources.join(", ") || "no sources"} · ${diagnostics.latestAgentRun.newCandidates} new / ${diagnostics.latestAgentRun.updatedCandidates} updated`
+                  : "none recorded"}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-3 text-xs text-muted">
+            Public health: <code className="text-foreground/80">/api/health</code>.
+            Owner diagnostics are protected and never include secret values.
+          </p>
         </section>
       </div>
     </section>

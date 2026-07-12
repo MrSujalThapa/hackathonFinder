@@ -176,6 +176,7 @@ X/Twitter MCP arrives in a later project step.
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript check |
 | `npm run check` | Lint + typecheck + build |
+| `npm run check:all` | Full non-X production gate |
 | `npm run check:supabase` | Read-only Supabase connectivity diagnostics |
 | `npm run check:llm` | Live/mock LLM connectivity diagnostics |
 | `npm run check:sheets` | Read-only Google Sheets diagnostics (no writes) |

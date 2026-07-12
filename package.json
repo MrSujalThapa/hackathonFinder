@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm run build",
+    "check:all": "npm run check && npm test && npm run check:supabase && npm run check:sheets && npm run check:llm && npm run check:prod",
     "check:supabase": "tsx scripts/check-supabase.ts",
     "check:x": "tsx scripts/check-x-mcp.ts",
     "check:llm": "tsx scripts/check-llm.ts",

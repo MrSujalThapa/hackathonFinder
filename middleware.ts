@@ -17,6 +17,7 @@ const PROTECTED_PAGE_PREFIXES = [
 const PROTECTED_API_PREFIXES = [
   "/api/candidates",
   "/api/sheets",
+  "/api/diagnostics",
   "/api/dev/reset-mock",
 ];
 
