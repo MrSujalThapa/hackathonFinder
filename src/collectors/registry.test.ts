@@ -16,11 +16,17 @@ describe("collector registry", () => {
     assert.ok(sources.includes("mlh"));
     assert.ok(sources.includes("luma"));
     assert.ok(sources.includes("web"));
+    assert.ok(sources.includes("x"));
   });
 
   it("parses --sources flag values", () => {
-    const sources = parseSourcesFlag("mock,hacklist,mlh,luma,web");
-    assert.deepEqual(sources, ["mock", "hacklist", "mlh", "luma", "web"]);
+    const sources = parseSourcesFlag("mock,hacklist,mlh,luma,web,x");
+    assert.deepEqual(sources, ["mock", "hacklist", "mlh", "luma", "web", "x"]);
+  });
+
+  it("maps twitter CLI alias to x", () => {
+    assert.deepEqual(parseSourcesFlag("twitter"), ["x"]);
+    assert.deepEqual(parseSourcesFlag("hacklist,twitter,web"), ["hacklist", "x", "web"]);
   });
 
   it("rejects unknown sources with a useful error", () => {

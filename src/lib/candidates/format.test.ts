@@ -40,6 +40,8 @@ describe("candidate format helpers", () => {
     assert.equal(formatSourceLabel("mlh"), "MLH");
     assert.equal(formatSourceLabel("luma"), "Luma");
     assert.equal(formatSourceLabel("web"), "Web");
+    assert.equal(formatSourceLabel("x"), "X");
+    assert.equal(formatSourceLabel("twitter"), "X");
   });
 
   it("title-cases unknown source labels", () => {

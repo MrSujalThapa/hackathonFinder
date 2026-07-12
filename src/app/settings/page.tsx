@@ -5,6 +5,7 @@ import {
   getServerEnv,
   hasGoogleSheetsConfig,
   hasSupabaseConfig,
+  hasXConfig,
 } from "@/config/env";
 import { isMockCandidatesEnabled } from "@/server/candidates/service";
 
@@ -74,9 +75,9 @@ export default function SettingsPage() {
         <section className="rounded-2xl border border-border bg-card/80 p-5">
           <h2 className="text-sm font-semibold">Discovery sources</h2>
           <p className="mt-1 text-sm text-muted">
-            Default CLI sources: HackList, MLH, Luma, and web search. Devpost
-            and Hakku remain available when requested; mock only when explicit.
-            X/Twitter MCP arrives later.
+            Default CLI sources: HackList, MLH, Luma, and web search. Devpost,
+            Hakku, and X (twitter alias) are available when requested; mock only
+            when explicit.
           </p>
         </section>
 
@@ -94,7 +95,11 @@ export default function SettingsPage() {
               (run{" "}
               <code className="text-foreground/80">npm run check:sheets</code>)
             </li>
-            <li>X MCP — not configured yet</li>
+            <li>
+              X MCP — {hasXConfig(env) ? "configured" : "not configured"} (opt-in
+              via{" "}
+              <code className="text-foreground/80">--sources=x</code>)
+            </li>
           </ul>
         </section>
       </div>

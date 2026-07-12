@@ -53,7 +53,7 @@ export function parseAgentArgs(argv: string[]): CliOptions {
 
   if (!command) {
     throw new Error(
-      'Usage: npm run agent -- "find upcoming hackathons" [-- --dry-run] [-- --sources=hacklist,mlh,luma,web] [-- --max-results=20] [-- --source-timeout-ms=15000] [-- --total-timeout-ms=45000] [-- --show-search-plan] [-- --dry-run-plan] [-- --verbose] [-- --allow-mock-writes]',
+      'Usage: npm run agent -- "find upcoming hackathons" [-- --dry-run] [-- --sources=hacklist,mlh,luma,web,x] [-- --max-results=20] [-- --source-timeout-ms=15000] [-- --total-timeout-ms=45000] [-- --show-search-plan] [-- --dry-run-plan] [-- --verbose] [-- --allow-mock-writes]',
     );
   }
 
