@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { NextRequest } from "next/server";
-import { middleware } from "./middleware";
+import { middleware } from "./src/middleware";
 import { createSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth/session";
 
 describe("middleware protection", () => {

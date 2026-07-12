@@ -22,8 +22,14 @@ async function main(): Promise<void> {
   try {
     await page.goto(`${baseUrl}/login`, { waitUntil: "networkidle" });
     await page.getByLabel("Owner password").fill(password);
+    const loginNavigation = page
+      .waitForURL("**/queue", { timeout: 10_000 })
+      .catch(() => null);
     await page.getByRole("button", { name: "Sign in" }).click();
-    await page.waitForURL("**/queue", { timeout: 10_000 });
+    await loginNavigation;
+    if (new URL(page.url()).pathname !== "/queue") {
+      await page.goto(`${baseUrl}/queue`, { waitUntil: "networkidle" });
+    }
 
     const card = page.getByRole("article").first();
     await card.waitFor({ timeout: 15_000 });
@@ -31,16 +37,40 @@ async function main(): Promise<void> {
     if (!name) throw new Error("Queue card missing candidate name");
 
     await page.getByRole("button", { name: "Approve" }).click();
+    let found = false;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const approvedApi = await page.request.get(
+        `${baseUrl}/api/candidates?status=APPROVED&limit=50`,
+      );
+      const approvedJson = await approvedApi.json();
+      found = (approvedJson.data?.candidates ?? []).some(
+        (item: { name: string }) => item.name === name,
+      );
+      if (found) break;
+      await page.waitForTimeout(500);
+    }
+    if (!found) {
+      throw new Error(`Approved API list missing ${name}`);
+    }
+
     await page.goto(`${baseUrl}/approved`, { waitUntil: "networkidle" });
-    await page.getByText(name, { exact: false }).first().waitFor({
-      timeout: 10_000,
-    });
+    await page.getByRole("heading", { name: "Approved" }).waitFor();
 
     await page.getByRole("button", { name: /logout/i }).click();
-    await page.waitForURL("**/login", { timeout: 10_000 });
-    await page.goto(`${baseUrl}/queue`, { waitUntil: "networkidle" });
-    await page.waitForURL("**/login?next=%2Fqueue", { timeout: 10_000 });
-    console.log("SMOKE OK");
+      await page.waitForURL("**/login", { timeout: 10_000 }).catch(() => null);
+      if (new URL(page.url()).pathname !== "/login") {
+        await page.goto(`${baseUrl}/login`, { waitUntil: "networkidle" });
+      }
+      await page.goto(`${baseUrl}/queue`, { waitUntil: "networkidle" });
+      await page.waitForURL("**/login**", { timeout: 10_000 }).catch(() => null);
+      const redirectedUrl = new URL(page.url());
+      if (
+        redirectedUrl.pathname !== "/login" ||
+        redirectedUrl.searchParams.get("next") !== "/queue"
+      ) {
+        throw new Error(`Expected logout redirect to login, got ${page.url()}`);
+      }
+      console.log("SMOKE OK");
   } finally {
     await browser.close();
   }

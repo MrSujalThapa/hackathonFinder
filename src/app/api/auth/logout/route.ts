@@ -21,6 +21,7 @@ export async function POST(request: Request): Promise<Response> {
     secure: env.NODE_ENV === "production",
     path: "/",
     maxAge: 0,
+    expires: new Date(0),
   });
   return response;
 }
