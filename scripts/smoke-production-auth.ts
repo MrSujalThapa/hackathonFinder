@@ -36,7 +36,9 @@ async function main(): Promise<void> {
     const name = (await card.locator("h2").first().textContent())?.trim();
     if (!name) throw new Error("Queue card missing candidate name");
 
-    await page.getByRole("button", { name: "Approve" }).click();
+    // Queue is swipe/keyboard-first — no visible Approve button row.
+    await card.focus().catch(() => undefined);
+    await page.keyboard.press("ArrowRight");
     let found = false;
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const approvedApi = await page.request.get(
