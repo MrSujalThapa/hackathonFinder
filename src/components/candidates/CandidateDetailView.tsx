@@ -26,6 +26,8 @@ import {
   formatMode,
 } from "@/lib/candidates/format";
 import { CandidateEvidenceLinks } from "@/components/candidates/CandidateEvidenceLinks";
+import { CandidateEvidencePanel } from "@/components/candidates/CandidateEvidencePanel";
+import { CandidateActionHistory } from "@/components/candidates/CandidateActionHistory";
 import { CandidateScore } from "@/components/candidates/CandidateScore";
 import { CandidateTags } from "@/components/candidates/CandidateTags";
 import {
@@ -369,10 +371,15 @@ export function CandidateDetailView({ id }: { id: string }) {
 
         <CandidateEvidenceLinks candidate={candidate} />
 
+        <CandidateEvidencePanel evidence={candidate.evidence} />
+
         <section className="rounded-2xl border border-border/70 bg-black/20 px-4 py-3">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-            Ask
+            Ask anything about this event
           </h2>
+          <p className="mt-1 text-xs text-muted">
+            Type any question — suggestions are shortcuts, not limits.
+          </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {[
               "Deadline?",
@@ -403,7 +410,7 @@ export function CandidateDetailView({ id }: { id: string }) {
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
               disabled={askLoading}
-              placeholder="Ask about deadline, remote, prizes..."
+              placeholder="e.g. Am I eligible as a Waterloo student?"
               className="min-w-0 flex-1 rounded-xl border border-border bg-black/30 px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted focus:border-sky-400/70"
             />
             <button
@@ -423,17 +430,24 @@ export function CandidateDetailView({ id }: { id: string }) {
             <ul className="mt-4 space-y-3">
               {candidate.answers.map((answer) => {
                 const sources = Array.isArray(answer.sources)
-                  ? answer.sources as Array<{ url?: string; label?: string }>
+                  ? (answer.sources as Array<{ url?: string; label?: string }>)
                   : [];
                 return (
-                  <li key={answer.id} className="rounded-xl border border-border/60 bg-black/20 px-3 py-2">
+                  <li
+                    key={answer.id}
+                    className="rounded-xl border border-border/60 bg-black/20 px-3 py-2"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-foreground">{answer.question}</p>
+                      <p className="text-sm font-medium text-foreground">
+                        {answer.question}
+                      </p>
                       <span className="text-[11px] uppercase tracking-wider text-muted">
                         {answer.confidence ?? "low"}
                       </span>
                     </div>
-                    <p className="mt-1 text-sm text-foreground/80">{answer.answer}</p>
+                    <p className="mt-1 text-sm text-foreground/80">
+                      {answer.answer}
+                    </p>
                     {sources.length > 0 ? (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {sources
@@ -455,69 +469,15 @@ export function CandidateDetailView({ id }: { id: string }) {
                 );
               })}
             </ul>
-          ) : null}
+          ) : (
+            <p className="mt-3 text-xs text-muted">
+              No questions yet. Ask about eligibility, teams, prizes, deadlines,
+              or anything still unclear.
+            </p>
+          )}
         </section>
 
-        {candidate.evidence.length > 0 ? (
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-              Evidence
-            </h2>
-            <ul className="mt-2 space-y-2">
-              {candidate.evidence.map((item) => (
-                <li
-                  key={item.id}
-                  className="rounded-xl border border-border/70 bg-black/20 px-3 py-2 text-sm"
-                >
-                  <p className="text-xs uppercase tracking-wider text-muted">
-                    {item.type}
-                  </p>
-                  <p className="mt-1">{item.title ?? item.snippet ?? "Evidence item"}</p>
-                  {item.url ? (
-                    <a
-                      href={item.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 inline-block text-sky-300 hover:underline"
-                    >
-                      Open source
-                    </a>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-
-        {candidate.actions.length > 0 ? (
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-              Action history
-            </h2>
-            <ul className="mt-3 space-y-3">
-              {candidate.actions.map((action) => (
-                <li
-                  key={action.id}
-                  className="border-l border-border pl-3 text-sm text-foreground/75"
-                >
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="font-medium text-foreground">
-                      {action.action}
-                    </span>
-                    <span className="text-xs text-muted">
-                      {new Date(action.createdAt).toLocaleString()}
-                    </span>
-                  </div>
-                  {action.previousStatus && action.newStatus ? (
-                    <p className="mt-1 text-xs text-muted">
-                      {action.previousStatus} -&gt; {action.newStatus}
-                    </p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        <CandidateActionHistory actions={candidate.actions} />
 
         <div className="flex flex-wrap gap-2 border-t border-border/70 pt-4">
           <button
