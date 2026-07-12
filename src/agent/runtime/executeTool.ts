@@ -3,7 +3,12 @@ import { hasRuntimeTimeRemaining, remainingRuntimeMs } from "./limits";
 import type { AgentRuntimeState } from "./state";
 import { addTrace } from "./state";
 import type { AgentToolRegistry } from "./toolRegistry";
-import type { AgentToolCall, AgentToolError, AgentToolResult } from "./types";
+import type {
+  AgentToolCall,
+  AgentToolError,
+  AgentToolFailureResult,
+  AgentToolResult,
+} from "./types";
 
 function normalizeForKey(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -33,7 +38,7 @@ function failure(
   error: AgentToolError,
   startedAt: number,
   options: { cached?: boolean; duplicate?: boolean } = {},
-): AgentToolResult {
+): AgentToolFailureResult {
   return {
     ok: false,
     call,

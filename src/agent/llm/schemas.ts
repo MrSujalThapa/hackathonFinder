@@ -23,10 +23,17 @@ export const agentIntentSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const plannedToolNameSchema = z.enum([
-  AGENT_TOOL_NAMES.parseDiscoveryIntent,
-  AGENT_TOOL_NAMES.planSearchQueries,
-  AGENT_TOOL_NAMES.planXQueries,
-  AGENT_TOOL_NAMES.collectSources,
+  AGENT_TOOL_NAMES.collectHacklist,
+  AGENT_TOOL_NAMES.collectMlh,
+  AGENT_TOOL_NAMES.collectLuma,
+  AGENT_TOOL_NAMES.collectDevpost,
+  AGENT_TOOL_NAMES.collectHakku,
+  AGENT_TOOL_NAMES.collectWeb,
+  AGENT_TOOL_NAMES.collectX,
+  AGENT_TOOL_NAMES.enrichUrl,
+  AGENT_TOOL_NAMES.inspectCandidateEvidence,
+  AGENT_TOOL_NAMES.searchCandidateWeb,
+  AGENT_TOOL_NAMES.finalizeDiscoveryPlan,
 ]);
 
 export const plannedToolCallSchema = z.object({

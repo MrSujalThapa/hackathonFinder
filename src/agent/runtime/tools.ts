@@ -1,81 +1,67 @@
 import { z } from "zod";
-import { parseCommand } from "@/agent/parseCommand";
 import { planSearchQueries } from "@/agent/planSearchQueries";
-import { planXQueries } from "@/agent/planXQueries";
 import { runCollectors } from "@/collectors/registry";
+import { enrichPromisingLeads } from "@/core/enrichLead";
 import { discoveryPreferencesSchema, sourceNameSchema } from "@/core/discovery/schemas";
 import type { SourceName } from "@/core/discovery/types";
 import type { AgentTool } from "./types";
 
 export const AGENT_TOOL_NAMES = {
-  parseDiscoveryIntent: "parse_discovery_intent",
-  planSearchQueries: "plan_search_queries",
-  planXQueries: "plan_x_queries",
-  collectSources: "collect_sources",
+  collectHacklist: "collect_hacklist",
+  collectMlh: "collect_mlh",
+  collectLuma: "collect_luma",
+  collectDevpost: "collect_devpost",
+  collectHakku: "collect_hakku",
+  collectWeb: "collect_web",
+  collectX: "collect_x",
+  enrichUrl: "enrich_url",
+  inspectCandidateEvidence: "inspect_candidate_evidence",
+  searchCandidateWeb: "search_candidate_web",
+  finalizeDiscoveryPlan: "finalize_discovery_plan",
 } as const;
 
-const parseDiscoveryIntentArgsSchema = z.object({
-  command: z.string().min(1),
-});
-
-const planSearchQueriesArgsSchema = z.object({
+const collectSourceArgsSchema = z.object({
   preferences: discoveryPreferencesSchema,
-});
-
-const planXQueriesArgsSchema = z.object({
-  preferences: discoveryPreferencesSchema,
-  maxQueries: z.number().int().positive().optional(),
-});
-
-const collectSourcesArgsSchema = z.object({
-  preferences: discoveryPreferencesSchema,
-  sources: z.array(sourceNameSchema).optional(),
   dryRun: z.boolean().default(true),
   maxResults: z.number().int().positive().optional(),
   timeoutMs: z.number().int().positive().optional(),
   requestId: z.string().optional(),
 });
 
-export const parseDiscoveryIntentTool: AgentTool<
-  z.infer<typeof parseDiscoveryIntentArgsSchema>,
-  { preferences: ReturnType<typeof parseCommand> }
-> = {
-  name: AGENT_TOOL_NAMES.parseDiscoveryIntent,
-  description: "Parse a natural-language discovery command into discovery preferences.",
-  schema: parseDiscoveryIntentArgsSchema,
-  execute(args) {
-    return { preferences: parseCommand(args.command) };
-  },
-};
+const enrichUrlArgsSchema = z.object({
+  url: z.string().url(),
+  title: z.string().optional(),
+  source: sourceNameSchema.default("web"),
+  timeoutMs: z.number().int().positive().optional(),
+});
 
-export const planSearchQueriesTool: AgentTool<
-  z.infer<typeof planSearchQueriesArgsSchema>,
-  { queries: string[] }
-> = {
-  name: AGENT_TOOL_NAMES.planSearchQueries,
-  description: "Plan deterministic web search queries for discovery preferences.",
-  schema: planSearchQueriesArgsSchema,
-  execute(args) {
-    return { queries: planSearchQueries(args.preferences) };
-  },
-};
+const inspectCandidateEvidenceArgsSchema = z.object({
+  candidateId: z.string().min(1),
+  evidence: z.array(z.object({
+    type: z.string(),
+    url: z.string().optional().nullable(),
+    title: z.string().optional().nullable(),
+    snippet: z.string().optional().nullable(),
+    raw: z.unknown().optional(),
+  })).default([]),
+});
 
-export const planXQueriesTool: AgentTool<
-  z.infer<typeof planXQueriesArgsSchema>,
-  { queries: string[] }
-> = {
-  name: AGENT_TOOL_NAMES.planXQueries,
-  description: "Plan deterministic X search queries for discovery preferences.",
-  schema: planXQueriesArgsSchema,
-  execute(args) {
-    return {
-      queries: planXQueries(args.preferences, { maxQueries: args.maxQueries }),
-    };
-  },
-};
+const searchCandidateWebArgsSchema = z.object({
+  preferences: discoveryPreferencesSchema,
+  query: z.string().min(1).optional(),
+  maxResults: z.number().int().positive().optional(),
+  timeoutMs: z.number().int().positive().optional(),
+});
 
-export const collectSourcesTool: AgentTool<
-  z.infer<typeof collectSourcesArgsSchema>,
+const finalizeDiscoveryPlanArgsSchema = z.object({
+  selectedSources: z.array(sourceNameSchema),
+  searchQueries: z.array(z.string()).default([]),
+  stopReason: z.string().min(1),
+  warnings: z.array(z.string()).default([]),
+});
+
+function collectorTool(name: string, source: SourceName): AgentTool<
+  z.infer<typeof collectSourceArgsSchema>,
   {
     sources: SourceName[];
     leadCount: number;
@@ -83,39 +69,144 @@ export const collectSourcesTool: AgentTool<
     errors: string[];
     warnings: string[];
   }
+> {
+  return {
+    name,
+    description: `Run the ${source} collector under runtime limits.`,
+    schema: collectSourceArgsSchema,
+    async execute(args, context) {
+      const timeoutMs = Math.min(
+        args.timeoutMs ?? context.limits.perToolTimeoutMs,
+        context.limits.perToolTimeoutMs,
+      );
+      const preferences = {
+        ...args.preferences,
+        sources: [source],
+        maxResults: args.maxResults ?? args.preferences.maxResults,
+      };
+      const results = await runCollectors(
+        {
+          preferences,
+          maxResults: preferences.maxResults,
+          timeoutMs,
+          dryRun: args.dryRun,
+          requestId: args.requestId ?? context.requestId,
+        },
+        [source],
+      );
+
+      return {
+        sources: [source],
+        results,
+        leadCount: results.reduce((sum, result) => sum + result.leads.length, 0),
+        errors: results.flatMap((result) => result.errors),
+        warnings: results.flatMap((result) => result.warnings),
+      };
+    },
+  };
+}
+
+const enrichUrlTool: AgentTool<
+  z.infer<typeof enrichUrlArgsSchema>,
+  Awaited<ReturnType<typeof enrichPromisingLeads>>
 > = {
-  name: AGENT_TOOL_NAMES.collectSources,
-  description: "Run registered collectors for the selected discovery sources.",
-  schema: collectSourcesArgsSchema,
+  name: AGENT_TOOL_NAMES.enrichUrl,
+  description: "Enrich one URL through the existing SSRF-safe lead enrichment path.",
+  schema: enrichUrlArgsSchema,
+  execute(args, context) {
+    return enrichPromisingLeads(
+      [{
+        id: `agent-url:${args.url}`,
+        source: args.source,
+        title: args.title,
+        url: args.url,
+        text: args.title,
+        links: [args.url],
+        postedAt: new Date().toISOString(),
+      }],
+      {
+        timeoutMs: Math.min(args.timeoutMs ?? context.limits.perToolTimeoutMs, context.limits.perToolTimeoutMs),
+        maxPages: 1,
+        concurrency: 1,
+      },
+    );
+  },
+};
+
+const inspectCandidateEvidenceTool: AgentTool<
+  z.infer<typeof inspectCandidateEvidenceArgsSchema>,
+  { candidateId: string; evidenceCount: number; urls: string[]; snippets: string[] }
+> = {
+  name: AGENT_TOOL_NAMES.inspectCandidateEvidence,
+  description: "Inspect already-loaded candidate evidence supplied by the caller.",
+  schema: inspectCandidateEvidenceArgsSchema,
+  execute(args) {
+    return {
+      candidateId: args.candidateId,
+      evidenceCount: args.evidence.length,
+      urls: args.evidence
+        .map((item) => item.url)
+        .filter((url): url is string => Boolean(url)),
+      snippets: args.evidence
+        .map((item) => item.snippet ?? item.title ?? undefined)
+        .filter((snippet): snippet is string => Boolean(snippet))
+        .slice(0, 10),
+    };
+  },
+};
+
+const searchCandidateWebTool: AgentTool<
+  z.infer<typeof searchCandidateWebArgsSchema>,
+  { queries: string[]; source: "web"; results: Awaited<ReturnType<typeof runCollectors>> }
+> = {
+  name: AGENT_TOOL_NAMES.searchCandidateWeb,
+  description: "Run targeted read-only web search through the existing web collector.",
+  schema: searchCandidateWebArgsSchema,
   async execute(args, context) {
-    const sources = args.sources ?? args.preferences.sources;
-    const timeoutMs = args.timeoutMs ?? context.limits.perToolTimeoutMs;
+    const queries = args.query ? [args.query] : planSearchQueries(args.preferences).slice(0, 3);
+    const preferences = {
+      ...args.preferences,
+      sources: ["web" as SourceName],
+      maxResults: args.maxResults ?? Math.min(args.preferences.maxResults, 5),
+    };
     const results = await runCollectors(
       {
-        preferences: args.preferences,
-        maxResults: args.maxResults ?? args.preferences.maxResults,
-        timeoutMs,
-        dryRun: args.dryRun,
-        requestId: args.requestId ?? context.requestId,
+        preferences,
+        maxResults: preferences.maxResults,
+        timeoutMs: Math.min(args.timeoutMs ?? context.limits.perToolTimeoutMs, context.limits.perToolTimeoutMs),
+        dryRun: true,
+        requestId: context.requestId,
       },
-      sources,
+      ["web"],
     );
+    return { queries, source: "web", results };
+  },
+};
 
-    return {
-      sources,
-      results,
-      leadCount: results.reduce((sum, result) => sum + result.leads.length, 0),
-      errors: results.flatMap((result) => result.errors),
-      warnings: results.flatMap((result) => result.warnings),
-    };
+const finalizeDiscoveryPlanTool: AgentTool<
+  z.infer<typeof finalizeDiscoveryPlanArgsSchema>,
+  z.infer<typeof finalizeDiscoveryPlanArgsSchema>
+> = {
+  name: AGENT_TOOL_NAMES.finalizeDiscoveryPlan,
+  description: "Finalize the inspectable discovery plan. This performs no mutations.",
+  schema: finalizeDiscoveryPlanArgsSchema,
+  execute(args) {
+    return args;
   },
 };
 
 export function getDefaultAgentTools(): AgentTool[] {
   return [
-    parseDiscoveryIntentTool,
-    planSearchQueriesTool,
-    planXQueriesTool,
-    collectSourcesTool,
+    collectorTool(AGENT_TOOL_NAMES.collectHacklist, "hacklist"),
+    collectorTool(AGENT_TOOL_NAMES.collectMlh, "mlh"),
+    collectorTool(AGENT_TOOL_NAMES.collectLuma, "luma"),
+    collectorTool(AGENT_TOOL_NAMES.collectDevpost, "devpost"),
+    collectorTool(AGENT_TOOL_NAMES.collectHakku, "hakku"),
+    collectorTool(AGENT_TOOL_NAMES.collectWeb, "web"),
+    collectorTool(AGENT_TOOL_NAMES.collectX, "x"),
+    enrichUrlTool,
+    inspectCandidateEvidenceTool,
+    searchCandidateWebTool,
+    finalizeDiscoveryPlanTool,
   ];
 }

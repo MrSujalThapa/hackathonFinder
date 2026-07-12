@@ -1,27 +1,29 @@
 import type { AgentTool } from "./types";
 import { getDefaultAgentTools } from "./tools";
 
-export class AgentToolRegistry {
-  private readonly tools = new Map<string, AgentTool>();
+type AnyAgentTool = AgentTool<unknown, unknown>;
 
-  constructor(tools: AgentTool[] = []) {
+export class AgentToolRegistry {
+  private readonly tools = new Map<string, AnyAgentTool>();
+
+  constructor(tools: AnyAgentTool[] = []) {
     for (const tool of tools) {
       this.register(tool);
     }
   }
 
-  register(tool: AgentTool): void {
+  register(tool: AnyAgentTool): void {
     if (this.tools.has(tool.name)) {
       throw new Error(`Tool already registered: ${tool.name}`);
     }
     this.tools.set(tool.name, tool);
   }
 
-  get(name: string): AgentTool | undefined {
+  get(name: string): AnyAgentTool | undefined {
     return this.tools.get(name);
   }
 
-  list(): AgentTool[] {
+  list(): AnyAgentTool[] {
     return [...this.tools.values()];
   }
 
@@ -30,7 +32,7 @@ export class AgentToolRegistry {
   }
 }
 
-export function createToolRegistry(tools: AgentTool[] = []): AgentToolRegistry {
+export function createToolRegistry(tools: AnyAgentTool[] = []): AgentToolRegistry {
   return new AgentToolRegistry(tools);
 }
 

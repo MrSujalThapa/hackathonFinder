@@ -1,4 +1,6 @@
 import { AGENT_TOOL_NAMES } from "@/agent/runtime/tools";
+import { planSearchQueries } from "@/agent/planSearchQueries";
+import type { SourceName } from "@/core/discovery/types";
 import { discoveryPlanSchema, type AgentIntent, type DiscoveryPlan } from "./schemas";
 
 export type PlanDiscoveryOptions = {
@@ -8,6 +10,17 @@ export type PlanDiscoveryOptions = {
   requestId?: string;
   sourceTimeoutMs?: number;
   maxResults?: number;
+};
+
+const SOURCE_TO_TOOL: Record<SourceName, string> = {
+  hacklist: AGENT_TOOL_NAMES.collectHacklist,
+  mlh: AGENT_TOOL_NAMES.collectMlh,
+  luma: AGENT_TOOL_NAMES.collectLuma,
+  devpost: AGENT_TOOL_NAMES.collectDevpost,
+  hakku: AGENT_TOOL_NAMES.collectHakku,
+  web: AGENT_TOOL_NAMES.collectWeb,
+  x: AGENT_TOOL_NAMES.collectX,
+  mock: AGENT_TOOL_NAMES.finalizeDiscoveryPlan,
 };
 
 function planId(rawCommand: string): string {
@@ -35,45 +48,37 @@ export function planDiscovery(
 
   const toolCalls = [];
 
-  if (options.includeParseTool) {
-    toolCalls.push({
-      id: "parse-intent",
-      name: AGENT_TOOL_NAMES.parseDiscoveryIntent,
-      args: { command: intent.rawCommand },
-      reason: "Capture deterministic discovery preferences.",
-    });
+  const searchQueries = planSearchQueries(intent.preferences).slice(0, 6);
+
+  if (!options.dryRunPlan) {
+    for (const source of intent.preferences.sources) {
+      if (source === "mock") continue;
+      toolCalls.push({
+        id: `collect-${source}`,
+        name: SOURCE_TO_TOOL[source],
+        args: {
+          preferences: intent.preferences,
+          dryRun: options.dryRunCollectors ?? true,
+          requestId: options.requestId,
+          timeoutMs: options.sourceTimeoutMs,
+          maxResults: options.maxResults,
+        },
+        reason: `Run ${source} only if selected by the bounded discovery plan.`,
+      });
+    }
   }
 
   toolCalls.push({
-    id: "plan-web-search",
-    name: AGENT_TOOL_NAMES.planSearchQueries,
-    args: { preferences: intent.preferences },
-    reason: "Inspect deterministic web search queries before collection.",
+    id: "finalize-plan",
+    name: AGENT_TOOL_NAMES.finalizeDiscoveryPlan,
+    args: {
+      selectedSources: intent.preferences.sources,
+      searchQueries,
+      stopReason: options.dryRunPlan ? "plan-only" : "selected sources exhausted",
+      warnings: intent.warnings,
+    },
+    reason: "Record the selected sources and stop condition.",
   });
-
-  if (intent.preferences.sources.includes("x")) {
-    toolCalls.push({
-      id: "plan-x-search",
-      name: AGENT_TOOL_NAMES.planXQueries,
-      args: { preferences: intent.preferences },
-      reason: "Inspect deterministic X search queries before collection.",
-    });
-  }
-
-  if (!options.dryRunPlan) {
-    toolCalls.push({
-      id: "collect-sources",
-      name: AGENT_TOOL_NAMES.collectSources,
-      args: {
-        preferences: intent.preferences,
-        dryRun: options.dryRunCollectors ?? true,
-        requestId: options.requestId,
-        timeoutMs: options.sourceTimeoutMs,
-        maxResults: options.maxResults,
-      },
-      reason: "Run the selected registered collectors under runtime limits.",
-    });
-  }
 
   return discoveryPlanSchema.parse({
     id: planId(intent.rawCommand),

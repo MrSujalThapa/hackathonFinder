@@ -39,6 +39,8 @@ export type AgentToolResult =
       durationMs: number;
     };
 
+export type AgentToolFailureResult = Extract<AgentToolResult, { ok: false }>;
+
 export type AgentToolContext = {
   limits: AgentRuntimeLimits;
   requestId?: string;
@@ -48,8 +50,8 @@ export type AgentToolContext = {
 export type AgentTool<Args = unknown, Result = unknown> = {
   name: string;
   description: string;
-  schema: z.ZodType<Args>;
-  execute: (args: Args, context: AgentToolContext) => Promise<Result> | Result;
+  schema: z.ZodType<Args, z.ZodTypeDef, unknown>;
+  execute(args: Args, context: AgentToolContext): Promise<Result> | Result;
 };
 
 export type AgentTraceEventInput = Omit<AgentTraceEvent, "at" | "sequence">;
