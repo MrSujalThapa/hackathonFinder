@@ -108,4 +108,30 @@ describe("parseAgentArgs", () => {
       /either --agent or --deterministic/,
     );
   });
+
+  it("rejects malformed and excessive agent runtime flags", () => {
+    assert.throws(
+      () =>
+        parseAgentArgs([
+          "node",
+          "agent.ts",
+          "find upcoming hackathons",
+          "--",
+          "--max-agent-calls=4]",
+        ]),
+      /no trailing characters/,
+    );
+
+    assert.throws(
+      () =>
+        parseAgentArgs([
+          "node",
+          "agent.ts",
+          "find upcoming hackathons",
+          "--",
+          "--max-agent-calls=21",
+        ]),
+      /<= 20/,
+    );
+  });
 });

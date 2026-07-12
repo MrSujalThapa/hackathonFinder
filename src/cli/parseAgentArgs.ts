@@ -20,10 +20,16 @@ export type CliOptions = {
   verbose: boolean;
 };
 
-function parsePositiveInt(flag: string, raw: string): number {
+function parsePositiveInt(flag: string, raw: string, options: { max?: number } = {}): number {
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`${flag} must be a positive integer with no trailing characters`);
+  }
   const value = Number.parseInt(raw, 10);
   if (Number.isNaN(value) || value < 1) {
     throw new Error(`${flag} must be a positive integer`);
+  }
+  if (options.max != null && value > options.max) {
+    throw new Error(`${flag} must be <= ${options.max}`);
   }
   return value;
 }
@@ -99,6 +105,7 @@ export function parseAgentArgs(argv: string[]): CliOptions {
     ? parsePositiveInt(
         "--max-agent-calls",
         maxAgentCallsArg.slice("--max-agent-calls=".length),
+        { max: 20 },
       )
     : undefined;
 
