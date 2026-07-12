@@ -1,12 +1,35 @@
 import type { CandidateDetail, CandidateEvidence } from "@/core/candidates/types";
+import {
+  classifyCandidateQuestion,
+  formatDecisionAnswer,
+  parseDecisionRecommendation,
+  type CandidateAnswerSource,
+  type DecisionRecommendation,
+  type FactCertainty,
+  type QuestionKind,
+  DECISION_LEVELS,
+  CONFIDENCE_LEVELS,
+} from "@/core/candidateAskDecision";
+import {
+  createLlmProviderOptional,
+  generateJson,
+  jsonSchemaResponseFormat,
+  type LlmProvider,
+} from "@/lib/llm";
 import type { SearchProvider } from "@/lib/search/types";
 
-export type CandidateAnswerSource = {
-  url: string;
-  label: string;
-};
-
-export type FactCertainty = "confirmed" | "inferred" | "conflicting" | "unknown";
+export type {
+  CandidateAnswerSource,
+  DecisionRecommendation,
+  FactCertainty,
+  QuestionKind,
+} from "@/core/candidateAskDecision";
+export {
+  classifyCandidateQuestion,
+  formatDecisionAnswer,
+  parseDecisionRecommendation,
+  readPersistedAskPayload,
+} from "@/core/candidateAskDecision";
 
 export type CandidateQuestionAnswer = {
   answer: string;
@@ -15,10 +38,13 @@ export type CandidateQuestionAnswer = {
   sources: CandidateAnswerSource[];
   liveVerification: boolean;
   updatedFields: Partial<CandidateDetail>;
+  kind: QuestionKind;
+  decision?: DecisionRecommendation;
 };
 
 export type AnswerCandidateQuestionOptions = {
   searchProvider?: SearchProvider | null;
+  llmProvider?: LlmProvider | null;
   now?: Date;
   /** Hard cap — Ask never runs more than this many search calls. */
   maxSearchCalls?: number;
@@ -86,13 +112,13 @@ function withCertainty(
     sources,
     liveVerification,
     updatedFields: {},
+    kind: "factual",
   };
 }
 
 function needsResearch(question: string, local: CandidateQuestionAnswer): boolean {
   if (local.certainty === "confirmed" && local.confidence === "high") return false;
   if (local.certainty === "unknown" || local.confidence === "low") return true;
-  // Judging / build / uncertain prompts benefit from extra context when weak
   if (/judging|criteria|build|uncertain|still unclear/i.test(question)) {
     return local.confidence !== "high";
   }
@@ -398,7 +424,6 @@ function answerLocally(
     );
   }
 
-  // Generic grounded fallback using description / evidence — never invent.
   const blob = [
     candidate.summary,
     candidate.description,
@@ -423,19 +448,180 @@ function answerLocally(
   );
 }
 
+function candidateBrief(candidate: CandidateDetail): string {
+  return [
+    `Name: ${candidate.name}`,
+    `Status: ${candidate.status}`,
+    `Mode: ${candidate.mode ?? "unknown"}`,
+    `Location: ${[candidate.city, candidate.country].filter(Boolean).join(", ") || candidate.location || "unknown"}`,
+    `Dates: ${candidate.startDate ?? "?"} – ${candidate.endDate ?? "?"}`,
+    `Deadline: ${candidate.deadline ?? "unknown"}`,
+    `Eligibility: ${candidate.eligibility ?? "unknown"}`,
+    `Prize: ${candidate.prize ?? "unknown"}`,
+    `Themes: ${candidate.themes.join(", ") || "none"}`,
+    `Summary: ${candidate.summary ?? ""}`,
+    `Description: ${(candidate.description ?? "").slice(0, 600)}`,
+    `Why match: ${candidate.whyMatch.join("; ") || "none stored"}`,
+    `Red flags: ${candidate.redFlags.join("; ") || "none stored"}`,
+    `Official: ${candidate.officialUrl ?? "none"}`,
+    `Apply: ${candidate.applyUrl ?? "none"}`,
+    `Evidence: ${evidenceText(candidate.evidence).slice(0, 500) || "none"}`,
+  ].join("\n");
+}
+
+function decisionJsonSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "recommendation",
+      "headline",
+      "reasons",
+      "concerns",
+      "missingInformation",
+      "nextStep",
+      "confidence",
+      "citations",
+    ],
+    properties: {
+      recommendation: { type: "string", enum: [...DECISION_LEVELS] },
+      headline: { type: "string" },
+      reasons: { type: "array", items: { type: "string" } },
+      concerns: { type: "array", items: { type: "string" } },
+      missingInformation: { type: "array", items: { type: "string" } },
+      nextStep: { type: "string" },
+      confidence: { type: "string", enum: [...CONFIDENCE_LEVELS] },
+      citations: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["url", "label"],
+          properties: {
+            url: { type: "string" },
+            label: { type: "string" },
+          },
+        },
+      },
+    },
+  };
+}
+
+async function answerDecisionQuestion(
+  candidate: CandidateDetail,
+  question: string,
+  llmProvider: LlmProvider | null | undefined,
+): Promise<CandidateQuestionAnswer> {
+  const sources = primarySources(candidate);
+  const provider =
+    llmProvider === undefined
+      ? createLlmProviderOptional({ instrument: false })
+      : llmProvider;
+
+  if (!provider) {
+    return {
+      answer:
+        "I can only give advisory recommendations when an LLM provider is configured. Ask a factual question (deadline, eligibility, mode) or configure LLM_PROVIDER.",
+      confidence: "low",
+      certainty: "unknown",
+      sources,
+      liveVerification: false,
+      updatedFields: {},
+      kind: "decision",
+    };
+  }
+
+  try {
+    const { value } = await generateJson(
+      provider,
+      {
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You advise on whether to attend a hackathon.",
+              "Owner preference storage may be unavailable — state clearly when advice is generic.",
+              "Recommend directly. Explain why. List concerns and missing facts.",
+              "Propose one concrete next step. Distinguish verified vs inferred.",
+              "Cite only URLs grounded in the candidate brief. Do not invent facts or dump search snippets.",
+              "No generic disclaimer walls.",
+            ].join(" "),
+          },
+          {
+            role: "user",
+            content: [
+              "Question:",
+              question,
+              "",
+              "Candidate brief:",
+              candidateBrief(candidate),
+              "",
+              "Allowed citation URLs:",
+              sources.map((s) => `${s.label}: ${s.url}`).join("\n") || "none",
+            ].join("\n"),
+          },
+        ],
+        temperature: 0.2,
+        maxOutputTokens: 700,
+        responseFormat: jsonSchemaResponseFormat({
+          name: "hackathon_decision",
+          schema: decisionJsonSchema(),
+        }),
+        metadata: { feature: "candidate-ask-decision" },
+      },
+      (raw) => parseDecisionRecommendation(raw, sources),
+    );
+
+    const decision = value;
+    return {
+      answer: formatDecisionAnswer(decision),
+      confidence: decision.confidence,
+      certainty:
+        decision.confidence === "high"
+          ? "inferred"
+          : decision.missingInformation.length
+            ? "unknown"
+            : "inferred",
+      sources: decision.citations.length ? decision.citations : sources,
+      liveVerification: false,
+      updatedFields: {},
+      kind: "decision",
+      decision,
+    };
+  } catch {
+    return {
+      answer:
+        "Could not complete an advisory recommendation right now. Try again, or ask a factual question about deadlines, eligibility, or mode.",
+      confidence: "low",
+      certainty: "unknown",
+      sources,
+      liveVerification: false,
+      updatedFields: {},
+      kind: "decision",
+    };
+  }
+}
+
 export async function answerCandidateQuestion(
   candidate: CandidateDetail,
   question: string,
   options: AnswerCandidateQuestionOptions = {},
 ): Promise<CandidateQuestionAnswer> {
+  const trimmed = question.trim();
+  const kind = classifyCandidateQuestion(trimmed);
+
+  if (kind === "decision") {
+    return answerDecisionQuestion(candidate, trimmed, options.llmProvider);
+  }
+
   const now = options.now ?? new Date();
-  const local = answerLocally(candidate, question.trim(), now);
+  const local = answerLocally(candidate, trimmed, now);
   const maxSearch = options.maxSearchCalls ?? 1;
 
   if (
     !options.searchProvider ||
     maxSearch < 1 ||
-    !needsResearch(question, local)
+    !needsResearch(trimmed, local)
   ) {
     return local;
   }
@@ -443,7 +629,7 @@ export async function answerCandidateQuestion(
   try {
     const researched = await researchOnce(
       candidate,
-      question,
+      trimmed,
       options.searchProvider,
     );
     if (!researched) return { ...local, liveVerification: false };
@@ -463,6 +649,7 @@ export async function answerCandidateQuestion(
         sources: mergedSources,
         liveVerification: true,
         updatedFields: {},
+        kind: "factual",
       };
     }
 
@@ -473,6 +660,7 @@ export async function answerCandidateQuestion(
       liveVerification: true,
       confidence: local.confidence === "high" ? "medium" : local.confidence,
       certainty: local.certainty === "confirmed" ? "inferred" : local.certainty,
+      kind: "factual",
     };
   } catch {
     return { ...local, liveVerification: false };

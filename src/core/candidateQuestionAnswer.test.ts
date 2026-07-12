@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   answerCandidateQuestion,
+  classifyCandidateQuestion,
+  formatDecisionAnswer,
   suggestedCandidateQuestions,
 } from "@/core/candidateQuestionAnswer";
 import type { CandidateDetail } from "@/core/candidates/types";
+import { createFakeLlmProvider } from "@/lib/llm/providers/fake";
 
 function detail(overrides: Partial<CandidateDetail> = {}): CandidateDetail {
   return {
@@ -55,12 +58,42 @@ function detail(overrides: Partial<CandidateDetail> = {}): CandidateDetail {
   };
 }
 
+describe("classifyCandidateQuestion", () => {
+  it("routes factual questions without an allowlist", () => {
+    assert.equal(
+      classifyCandidateQuestion("What is the application deadline?"),
+      "factual",
+    );
+    assert.equal(classifyCandidateQuestion("Are teams required?"), "factual");
+    assert.equal(
+      classifyCandidateQuestion("Am I eligible as a Waterloo student?"),
+      "factual",
+    );
+  });
+
+  it("routes decision / advisory questions", () => {
+    assert.equal(
+      classifyCandidateQuestion("Should I do this hackathon?"),
+      "decision",
+    );
+    assert.equal(
+      classifyCandidateQuestion("Is it worth my time for portfolio value?"),
+      "decision",
+    );
+    assert.equal(
+      classifyCandidateQuestion("What are the risks if I commit?"),
+      "decision",
+    );
+  });
+});
+
 describe("answerCandidateQuestion", () => {
   it("answers arbitrary eligibility and team questions from stored facts", async () => {
     const eligibility = await answerCandidateQuestion(
       detail(),
       "Am I eligible as a Waterloo student?",
     );
+    assert.equal(eligibility.kind, "factual");
     assert.match(eligibility.answer, /Eligibility|student/i);
     assert.ok(eligibility.sources.length > 0);
 
@@ -97,6 +130,55 @@ describe("answerCandidateQuestion", () => {
       "What are the judging criteria?",
     );
     assert.equal(result.certainty, "unknown");
+  });
+
+  it("returns structured LLM recommendations for decision questions", async () => {
+    const provider = createFakeLlmProvider({
+      handler: () =>
+        JSON.stringify({
+          recommendation: "yes",
+          headline: "Worth doing if you want agent practice.",
+          reasons: [
+            "Remote/online format matches flexible participation.",
+            "Theme aligns with AI agent building.",
+          ],
+          concerns: ["Prize details are sparse beyond the headline amount."],
+          missingInformation: ["Exact judging rubric weightings."],
+          nextStep: "Confirm eligibility on the official page, then apply.",
+          confidence: "medium",
+          citations: [
+            { url: "https://example.com", label: "Official event page" },
+          ],
+        }),
+    });
+
+    const result = await answerCandidateQuestion(
+      detail(),
+      "Should I do this hackathon?",
+      { llmProvider: provider },
+    );
+
+    assert.equal(result.kind, "decision");
+    assert.ok(result.decision);
+    assert.equal(result.decision?.recommendation, "yes");
+    assert.match(result.decision?.headline ?? "", /agent practice/i);
+    assert.ok((result.decision?.reasons.length ?? 0) >= 1);
+    assert.match(result.answer, /Recommendation: yes/i);
+    assert.equal(
+      formatDecisionAnswer(result.decision!).includes("Next step:"),
+      true,
+    );
+  });
+
+  it("does not invent a decision template when LLM is unavailable", async () => {
+    const result = await answerCandidateQuestion(
+      detail(),
+      "Should I do this hackathon?",
+      { llmProvider: null },
+    );
+    assert.equal(result.kind, "decision");
+    assert.equal(result.decision, undefined);
+    assert.match(result.answer, /LLM provider/i);
   });
 
   it("suggests questions from gaps", () => {

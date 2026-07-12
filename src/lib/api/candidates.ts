@@ -127,6 +127,19 @@ export async function syncApprovedSheets(
 export type AskCandidateResponse = {
   answer: string;
   confidence: "low" | "medium" | "high";
+  certainty?: "confirmed" | "inferred" | "conflicting" | "unknown";
+  liveVerification?: boolean;
+  kind?: "factual" | "decision";
+  decision?: {
+    recommendation: "strong_yes" | "yes" | "maybe" | "no" | "strong_no";
+    headline: string;
+    reasons: string[];
+    concerns: string[];
+    missingInformation: string[];
+    nextStep: string;
+    confidence: "high" | "medium" | "low";
+    citations: Array<{ url: string; label: string }>;
+  } | null;
   sources: Array<{ url: string; label: string }>;
   updatedCandidate: CandidateDetail;
 };
