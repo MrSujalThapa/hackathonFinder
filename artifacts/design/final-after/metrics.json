@@ -1,0 +1,1254 @@
+{
+  "step": "final-after",
+  "capturedAt": "2026-07-12T20:39:28.407Z",
+  "baseUrl": "http://localhost:3000",
+  "viewports": [
+    {
+      "name": "390x844",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "name": "430x932",
+      "width": 430,
+      "height": 932
+    },
+    {
+      "name": "768x1024",
+      "width": 768,
+      "height": 1024
+    },
+    {
+      "name": "1024x900",
+      "width": 1024,
+      "height": 900
+    },
+    {
+      "name": "1440x1000",
+      "width": 1440,
+      "height": 1000
+    },
+    {
+      "name": "1728x900",
+      "width": 1728,
+      "height": 900
+    },
+    {
+      "name": "1920x1080",
+      "width": 1920,
+      "height": 1080
+    }
+  ],
+  "screenshots": [
+    "artifacts/design/final-after/queue__390x844.png",
+    "artifacts/design/final-after/queue__430x932.png",
+    "artifacts/design/final-after/queue__768x1024.png",
+    "artifacts/design/final-after/queue__1024x900.png",
+    "artifacts/design/final-after/queue__1440x1000.png",
+    "artifacts/design/final-after/queue__1728x900.png",
+    "artifacts/design/final-after/queue__1920x1080.png",
+    "artifacts/design/final-after/approved__390x844.png",
+    "artifacts/design/final-after/approved__430x932.png",
+    "artifacts/design/final-after/approved__768x1024.png",
+    "artifacts/design/final-after/approved__1024x900.png",
+    "artifacts/design/final-after/approved__1440x1000.png",
+    "artifacts/design/final-after/approved__1728x900.png",
+    "artifacts/design/final-after/approved__1920x1080.png",
+    "artifacts/design/final-after/rejected__390x844.png",
+    "artifacts/design/final-after/rejected__430x932.png",
+    "artifacts/design/final-after/rejected__768x1024.png",
+    "artifacts/design/final-after/rejected__1024x900.png",
+    "artifacts/design/final-after/rejected__1440x1000.png",
+    "artifacts/design/final-after/rejected__1728x900.png",
+    "artifacts/design/final-after/rejected__1920x1080.png",
+    "artifacts/design/final-after/saved__390x844.png",
+    "artifacts/design/final-after/saved__430x932.png",
+    "artifacts/design/final-after/saved__768x1024.png",
+    "artifacts/design/final-after/saved__1024x900.png",
+    "artifacts/design/final-after/saved__1440x1000.png",
+    "artifacts/design/final-after/saved__1728x900.png",
+    "artifacts/design/final-after/saved__1920x1080.png",
+    "artifacts/design/final-after/settings__390x844.png",
+    "artifacts/design/final-after/settings__430x932.png",
+    "artifacts/design/final-after/settings__768x1024.png",
+    "artifacts/design/final-after/settings__1024x900.png",
+    "artifacts/design/final-after/settings__1440x1000.png",
+    "artifacts/design/final-after/settings__1728x900.png",
+    "artifacts/design/final-after/settings__1920x1080.png",
+    "artifacts/design/final-after/candidate-detail__390x844.png",
+    "artifacts/design/final-after/ask__390x844.png",
+    "artifacts/design/final-after/candidate-detail__430x932.png",
+    "artifacts/design/final-after/ask__430x932.png",
+    "artifacts/design/final-after/candidate-detail__768x1024.png",
+    "artifacts/design/final-after/ask__768x1024.png",
+    "artifacts/design/final-after/candidate-detail__1024x900.png",
+    "artifacts/design/final-after/ask__1024x900.png",
+    "artifacts/design/final-after/candidate-detail__1440x1000.png",
+    "artifacts/design/final-after/ask__1440x1000.png",
+    "artifacts/design/final-after/candidate-detail__1728x900.png",
+    "artifacts/design/final-after/ask__1728x900.png",
+    "artifacts/design/final-after/candidate-detail__1920x1080.png",
+    "artifacts/design/final-after/ask__1920x1080.png",
+    "artifacts/design/final-after/ask-factual__1440x1000.png",
+    "artifacts/design/final-after/ask-decision__1440x1000.png"
+  ],
+  "metrics": [
+    {
+      "label": "queue",
+      "viewport": "390x844",
+      "clientWidth": 390,
+      "clientHeight": 844,
+      "scrollWidth": 390,
+      "cardWidth": 347,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": 11,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-main"
+      ]
+    },
+    {
+      "label": "queue",
+      "viewport": "430x932",
+      "clientWidth": 430,
+      "clientHeight": 932,
+      "scrollWidth": 430,
+      "cardWidth": 386,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": 10.2,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-main"
+      ]
+    },
+    {
+      "label": "queue",
+      "viewport": "768x1024",
+      "clientWidth": 768,
+      "clientHeight": 1024,
+      "scrollWidth": 768,
+      "cardWidth": 698,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": 9.1,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-main"
+      ]
+    },
+    {
+      "label": "queue",
+      "viewport": "1024x900",
+      "clientWidth": 1024,
+      "clientHeight": 900,
+      "scrollWidth": 1024,
+      "cardWidth": 729,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": 28.8,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-main"
+      ]
+    },
+    {
+      "label": "queue",
+      "viewport": "1440x1000",
+      "clientWidth": 1440,
+      "clientHeight": 1000,
+      "scrollWidth": 1440,
+      "cardWidth": 873,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": 39.4,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-main"
+      ]
+    },
+    {
+      "label": "queue",
+      "viewport": "1728x900",
+      "clientWidth": 1728,
+      "clientHeight": 900,
+      "scrollWidth": 1728,
+      "cardWidth": 873,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": 49.5,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-main"
+      ]
+    },
+    {
+      "label": "queue",
+      "viewport": "1920x1080",
+      "clientWidth": 1920,
+      "clientHeight": 1080,
+      "scrollWidth": 1920,
+      "cardWidth": 873,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": 54.5,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-main"
+      ]
+    },
+    {
+      "label": "approved",
+      "viewport": "390x844",
+      "clientWidth": 390,
+      "clientHeight": 844,
+      "scrollWidth": 390,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "approved",
+      "viewport": "430x932",
+      "clientWidth": 430,
+      "clientHeight": 932,
+      "scrollWidth": 430,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "approved",
+      "viewport": "768x1024",
+      "clientWidth": 768,
+      "clientHeight": 1024,
+      "scrollWidth": 768,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "approved",
+      "viewport": "1024x900",
+      "clientWidth": 1024,
+      "clientHeight": 900,
+      "scrollWidth": 1024,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "approved",
+      "viewport": "1440x1000",
+      "clientWidth": 1440,
+      "clientHeight": 1000,
+      "scrollWidth": 1440,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "approved",
+      "viewport": "1728x900",
+      "clientWidth": 1728,
+      "clientHeight": 900,
+      "scrollWidth": 1728,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "approved",
+      "viewport": "1920x1080",
+      "clientWidth": 1920,
+      "clientHeight": 1080,
+      "scrollWidth": 1920,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "rejected",
+      "viewport": "390x844",
+      "clientWidth": 390,
+      "clientHeight": 844,
+      "scrollWidth": 390,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "rejected",
+      "viewport": "430x932",
+      "clientWidth": 430,
+      "clientHeight": 932,
+      "scrollWidth": 430,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "rejected",
+      "viewport": "768x1024",
+      "clientWidth": 768,
+      "clientHeight": 1024,
+      "scrollWidth": 768,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "rejected",
+      "viewport": "1024x900",
+      "clientWidth": 1024,
+      "clientHeight": 900,
+      "scrollWidth": 1024,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "rejected",
+      "viewport": "1440x1000",
+      "clientWidth": 1440,
+      "clientHeight": 1000,
+      "scrollWidth": 1440,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "rejected",
+      "viewport": "1728x900",
+      "clientWidth": 1728,
+      "clientHeight": 900,
+      "scrollWidth": 1728,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "rejected",
+      "viewport": "1920x1080",
+      "clientWidth": 1920,
+      "clientHeight": 1080,
+      "scrollWidth": 1920,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "saved",
+      "viewport": "390x844",
+      "clientWidth": 390,
+      "clientHeight": 844,
+      "scrollWidth": 390,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "saved",
+      "viewport": "430x932",
+      "clientWidth": 430,
+      "clientHeight": 932,
+      "scrollWidth": 430,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "saved",
+      "viewport": "768x1024",
+      "clientWidth": 768,
+      "clientHeight": 1024,
+      "scrollWidth": 768,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "saved",
+      "viewport": "1024x900",
+      "clientWidth": 1024,
+      "clientHeight": 900,
+      "scrollWidth": 1024,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "saved",
+      "viewport": "1440x1000",
+      "clientWidth": 1440,
+      "clientHeight": 1000,
+      "scrollWidth": 1440,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "saved",
+      "viewport": "1728x900",
+      "clientWidth": 1728,
+      "clientHeight": 900,
+      "scrollWidth": 1728,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "saved",
+      "viewport": "1920x1080",
+      "clientWidth": 1920,
+      "clientHeight": 1080,
+      "scrollWidth": 1920,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "settings",
+      "viewport": "390x844",
+      "clientWidth": 390,
+      "clientHeight": 844,
+      "scrollWidth": 390,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "settings",
+      "viewport": "430x932",
+      "clientWidth": 430,
+      "clientHeight": 932,
+      "scrollWidth": 430,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "settings",
+      "viewport": "768x1024",
+      "clientWidth": 768,
+      "clientHeight": 1024,
+      "scrollWidth": 768,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "settings",
+      "viewport": "1024x900",
+      "clientWidth": 1024,
+      "clientHeight": 900,
+      "scrollWidth": 1024,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "settings",
+      "viewport": "1440x1000",
+      "clientWidth": 1440,
+      "clientHeight": 1000,
+      "scrollWidth": 1440,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "settings",
+      "viewport": "1728x900",
+      "clientWidth": 1728,
+      "clientHeight": 900,
+      "scrollWidth": 1728,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "settings",
+      "viewport": "1920x1080",
+      "clientWidth": 1920,
+      "clientHeight": 1080,
+      "scrollWidth": 1920,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": false,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "candidate-detail",
+      "viewport": "390x844",
+      "clientWidth": 390,
+      "clientHeight": 844,
+      "scrollWidth": 390,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "ask",
+      "viewport": "390x844",
+      "clientWidth": 390,
+      "clientHeight": 844,
+      "scrollWidth": 390,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "candidate-detail",
+      "viewport": "430x932",
+      "clientWidth": 430,
+      "clientHeight": 932,
+      "scrollWidth": 430,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "ask",
+      "viewport": "430x932",
+      "clientWidth": 430,
+      "clientHeight": 932,
+      "scrollWidth": 430,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "candidate-detail",
+      "viewport": "768x1024",
+      "clientWidth": 768,
+      "clientHeight": 1024,
+      "scrollWidth": 768,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "ask",
+      "viewport": "768x1024",
+      "clientWidth": 768,
+      "clientHeight": 1024,
+      "scrollWidth": 768,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 0,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "candidate-detail",
+      "viewport": "1024x900",
+      "clientWidth": 1024,
+      "clientHeight": 900,
+      "scrollWidth": 1024,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "ask",
+      "viewport": "1024x900",
+      "clientWidth": 1024,
+      "clientHeight": 900,
+      "scrollWidth": 1024,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "candidate-detail",
+      "viewport": "1440x1000",
+      "clientWidth": 1440,
+      "clientHeight": 1000,
+      "scrollWidth": 1440,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "ask",
+      "viewport": "1440x1000",
+      "clientWidth": 1440,
+      "clientHeight": 1000,
+      "scrollWidth": 1440,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "candidate-detail",
+      "viewport": "1728x900",
+      "clientWidth": 1728,
+      "clientHeight": 900,
+      "scrollWidth": 1728,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "ask",
+      "viewport": "1728x900",
+      "clientWidth": 1728,
+      "clientHeight": 900,
+      "scrollWidth": 1728,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "candidate-detail",
+      "viewport": "1920x1080",
+      "clientWidth": 1920,
+      "clientHeight": 1080,
+      "scrollWidth": 1920,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "ask",
+      "viewport": "1920x1080",
+      "clientWidth": 1920,
+      "clientHeight": 1080,
+      "scrollWidth": 1920,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "ask-factual",
+      "viewport": "1440x1000",
+      "clientWidth": 1440,
+      "clientHeight": 1000,
+      "scrollWidth": 1440,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": null,
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    },
+    {
+      "label": "ask-decision",
+      "viewport": "1440x1000",
+      "clientWidth": 1440,
+      "clientHeight": 1000,
+      "scrollWidth": 1440,
+      "cardWidth": null,
+      "mainWidth": null,
+      "sidebarWidth": 224,
+      "unusedPct": null,
+      "overflowX": false,
+      "bodyFontFamily": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "bodyFontSize": "16px",
+      "askVisible": true,
+      "askSnippetLeakHints": [],
+      "askAnswerPreview": "CandidateHackTO AI ChallengeToronto AI hackathon focused on agents and cloud tooling. Build something useful in a weekend.Back to queueToronto, Canada · In personSep 13, 2026 – Sep 15, 2026Deadline Aug 15, 202686Discovery relevanceAIagentscloudToronto AI hackathon focused on agen",
+      "notes": [
+        "no-article-card",
+        "no-main"
+      ]
+    }
+  ],
+  "notes": [
+    "queue-chrome: {\"moreDetailsVisible\":false,\"keyboardBanner\":false,\"permanentKeyboardLine\":false,\"visibleActionButtons\":[],\"bodySnippet\":\"Development mock candidates active (`USE_MOCK_CANDIDATES=true`). Data is in-memory and not persisted to Supabase. Hackathon Radar DWG · REVIEW · SCALE 1:1 ◈ Queue 0 ✓ Approved ◇ Saved ✕ Rejected ⚙ Settings Open Sheet Logout REVIEW Queue ? Refresh Loading queue…\"}",
+    "cardWidth@1440=873",
+    "cardWidth@1920=873",
+    "detail-open: http://localhost:3000/candidate/aaaaaaaa-aaaa-4aaa-8aaa-000000000001",
+    "ask-factual: status=200 ok=true",
+    "ask-factual-preview: Development mock candidates active (`USE_MOCK_CANDIDATES=true`). Data is in-memory and not persisted to Supabase. Hackathon Radar DWG · REVIEW · SCALE 1:1 ◈ Queue 4 ✓ Approved ◇ Saved ✕ Rejected ⚙ Settings Open Sheet Logout CANDIDATE HackTO AI Challenge Toronto AI hackathon focused on agents and cloud tooling. Build something useful in a weekend. Back to queue Toronto AI hackathon focused on agent",
+    "ask-decision: status=200 ok=true",
+    "ask-decision-preview: Development mock candidates active (`USE_MOCK_CANDIDATES=true`). Data is in-memory and not persisted to Supabase. Hackathon Radar DWG · REVIEW · SCALE 1:1 ◈ Queue 4 ✓ Approved ◇ Saved ✕ Rejected ⚙ Settings Open Sheet Logout CANDIDATE HackTO AI Challenge Toronto AI hackathon focused on agents and cloud tooling. Build something useful in a weekend. Back to queue Toronto AI hackathon focused on agent"
+  ],
+  "checks": [
+    {
+      "id": "no-more-details",
+      "expected": "No visible More details button on queue",
+      "actual": "Absent",
+      "pass": true,
+      "severity": "blocker"
+    },
+    {
+      "id": "no-keyboard-banner",
+      "expected": "No permanent Keyboard: banner on queue",
+      "actual": "Absent (shortcuts behind ? only)",
+      "pass": true,
+      "severity": "blocker"
+    },
+    {
+      "id": "no-permanent-action-row",
+      "expected": "No visible Approve/Reject/Save row on queue",
+      "actual": "Absent",
+      "pass": true,
+      "severity": "blocker"
+    },
+    {
+      "id": "card-width-1440",
+      "expected": "queue cardWidth ≥ 600 at 1440×1000",
+      "actual": "873",
+      "pass": true,
+      "severity": "blocker"
+    },
+    {
+      "id": "card-width-1920",
+      "expected": "queue cardWidth measured at 1920×1080",
+      "actual": "873",
+      "pass": true,
+      "severity": "info"
+    },
+    {
+      "id": "no-horizontal-overflow-queue",
+      "expected": "No horizontal overflow on queue viewports",
+      "actual": "None",
+      "pass": true,
+      "severity": "high"
+    },
+    {
+      "id": "detail-reachable",
+      "expected": "Queue opens candidate detail with Ask composer",
+      "actual": "http://localhost:3000/candidate/aaaaaaaa-aaaa-4aaa-8aaa-000000000001",
+      "pass": true,
+      "severity": "blocker"
+    },
+    {
+      "id": "ask-factual",
+      "expected": "POST ask date? returns answer without raw snippet dump",
+      "actual": "HTTP 200; preview=Development mock candidates active (`USE_MOCK_CANDIDATES=true`). Data is in-memory and not persisted to Supabase. Hackat",
+      "pass": true,
+      "severity": "high"
+    },
+    {
+      "id": "ask-decision",
+      "expected": "POST ask Should I do this hackathon? returns structured answer",
+      "actual": "HTTP 200; preview=Development mock candidates active (`USE_MOCK_CANDIDATES=true`). Data is in-memory and not persisted to Supabase. Hackat",
+      "pass": true,
+      "severity": "high"
+    },
+    {
+      "id": "console-clean",
+      "expected": "No material product console errors",
+      "actual": "Clean",
+      "pass": true,
+      "severity": "medium"
+    }
+  ],
+  "cardWidths": {
+    "1440x1000": 873,
+    "1920x1080": 873
+  },
+  "finalBeforeCopy": {
+    "copied": true,
+    "reason": "was-empty",
+    "count": 8
+  },
+  "consoleLogs": [],
+  "failedRequests": []
+}
