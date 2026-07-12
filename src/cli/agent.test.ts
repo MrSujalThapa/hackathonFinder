@@ -74,4 +74,38 @@ describe("parseAgentArgs", () => {
     assert.equal(options.showXPlan, true);
     assert.deepEqual(options.sources, ["x"]);
   });
+
+  it("parses agent mode flags", () => {
+    const options = parseAgentArgs([
+      "node",
+      "agent.ts",
+      "find upcoming AI hackathons",
+      "--",
+      "--agent",
+      "--show-agent-plan",
+      "--show-agent-trace",
+      "--max-agent-calls=5",
+      "--dry-run",
+    ]);
+
+    assert.equal(options.agent, true);
+    assert.equal(options.showAgentPlan, true);
+    assert.equal(options.showAgentTrace, true);
+    assert.equal(options.maxAgentCalls, 5);
+  });
+
+  it("rejects simultaneous agent and deterministic flags", () => {
+    assert.throws(
+      () =>
+        parseAgentArgs([
+          "node",
+          "agent.ts",
+          "find upcoming hackathons",
+          "--",
+          "--agent",
+          "--deterministic",
+        ]),
+      /either --agent or --deterministic/,
+    );
+  });
 });

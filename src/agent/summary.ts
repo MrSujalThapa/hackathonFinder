@@ -167,6 +167,15 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   console.log("");
 
   console.log("Discovery summary:");
+  if (summary.agent) {
+    console.log(`- mode: ${summary.agent.mode}`);
+    if (summary.agent.provider) {
+      console.log(`- provider/model: ${summary.agent.provider}/${summary.agent.model ?? "(default)"}`);
+    }
+    console.log(`- agent tool calls: ${summary.agent.toolCalls}`);
+    console.log(`- agent LLM calls: ${summary.agent.llmCalls}`);
+    console.log(`- stop reason: ${summary.agent.stopReason}`);
+  }
   console.log(`- raw leads: ${summary.rawLeads}`);
   console.log(`- unique leads: ${summary.uniqueLeads}`);
   console.log(`- cross-source merges: ${summary.crossSourceMerges}`);

@@ -183,8 +183,21 @@ export type AgentRunSummary = {
   }>;
   rejectedCandidates: RejectedCandidate[];
   sourceStats: SourceRunStats[];
+  agent?: AgentRunObservability;
   warnings: string[];
   errors: string[];
+};
+
+export type AgentRunObservability = {
+  mode: "AGENT" | "DETERMINISTIC";
+  provider?: string;
+  model?: string;
+  llmCalls: number;
+  toolCalls: number;
+  sourcesSelected: SourceName[];
+  stopReason: string;
+  fallbackUsed: boolean;
+  warnings: string[];
 };
 
 export type SourceRunStats = {
