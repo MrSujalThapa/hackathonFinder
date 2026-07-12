@@ -44,6 +44,10 @@ export type CandidateEvidence = {
   snippet: string | null;
   raw: Json;
   foundAt: string;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  seenCount?: number;
+  agentRunId?: string | null;
 };
 
 export type CandidateAction = {
@@ -129,6 +133,7 @@ export type AddEvidenceInput = {
   snippet?: string | null;
   raw?: Json;
   foundAt?: string;
+  agentRunId?: string | null;
 };
 
 export type AddActionInput = {

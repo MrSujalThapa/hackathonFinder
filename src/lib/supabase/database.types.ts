@@ -130,6 +130,11 @@ export type Database = {
           raw: Json;
           found_at: string;
           created_at: string;
+          url_key: string;
+          first_seen_at: string;
+          last_seen_at: string;
+          seen_count: number;
+          agent_run_id: string | null;
         };
         Insert: {
           id?: string;
@@ -141,6 +146,11 @@ export type Database = {
           raw?: Json;
           found_at?: string;
           created_at?: string;
+          url_key?: string;
+          first_seen_at?: string;
+          last_seen_at?: string;
+          seen_count?: number;
+          agent_run_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["candidate_evidence"]["Insert"]>;
         Relationships: [];
