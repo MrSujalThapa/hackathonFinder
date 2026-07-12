@@ -1,3 +1,4 @@
+import { SourcesPanel } from "@/components/settings/SourcesPanel";
 import { OpenSheetLink } from "@/components/shell/OpenSheetLink";
 import { PageHeader } from "@/components/shell/PageHeader";
 import {
@@ -7,6 +8,10 @@ import {
   hasSupabaseConfig,
   hasXConfig,
 } from "@/config/env";
+import {
+  listSourceHealthSnapshots,
+  readSourceSettings,
+} from "@/lib/sources";
 import { isMockCandidatesEnabled } from "@/server/candidates/service";
 import { getOwnerDiagnostics } from "@/server/diagnostics";
 
@@ -16,6 +21,8 @@ export default async function SettingsPage() {
   const sheetsConfigured = hasGoogleSheetsConfig(env);
   const sheetTab = getGoogleSheetTab(env);
   const publicSheetUrl = env.NEXT_PUBLIC_GOOGLE_SHEET_URL?.trim() || null;
+  const sourceSettings = readSourceSettings();
+  const sourceSnapshots = listSourceHealthSnapshots();
 
   let mockEnabled = false;
   let mockError: string | null = null;
@@ -74,14 +81,12 @@ export default async function SettingsPage() {
           <OpenSheetLink className="mt-4 inline-flex rounded-xl border border-border px-3 py-2 text-sm text-muted transition-colors hover:border-sky-500/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 aria-disabled:cursor-not-allowed aria-disabled:opacity-60" />
         </section>
 
-        <section className="rounded-2xl border border-border bg-card/80 p-5">
-          <h2 className="text-sm font-semibold">Discovery sources</h2>
-          <p className="mt-1 text-sm text-muted">
-            Default CLI sources: HackList, MLH, Luma, and web search. Devpost,
-            Hakku, and X (twitter alias) are available when requested; mock only
-            when explicit.
-          </p>
-        </section>
+        <SourcesPanel
+          initial={{
+            sources: sourceSnapshots,
+            enabled: sourceSettings.enabled,
+          }}
+        />
 
         <section className="rounded-2xl border border-border bg-card/80 p-5">
           <h2 className="text-sm font-semibold">Service status</h2>
