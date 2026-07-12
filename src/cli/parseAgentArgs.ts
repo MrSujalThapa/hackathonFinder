@@ -11,6 +11,7 @@ export type CliOptions = {
   totalTimeoutMs?: number;
   showSearchPlan: boolean;
   dryRunPlan: boolean;
+  verbose: boolean;
 };
 
 function parsePositiveInt(flag: string, raw: string): number {
@@ -27,6 +28,7 @@ export function parseAgentArgs(argv: string[]): CliOptions {
   const allowMockWrites = args.includes("--allow-mock-writes");
   const showSearchPlan = args.includes("--show-search-plan");
   const dryRunPlan = args.includes("--dry-run-plan");
+  const verbose = args.includes("--verbose");
 
   const sourcesArg = args.find((arg) => arg.startsWith("--sources="));
   const maxResultsArg = args.find((arg) => arg.startsWith("--max-results="));
@@ -39,6 +41,7 @@ export function parseAgentArgs(argv: string[]): CliOptions {
       arg !== "--allow-mock-writes" &&
       arg !== "--show-search-plan" &&
       arg !== "--dry-run-plan" &&
+      arg !== "--verbose" &&
       arg !== "--" &&
       !arg.startsWith("--sources=") &&
       !arg.startsWith("--max-results=") &&
@@ -50,7 +53,7 @@ export function parseAgentArgs(argv: string[]): CliOptions {
 
   if (!command) {
     throw new Error(
-      'Usage: npm run agent -- "find upcoming hackathons" [-- --dry-run] [-- --sources=hacklist,mlh,luma,web] [-- --max-results=20] [-- --source-timeout-ms=15000] [-- --total-timeout-ms=45000] [-- --show-search-plan] [-- --dry-run-plan] [-- --allow-mock-writes]',
+      'Usage: npm run agent -- "find upcoming hackathons" [-- --dry-run] [-- --sources=hacklist,mlh,luma,web] [-- --max-results=20] [-- --source-timeout-ms=15000] [-- --total-timeout-ms=45000] [-- --show-search-plan] [-- --dry-run-plan] [-- --verbose] [-- --allow-mock-writes]',
     );
   }
 
@@ -89,5 +92,6 @@ export function parseAgentArgs(argv: string[]): CliOptions {
     totalTimeoutMs,
     showSearchPlan,
     dryRunPlan,
+    verbose,
   };
 }

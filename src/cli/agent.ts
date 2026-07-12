@@ -25,6 +25,7 @@ async function main(): Promise<void> {
       totalTimeoutMs: options.totalTimeoutMs,
       showSearchPlan: options.showSearchPlan,
       dryRunPlan: options.dryRunPlan,
+      verbose: options.verbose,
     });
   } catch (error) {
     console.error(error instanceof Error ? error.message : "Agent run failed");

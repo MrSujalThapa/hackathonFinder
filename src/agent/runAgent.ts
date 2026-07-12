@@ -11,6 +11,7 @@ export type RunAgentOptions = {
   totalTimeoutMs?: number;
   showSearchPlan?: boolean;
   dryRunPlan?: boolean;
+  verbose?: boolean;
 };
 
 export async function runAgent(
@@ -26,6 +27,7 @@ export async function runAgent(
     totalTimeoutMs: cliOptions.totalTimeoutMs,
     showSearchPlan: cliOptions.showSearchPlan,
     dryRunPlan: cliOptions.dryRunPlan,
+    verbose: cliOptions.verbose,
   });
   printAgentSummary(summary);
 }
