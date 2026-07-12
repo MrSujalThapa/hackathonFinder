@@ -174,6 +174,71 @@ export function createSoftEventKey(input: FingerprintInput): string | null {
   return `soft:${name}:${place}:${year}`;
 }
 
+function normalizedYear(input: FingerprintInput): string | null {
+  const date =
+    normalizeDatePart(input.startDate) ?? normalizeDatePart(input.deadline);
+  return date?.slice(0, 4) ?? null;
+}
+
+function normalizedPlaceTokens(input: FingerprintInput): Set<string> {
+  const values = [
+    input.city,
+    input.country,
+    input.mode,
+    input.city || input.country ? `${input.city ?? ""} ${input.country ?? ""}` : "",
+  ];
+  const tokens = new Set<string>();
+  for (const value of values) {
+    const normalized = normalizeText(value);
+    if (!normalized) continue;
+    tokens.add(normalized);
+    for (const token of normalized.split(/\s+/)) {
+      if (token) tokens.add(token);
+    }
+  }
+  return tokens;
+}
+
+function placesCompatible(left: FingerprintInput, right: FingerprintInput): boolean {
+  const leftCity = normalizeText(left.city);
+  const rightCity = normalizeText(right.city);
+  if (leftCity && rightCity && leftCity !== rightCity) return false;
+
+  const leftTokens = normalizedPlaceTokens(left);
+  const rightTokens = normalizedPlaceTokens(right);
+  if (leftTokens.size === 0 || rightTokens.size === 0) return true;
+  if (normalizeText(left.mode) === "online" && normalizeText(right.mode) === "online") {
+    return true;
+  }
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) return true;
+  }
+  return false;
+}
+
+function isMergeableExactName(name: string): boolean {
+  if (name.length < 8) return false;
+  if (/^(hackathon|ai hackathon|ml hackathon|event|events|builders|challenge)$/i.test(name)) {
+    return false;
+  }
+  return true;
+}
+
+function partiallySpecifiedEventsMatch(
+  left: FingerprintInput,
+  right: FingerprintInput,
+): boolean {
+  const leftName = normalizeEventName(left.name);
+  const rightName = normalizeEventName(right.name);
+  if (!leftName || leftName !== rightName || !isMergeableExactName(leftName)) return false;
+
+  const leftYear = normalizedYear(left);
+  const rightYear = normalizedYear(right);
+  if (leftYear && rightYear && leftYear !== rightYear) return false;
+
+  return placesCompatible(left, right);
+}
+
 export function softEventsMatch(left: FingerprintInput, right: FingerprintInput): boolean {
   if (fingerprintsMatch(left, right)) return true;
   const leftKey = createSoftEventKey(left);
@@ -184,6 +249,8 @@ export function softEventsMatch(left: FingerprintInput, right: FingerprintInput)
   const leftUrl = normalizeUrl(left.officialUrl) ?? normalizeUrl(left.applyUrl);
   const rightUrl = normalizeUrl(right.officialUrl) ?? normalizeUrl(right.applyUrl);
   if (leftUrl && rightUrl && leftUrl === rightUrl) return true;
+
+  if (partiallySpecifiedEventsMatch(left, right)) return true;
 
   return false;
 }

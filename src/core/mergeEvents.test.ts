@@ -149,6 +149,54 @@ describe("mergeCrossSourceEvents", () => {
     assert.equal(result.mergeCount, 1);
   });
 
+  it("merges partial Hack the North duplicates while preserving stronger location evidence", () => {
+    const result = mergeCrossSourceEvents([
+      event({
+        name: "Hack the North",
+        source: "mlh",
+        city: "Waterloo",
+        country: "Canada",
+        startDate: "2026-09-18",
+        officialUrl: "https://events.mlh.io/events/hack-the-north-2026",
+        evidence: [{ type: "source_card", url: "https://events.mlh.io/events/hack-the-north-2026" }],
+      }),
+      event({
+        name: "Hack the North",
+        source: "web",
+        country: "Canada",
+        officialUrl: "https://hackthenorth.com/",
+        evidence: [{ type: "search_result", url: "https://hackthenorth.com/", snippet: "Hack the North" }],
+      }),
+    ]);
+
+    assert.equal(result.events.length, 1);
+    assert.equal(result.mergeCount, 1);
+    assert.equal(result.events[0]?.city, "Waterloo");
+    assert.equal(result.events[0]?.country, "Canada");
+    assert.equal(result.events[0]?.evidence.length, 2);
+  });
+
+  it("keeps partial Hack the North duplicates separate when years conflict", () => {
+    const result = mergeCrossSourceEvents([
+      event({
+        name: "Hack the North",
+        source: "mlh",
+        city: "Waterloo",
+        country: "Canada",
+        startDate: "2025-09-18",
+      }),
+      event({
+        name: "Hack the North",
+        source: "web",
+        country: "Canada",
+        startDate: "2026-09-18",
+      }),
+    ]);
+
+    assert.equal(result.events.length, 2);
+    assert.equal(result.mergeCount, 0);
+  });
+
   it("merges HackList event rediscovered via web", () => {
     const result = mergeCrossSourceEvents([
       event({
