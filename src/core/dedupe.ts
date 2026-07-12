@@ -133,12 +133,21 @@ export function fingerprintsMatch(
 }
 
 /** Soft identity for cross-source merges when official URLs differ. */
+export function normalizeEventName(name: string): string {
+  return normalizeText(name)
+    .replace(/\b20\d{2}\b/g, " ")
+    .replace(/\b(duplicate listing|copy|edition)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function createSoftEventKey(input: FingerprintInput): string | null {
-  const name = normalizeText(input.name);
+  const name = normalizeEventName(input.name);
   const date =
     normalizeDatePart(input.startDate) ?? normalizeDatePart(input.deadline);
   const city = normalizeText(input.city);
   if (!name || !date) return null;
+  const year = date.slice(0, 4);
   // Require city OR explicit online mode so different cities stay separate.
   const place =
     city ||
@@ -146,14 +155,21 @@ export function createSoftEventKey(input: FingerprintInput): string | null {
       ? "online"
       : "");
   if (!place) return null;
-  return `soft:${name}:${place}:${date}`;
+  return `soft:${name}:${place}:${year}`;
 }
 
 export function softEventsMatch(left: FingerprintInput, right: FingerprintInput): boolean {
   if (fingerprintsMatch(left, right)) return true;
   const leftKey = createSoftEventKey(left);
   const rightKey = createSoftEventKey(right);
-  return Boolean(leftKey && rightKey && leftKey === rightKey);
+  if (leftKey && rightKey && leftKey === rightKey) return true;
+
+  // Web/search result pointing at the same listing/official host+path stem.
+  const leftUrl = normalizeUrl(left.officialUrl) ?? normalizeUrl(left.applyUrl);
+  const rightUrl = normalizeUrl(right.officialUrl) ?? normalizeUrl(right.applyUrl);
+  if (leftUrl && rightUrl && leftUrl === rightUrl) return true;
+
+  return false;
 }
 
 const SOURCE_AUTHORITY: Record<string, number> = {
@@ -175,7 +191,7 @@ function hostAuthority(url?: string | null): number {
   if (!url) return 0;
   try {
     const host = new URL(url).hostname.toLowerCase();
-    if (/(mlh\.io|devpost\.com)$/.test(host)) return 75;
+    if (/(mlh\.io|mlh\.com|devpost\.com)$/.test(host) || host.endsWith(".mlh.com")) return 75;
     if (/(lu\.ma|luma\.com)$/.test(host)) return 65;
     if (/(hacklist|hakku)/.test(host)) return 45;
     // Prefer first-party official domains over aggregators/search

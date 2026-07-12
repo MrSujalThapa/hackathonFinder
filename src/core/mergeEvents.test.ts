@@ -124,19 +124,55 @@ describe("mergeCrossSourceEvents", () => {
     assert.equal(merged.deadline, "2026-08-15");
   });
 
-  it("persists evidence from both sources", () => {
-    const merged = mergeHackathonEventPair(
+  it("merges title variants with punctuation / year suffixes", () => {
+    const result = mergeCrossSourceEvents([
       event({
-        name: "Event",
-        source: "hacklist",
-        evidence: [{ type: "source_card", url: "https://a.example" }],
+        name: "Hack the North",
+        source: "mlh",
+        city: "Waterloo",
+        startDate: "2026-09-12",
+        officialUrl: "https://events.mlh.io/events/hack-the-north",
+        evidence: [{ type: "source_card", url: "https://events.mlh.io/events/hack-the-north" }],
+        sourceIds: { mlh: "htn" },
       }),
       event({
-        name: "Event",
+        name: "Hack the North 2026!",
         source: "web",
-        evidence: [{ type: "search_result", url: "https://b.example", snippet: "x" }],
+        city: "Waterloo",
+        startDate: "2026-09-12",
+        officialUrl: "https://hackthenorth.com/",
+        evidence: [{ type: "search_result", url: "https://hackthenorth.com/" }],
+        sourceIds: { web: "htn-web" },
       }),
-    );
-    assert.equal(merged.evidence.length, 2);
+    ]);
+    assert.equal(result.events.length, 1);
+    assert.equal(result.mergeCount, 1);
+  });
+
+  it("merges HackList event rediscovered via web", () => {
+    const result = mergeCrossSourceEvents([
+      event({
+        name: "Slack Agent Builder Challenge",
+        source: "hacklist",
+        city: "Remote",
+        mode: "online",
+        startDate: "2026-08-01",
+        officialUrl: "https://slack.example.com/agent-challenge",
+        evidence: [{ type: "source_card", url: "https://hacklist.example/card" }],
+        sourceIds: { hacklist: "slack" },
+      }),
+      event({
+        name: "Slack Agent Builder Challenge",
+        source: "web",
+        city: "Remote",
+        mode: "online",
+        startDate: "2026-08-01",
+        officialUrl: "https://slack.example.com/agent-challenge",
+        evidence: [{ type: "search_result", url: "https://slack.example.com/agent-challenge" }],
+        sourceIds: { web: "slack" },
+      }),
+    ]);
+    assert.equal(result.events.length, 1);
+    assert.ok(result.events[0]?.sourceIds?.hacklist && result.events[0]?.sourceIds?.web);
   });
 });
