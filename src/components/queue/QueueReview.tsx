@@ -36,29 +36,41 @@ export function QueueReview() {
   }, [filtered, router]);
 
   return (
-    <section className="flex flex-1 flex-col items-center">
-      <div className="w-full max-w-[var(--content-queue)]">
+    <section className="hf-review-workspace flex flex-1 flex-col">
+      <div className="w-full max-w-[var(--content-queue)] @[900px]:max-w-none">
         <PageHeader
           eyebrow="Review"
           title="Queue"
-          description="One candidate at a time. Approve, reject, or save for later."
           actions={
-            <button
-              type="button"
-              onClick={() => void queue.refresh()}
-              className="hf-btn hf-btn-ghost"
-            >
-              Refresh
-            </button>
+            <div className="flex items-center gap-2">
+              <details className="relative">
+                <summary
+                  className="hf-btn hf-btn-ghost hf-touch cursor-pointer list-none px-2"
+                  aria-label="Keyboard shortcuts help"
+                >
+                  ?
+                </summary>
+                <div className="absolute right-0 z-20 mt-2 w-64 rounded-[var(--radius-lg)] border border-border bg-elevated p-3 text-xs text-muted shadow-[var(--shadow-soft)]">
+                  <p className="mb-1 font-medium text-foreground">Shortcuts</p>
+                  <ul className="space-y-1">
+                    <li>Left arrow — reject</li>
+                    <li>Right arrow — approve</li>
+                    <li>S — save</li>
+                    <li>Enter — open details</li>
+                    <li>Escape — close actions menu</li>
+                  </ul>
+                </div>
+              </details>
+              <button
+                type="button"
+                onClick={() => void queue.refresh()}
+                className="hf-btn hf-btn-ghost"
+              >
+                Refresh
+              </button>
+            </div>
           }
         />
-
-        <div className="hf-panel mb-4 hidden px-3 py-2 text-xs text-muted sm:block">
-          Keyboard: <span className="text-foreground">Left</span> reject,{" "}
-          <span className="text-foreground">Right</span> approve,{" "}
-          <span className="text-foreground">S</span> save,{" "}
-          <span className="text-foreground">Enter</span> details.
-        </div>
 
         {sources.length > 1 ? (
           <label className="mb-4 block text-sm">

@@ -12,25 +12,15 @@ export function QueueCardPreview() {
   return (
     <section className="flex flex-1 flex-col items-center">
       <div className="w-full max-w-[440px]">
-        <PageHeader
-          eyebrow="Review"
-          title="Queue"
-          description="One candidate at a time. Approve, reject, or save for later."
-        />
+        <PageHeader eyebrow="Review" title="Queue" />
         <CandidateProgress current={1} total={1} />
         <div className="flex justify-center">
           <CandidateCardView
             candidate={PREVIEW_CANDIDATE}
             expanded={expanded}
             onToggleDetails={() => setExpanded((value) => !value)}
-            onApprove={() => undefined}
-            onReject={() => undefined}
-            onSave={() => undefined}
           />
         </div>
-        <p className="mt-4 text-center text-xs text-muted">
-          Preview card — live queue wiring arrives with interactions.
-        </p>
       </div>
     </section>
   );
