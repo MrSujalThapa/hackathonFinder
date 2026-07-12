@@ -5,10 +5,14 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadLocalEnv } from "../src/cli/loadEnv";
+import {
+  evaluateXToolPolicy,
+  selectAllowedXTools,
+  selectPublicPostSearchTools,
+} from "../src/lib/mcp/allowlist";
 import { McpClient } from "../src/lib/mcp/client";
 import { McpError, redactSecrets } from "../src/lib/mcp/errors";
 import { createHttpMcpTransport } from "../src/lib/mcp/httpTransport";
-import type { McpTool } from "../src/lib/mcp/types";
 import {
   describeXMcpConfig,
   getXBearerToken,
@@ -16,15 +20,8 @@ import {
   isXConfigured,
 } from "../src/lib/x/config";
 
-const SEARCH_HINTS = ["search", "post", "tweet", "lookup", "read"];
-
 function present(value: string | undefined): boolean {
   return Boolean(value && value.trim().length > 0);
-}
-
-function looksLikePublicPostTool(tool: McpTool): boolean {
-  const haystack = `${tool.name} ${tool.description ?? ""}`.toLowerCase();
-  return SEARCH_HINTS.some((hint) => haystack.includes(hint));
 }
 
 function categoryLabel(error: unknown): string {
@@ -77,29 +74,40 @@ async function main(): Promise<number> {
     const tools = await client.listTools();
     console.log(`tools listed: ${tools.length}`);
 
-    for (const tool of tools) {
-      const desc = tool.description?.slice(0, 120) ?? "";
-      console.log(`  - ${tool.name}${desc ? `: ${desc}` : ""}`);
+    console.log("\n--- Read-only policy (allowed vs blocked) ---");
+    const allowed = selectAllowedXTools(tools);
+    const blocked = tools.filter(
+      (tool) => !evaluateXToolPolicy(tool).allowed,
+    );
+
+    console.log(`allowed: ${allowed.length}`);
+    for (const tool of allowed) {
+      const decision = evaluateXToolPolicy(tool);
+      const desc = tool.description?.slice(0, 100) ?? "";
+      console.log(
+        `  ALLOW ${tool.name}${desc ? ` — ${desc}` : ""} (${decision.reason})`,
+      );
     }
 
-    const candidates = tools.filter(looksLikePublicPostTool);
-    console.log("\n--- Heuristic public post search/read tools ---");
-    if (candidates.length === 0) {
-      console.log(
-        "(none matched name/description heuristics: search|post|tweet|lookup)",
-      );
-      console.log(
-        "Note: no specific tool name is hard-required; report-only.",
-      );
+    console.log(`blocked: ${blocked.length}`);
+    for (const tool of blocked) {
+      const decision = evaluateXToolPolicy(tool);
+      console.log(`  BLOCK ${tool.name} (${decision.reason})`);
+    }
+
+    const searchTools = selectPublicPostSearchTools(tools);
+    console.log("\n--- Public post search tools (subset of allowed) ---");
+    if (searchTools.length === 0) {
+      console.log("(none matched search+post heuristics; report-only)");
     } else {
-      for (const tool of candidates) {
+      for (const tool of searchTools) {
         console.log(`  candidate: ${tool.name}`);
       }
     }
 
     console.log("\nRESULT: OK");
     console.log(
-      "Connected to X MCP, initialized, and listed tools (no mutations).",
+      "Connected to X MCP, initialized, and listed tools (no tool calls / no mutations).",
     );
     return 0;
   } catch (error) {
@@ -127,6 +135,8 @@ async function main(): Promise<number> {
       console.log("hint: server returned a malformed MCP/JSON-RPC response.");
     } else if (category === "missing_tool") {
       console.log("hint: requested tool was not found on the server.");
+    } else if (category === "policy") {
+      console.log("hint: tool blocked by code-level read-only allowlist.");
     } else if (category === "network") {
       console.log("hint: network/DNS/TLS failure reaching X_MCP_URL.");
     }

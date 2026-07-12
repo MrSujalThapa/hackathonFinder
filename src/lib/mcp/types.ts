@@ -89,9 +89,19 @@ export interface McpTransport {
   send(request: McpTransportRequest): Promise<McpTransportResponse>;
 }
 
+export type McpToolPolicy = (tool: {
+  name: string;
+  description?: string;
+}) => { allowed: boolean; reason: string };
+
 export type McpClientOptions = {
   transport: McpTransport;
   clientInfo?: { name: string; version: string };
   /** Optional outer abort; combined with per-request signals. */
   signal?: AbortSignal;
+  /**
+   * Optional deny-by-default tool gate. When set, callTool evaluates the
+   * policy before any transport send (blocked tools never hit the network).
+   */
+  toolPolicy?: McpToolPolicy;
 };

@@ -4,7 +4,8 @@ export type McpErrorCategory =
   | "timeout"
   | "malformed"
   | "missing_tool"
-  | "network";
+  | "network"
+  | "policy";
 
 export class McpError extends Error {
   readonly category: McpErrorCategory;

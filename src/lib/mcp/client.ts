@@ -194,12 +194,14 @@ function parseCallToolResult(result: unknown): McpCallToolResult {
 
 /**
  * Minimal MCP client: initialize, listTools, callTool over a pluggable transport.
- * Ready to call any tool by name; allowlist policy is applied by callers (Phase 8.3).
+ * Optional `toolPolicy` rejects disallowed tools before any transport call.
  */
 export class McpClient {
   private readonly transport: McpTransport;
   private readonly clientInfo: { name: string; version: string };
   private readonly outerSignal?: AbortSignal;
+  private readonly toolPolicy?: McpClientOptions["toolPolicy"];
+  private readonly toolDescriptions = new Map<string, string | undefined>();
   private sessionId: string | undefined;
   private protocolVersion: string | undefined;
   private initialized = false;
@@ -208,6 +210,7 @@ export class McpClient {
     this.transport = options.transport;
     this.clientInfo = options.clientInfo ?? { ...MCP_CLIENT_INFO };
     this.outerSignal = options.signal;
+    this.toolPolicy = options.toolPolicy;
   }
 
   getSessionId(): string | undefined {
@@ -292,7 +295,11 @@ export class McpClient {
       headers: this.sessionHeaders(),
       signal: this.outerSignal,
     });
-    return parseToolsList(unwrapResult(response, id));
+    const tools = parseToolsList(unwrapResult(response, id));
+    for (const tool of tools) {
+      this.toolDescriptions.set(tool.name, tool.description);
+    }
+    return tools;
   }
 
   async callTool(
@@ -302,6 +309,20 @@ export class McpClient {
     if (!this.initialized) {
       await this.initialize();
     }
+
+    if (this.toolPolicy) {
+      const decision = this.toolPolicy({
+        name,
+        description: this.toolDescriptions.get(name),
+      });
+      if (!decision.allowed) {
+        throw new McpError(
+          "policy",
+          `Tool "${name}" blocked by read-only policy: ${decision.reason}`,
+        );
+      }
+    }
+
     const id = allocId();
     const message: JsonRpcRequest = {
       jsonrpc: "2.0",
