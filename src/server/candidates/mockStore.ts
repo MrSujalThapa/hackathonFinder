@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   AddActionInput,
+  AddCandidateAnswerInput,
   CandidateAction,
   CandidateCard,
   CandidateDetail,
@@ -431,6 +432,27 @@ export function createMockCandidateRepository(): CandidateRepository {
       store.set(candidateId, {
         ...existing,
         actions: [record, ...existing.actions],
+      });
+      return record;
+    },
+
+    async addCandidateAnswer(candidateId: string, answer: AddCandidateAnswerInput) {
+      const store = getStore();
+      const existing = store.get(candidateId);
+      if (!existing) {
+        throw new Error(`Candidate not found: ${candidateId}`);
+      }
+      const record = {
+        id: randomUUID(),
+        question: answer.question,
+        answer: answer.answer,
+        confidence: answer.confidence ?? null,
+        sources: answer.sources ?? [],
+        createdAt: new Date().toISOString(),
+      };
+      store.set(candidateId, {
+        ...existing,
+        answers: [record, ...existing.answers],
       });
       return record;
     },

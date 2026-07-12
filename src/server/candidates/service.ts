@@ -1,6 +1,7 @@
 import { getServerEnv } from "@/config/env";
 import type {
   AddActionInput,
+  AddCandidateAnswerInput,
   AddEvidenceInput,
   CandidateCard,
   CandidateDetail,
@@ -36,6 +37,10 @@ export type CandidateRepository = {
     evidence: AddEvidenceInput,
   ) => Promise<unknown>;
   addAction?: (candidateId: string, action: AddActionInput) => Promise<unknown>;
+  addCandidateAnswer?: (
+    candidateId: string,
+    answer: AddCandidateAnswerInput,
+  ) => Promise<unknown>;
 };
 
 let overrideRepo: CandidateRepository | null = null;
@@ -78,5 +83,6 @@ export function getCandidateRepository(): CandidateRepository {
     upsertCandidateByFingerprint: supabaseRepo.upsertCandidateByFingerprint,
     addEvidence: supabaseRepo.addEvidence,
     addAction: supabaseRepo.addAction,
+    addCandidateAnswer: supabaseRepo.addCandidateAnswer,
   };
 }
