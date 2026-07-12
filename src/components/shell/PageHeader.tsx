@@ -1,3 +1,5 @@
+import { TechnicalLabel } from "@/components/blueprint/TechnicalLabel";
+
 type PageHeaderProps = {
   title: string;
   eyebrow?: string;
@@ -17,9 +19,7 @@ export function PageHeader({
     <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         {eyebrow ? (
-          <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-muted">
-            {eyebrow}
-          </p>
+          <TechnicalLabel className="mb-1">{eyebrow}</TechnicalLabel>
         ) : null}
         <h1
           className={[

@@ -32,7 +32,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${sourceSerif.variable} grid-background antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${sourceSerif.variable} hf-sheet-grid antialiased`}
       >
         <MockModeBanner />
         {children}

@@ -84,3 +84,18 @@ Applied in `src/app/globals.css` `:root` color tokens. Layout tokens (`--content
 - Deep navy + paper text instead of near-black SaaS neutrals.  
 - Fine cyan hairlines and a subtle drafting grid on the page background only.  
 - Document serif titles + mono meta; not badge soup or all-mono chrome.
+
+---
+
+## Step 3 — Drafting Sheet authenticity
+
+Prior Restrained Blueprint fixed contrast but still read as dark SaaS. Step 3 compared:
+
+| Variant | Lab mockup | Outcome |
+|---------|------------|---------|
+| A — Drafting Sheet | `docs/design/mockups/blueprint-drafting-sheet.html` | **Selected** |
+| B — Modern Blueprint | `docs/design/mockups/blueprint-modern.html` | Fallback only |
+
+Full selection rationale + production token map: `docs/design/BLUEPRINT_COMPARISON.md`.
+
+Production now ships cobalt paper (`#0c2748`), warm ink (`#f0ebe2`), major/minor grid, double-line `.hf-panel`/`.hf-card`, corner registration, flat shadows (`none`), and `src/components/blueprint/*` primitives. No aircraft wallpaper, neon, or blur mobile nav.

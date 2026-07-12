@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hackathon Finder — Drafting Sheet (design lab)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      /* Variant A — Drafting Sheet: cobalt paper, warm ink, major/minor grid */
+      --bg: #0c2748;
+      --surface: #0f2d52;
+      --panel: #123258;
+      --inset: #0a1f3d;
+      --elevated: #163860;
+      --text: #f0ebe2;
+      --muted: #9eb0c4;
+      --muted-strong: #b4c2d2;
+      --ink-line: color-mix(in oklab, var(--text) 55%, transparent);
+      --ink-line-strong: color-mix(in oklab, var(--text) 78%, transparent);
+      --ink-line-faint: color-mix(in oklab, var(--text) 22%, transparent);
+      --approve: #3db87a;
+      --save: #5ba8c9;
+      --reject: #d97868;
+      --warn: #d4a04a;
+      --focus: #6ec4d8;
+      --grid-major: color-mix(in oklab, var(--text) 12%, transparent);
+      --grid-minor: color-mix(in oklab, var(--text) 5%, transparent);
+      --grid-major-size: 64px;
+      --grid-minor-size: 8px;
+      --frame-gap: 3px;
+      --radius-sheet: 2px;
+      --radius-control: 3px;
+      --sans: "IBM Plex Sans", system-ui, sans-serif;
+      --serif: "Source Serif 4", Georgia, serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #061526;
+      color: var(--text);
+      font: 14px/1.45 var(--sans);
+    }
+    .lab-banner {
+      background: #1a2a14;
+      color: #c8dfb0;
+      padding: 8px 16px;
+      font-size: 12px;
+      border-bottom: 1px solid #2e4220;
+    }
+    .sheet-grid {
+      background-color: var(--bg);
+      background-image:
+        linear-gradient(var(--grid-minor) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px),
+        linear-gradient(var(--grid-major) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+      background-size:
+        var(--grid-minor-size) var(--grid-minor-size),
+        var(--grid-minor-size) var(--grid-minor-size),
+        var(--grid-major-size) var(--grid-major-size),
+        var(--grid-major-size) var(--grid-major-size);
+    }
+    .frame {
+      border: 1px solid color-mix(in oklab, var(--text) 18%, transparent);
+      background: var(--bg);
+      margin: 24px auto;
+      overflow: hidden;
+    }
+    .frame.w390 { width: 390px; min-height: 844px; }
+    .frame.w768 { width: 768px; min-height: 1024px; }
+    .frame.w1440 { width: 1440px; min-height: 1000px; }
+    .label {
+      max-width: 1440px;
+      margin: 40px auto 8px;
+      padding: 0 16px;
+      color: #7a8fa3;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .shell { display: flex; min-height: inherit; }
+    .side {
+      width: 224px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--ink-line-faint);
+      padding: 20px 12px;
+      display: none;
+    }
+    .w1440 .side { display: flex; flex-direction: column; gap: 4px; }
+    .title-block {
+      border: 1px solid var(--ink-line);
+      outline: 1px solid var(--ink-line-faint);
+      outline-offset: var(--frame-gap);
+      padding: 10px 12px;
+      margin: 0 4px 20px;
+    }
+    .title-block .brand {
+      font-weight: 600;
+      font-size: 15px;
+      letter-spacing: 0.02em;
+    }
+    .title-block small {
+      display: block;
+      margin-top: 4px;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .nav a {
+      display: flex; gap: 10px; padding: 10px 12px;
+      color: var(--muted); text-decoration: none;
+      border-left: 2px solid transparent;
+      border-radius: var(--radius-control);
+    }
+    .nav a.active {
+      color: var(--text);
+      border-left-color: var(--ink-line-strong);
+      background: color-mix(in oklab, var(--text) 4%, transparent);
+    }
+    .main { flex: 1; padding: 20px 16px 88px; }
+    .w1440 .main { padding: 28px 32px 32px; }
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    h1 { font-size: 24px; margin: 0 0 6px; font-weight: 600; }
+    .lede { color: var(--muted); margin: 0 0 20px; max-width: 36rem; }
+    .sheet-panel {
+      position: relative;
+      background: var(--panel);
+      border: 1px solid var(--ink-line);
+      outline: 1px solid var(--ink-line-faint);
+      outline-offset: var(--frame-gap);
+      border-radius: var(--radius-sheet);
+      padding: 16px;
+      max-width: 440px;
+      box-shadow: none;
+    }
+    .sheet-panel::before,
+    .sheet-panel::after {
+      content: "";
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      pointer-events: none;
+      border-color: var(--ink-line-strong);
+      border-style: solid;
+    }
+    .sheet-panel::before {
+      top: -1px; left: -1px;
+      border-width: 2px 0 0 2px;
+    }
+    .sheet-panel::after {
+      bottom: -1px; right: -1px;
+      border-width: 0 2px 2px 0;
+    }
+    .corner-tr, .corner-bl {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      pointer-events: none;
+      border-color: var(--ink-line-strong);
+      border-style: solid;
+    }
+    .corner-tr { top: -1px; right: -1px; border-width: 2px 2px 0 0; }
+    .corner-bl { bottom: -1px; left: -1px; border-width: 0 0 2px 2px; }
+    .status {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--save);
+      margin-bottom: 8px;
+    }
+    .status.warn { color: var(--warn); }
+    .title { font-family: var(--serif); font-size: 22px; line-height: 1.25; margin: 0 0 6px; font-weight: 600; }
+    .meta { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .summary { margin: 14px 0; color: color-mix(in oklab, var(--text) 90%, var(--muted)); }
+    .facts { display: grid; gap: 8px; margin: 12px 0; font-size: 13px; color: var(--muted); }
+    .facts strong { color: var(--text); font-weight: 500; }
+    .rule-dashed {
+      border: none;
+      border-top: 1px dashed var(--ink-line-faint);
+      margin: 12px 0;
+    }
+    .evidence-mini {
+      border-left: 2px solid var(--approve);
+      padding-left: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      margin: 12px 0 16px;
+    }
+    .decision { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
+    .btn {
+      min-height: 44px;
+      border-radius: var(--radius-control);
+      border: 1px solid var(--ink-line);
+      background: transparent;
+      color: var(--text);
+      font: 500 13px var(--sans);
+      cursor: pointer;
+    }
+    .btn:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+    .btn.approve { border-color: color-mix(in oklab, var(--approve) 55%, transparent); color: var(--approve); font-weight: 600; }
+    .btn.save { border-color: color-mix(in oklab, var(--save) 50%, transparent); color: var(--save); }
+    .btn.reject { border-color: color-mix(in oklab, var(--reject) 50%, transparent); color: var(--reject); }
+    .bottom-nav {
+      position: sticky; bottom: 0; display: flex; justify-content: space-between;
+      border-top: 1px solid var(--ink-line-faint);
+      background: var(--bg);
+      padding: 8px 6px; font-size: 10px; color: var(--muted);
+    }
+    .w1440 .bottom-nav { display: none; }
+    .doc { display: grid; gap: 24px; }
+    .w1440 .doc { grid-template-columns: minmax(0, 42rem) 18rem; align-items: start; }
+    .doc-main {
+      position: relative;
+      background: var(--panel);
+      border: 1px solid var(--ink-line);
+      outline: 1px solid var(--ink-line-faint);
+      outline-offset: var(--frame-gap);
+      border-radius: var(--radius-sheet);
+      padding: 20px;
+      box-shadow: none;
+    }
+    .doc-rail { display: grid; gap: 12px; }
+    .rail-box {
+      background: var(--inset);
+      border: 1px solid var(--ink-line-faint);
+      border-radius: var(--radius-sheet);
+      padding: 12px;
+      font-size: 13px;
+    }
+    .section-label {
+      font-family: var(--mono);
+      font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+      color: var(--muted); margin: 0 0 10px;
+    }
+    .source { border-left: 2px solid var(--ink-line-faint); padding: 10px 0 10px 12px; margin-bottom: 8px; }
+    .source.official { border-left-color: var(--approve); }
+    .source.apply { border-left-color: var(--save); }
+    .ask { border-top: 1px solid var(--ink-line-faint); padding-top: 16px; margin-top: 16px; }
+    .ask input {
+      width: 100%; min-height: 44px; border-radius: var(--radius-control);
+      border: 1px solid var(--ink-line); background: var(--inset);
+      color: var(--text); padding: 0 12px; font: 14px var(--sans);
+    }
+    .ask input:focus {
+      outline: 2px solid var(--focus);
+      outline-offset: 1px;
+      box-shadow: none;
+    }
+    .answer {
+      background: var(--inset); border: 1px solid var(--ink-line-faint);
+      border-radius: var(--radius-sheet); padding: 12px; margin-top: 12px;
+    }
+    .certainty { font-family: var(--mono); font-size: 11px; color: var(--warn); letter-spacing: .04em; }
+    @media (max-width: 500px) {
+      .sheet-grid {
+        background-image:
+          linear-gradient(var(--grid-major) 1px, transparent 1px),
+          linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+        background-size: var(--grid-major-size) var(--grid-major-size);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="lab-banner">Design lab — Variant A: Drafting Sheet. Authenticity-first cobalt paper. Not linked from production.</div>
+
+  <p class="label">Queue card · 390</p>
+  <section class="frame w390 sheet-grid" data-shot="drafting-queue-390">
+    <div class="main">
+      <div class="eyebrow">Sheet · Review</div>
+      <h1>Queue</h1>
+      <p class="lede">12 candidates · swipe or decide</p>
+      <article class="sheet-panel">
+        <span class="corner-tr" aria-hidden="true"></span>
+        <span class="corner-bl" aria-hidden="true"></span>
+        <div class="status">New · Web</div>
+        <h2 class="title">MIT Reality Hack 2026</h2>
+        <p class="meta">Mar 14–16 · Cambridge, MA · In-person</p>
+        <p class="summary">XR accessibility hackathon hosted by MIT. Apply by Feb 20. Strong official site + Devpost listing.</p>
+        <div class="facts">
+          <div><strong>Deadline</strong> · Feb 20, 2026</div>
+          <div><strong>Eligibility</strong> · Students + recent grads</div>
+        </div>
+        <hr class="rule-dashed" />
+        <div class="evidence-mini">Official · realityhack.mit.edu · verified 2d ago</div>
+        <div class="decision">
+          <button class="btn reject" type="button">Reject</button>
+          <button class="btn save" type="button">Save</button>
+          <button class="btn approve" type="button">Approve</button>
+        </div>
+      </article>
+    </div>
+    <nav class="bottom-nav" aria-label="Mobile">
+      <span>Queue</span><span>Saved</span><span>Approved</span><span>Settings</span>
+    </nav>
+  </section>
+
+  <p class="label">Queue card · 768</p>
+  <section class="frame w768 sheet-grid" data-shot="drafting-queue-768">
+    <div class="main">
+      <div class="eyebrow">Sheet · Review</div>
+      <h1>Queue</h1>
+      <p class="lede">Keyboard: ← reject · → approve · S save</p>
+      <article class="sheet-panel">
+        <span class="corner-tr" aria-hidden="true"></span>
+        <span class="corner-bl" aria-hidden="true"></span>
+        <div class="status warn">Needs review · Web</div>
+        <h2 class="title">MIT Reality Hack 2026</h2>
+        <p class="meta">Mar 14–16 · Cambridge, MA · In-person</p>
+        <p class="summary">XR accessibility hackathon. Apply by Feb 20. Official + Devpost evidence present; prize amount unclear.</p>
+        <div class="facts">
+          <div><strong>Deadline</strong> · Feb 20, 2026</div>
+          <div><strong>Eligibility</strong> · Students + recent grads</div>
+        </div>
+        <div class="evidence-mini">Official · realityhack.mit.edu · verified 2d ago</div>
+        <div class="decision">
+          <button class="btn reject" type="button">Reject</button>
+          <button class="btn save" type="button">Save</button>
+          <button class="btn approve" type="button">Approve</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <p class="label">Detail chrome · 1440</p>
+  <section class="frame w1440 sheet-grid" data-shot="drafting-detail-1440">
+    <div class="shell">
+      <aside class="side">
+        <div class="title-block">
+          <div class="brand">Hackathon Finder</div>
+          <small>DwG · Review · Scale 1:1</small>
+        </div>
+        <nav class="nav">
+          <a class="active" href="#">Queue</a>
+          <a href="#">Saved</a>
+          <a href="#">Approved</a>
+          <a href="#">Rejected</a>
+          <a href="#">Settings</a>
+        </nav>
+      </aside>
+      <div class="main">
+        <div class="eyebrow">Candidate · Sheet</div>
+        <div class="doc">
+          <div class="doc-main">
+            <div class="status">New · Web</div>
+            <h2 class="title" style="font-size:28px">MIT Reality Hack 2026</h2>
+            <p class="meta">Mar 14–16 · Cambridge, MA · In-person · id · cand_8f2a</p>
+            <p class="summary" style="max-width:40rem">
+              Weekend XR accessibility hackathon. Teams build assistive experiences; mentors from MIT Media Lab and industry sponsors.
+            </p>
+            <p class="section-label">Evidence</p>
+            <div class="source official">
+              <strong>Official</strong> · realityhack.mit.edu<br />
+              <span style="color:var(--muted);font-size:12px">Registration open · last verified 2d ago</span>
+            </div>
+            <div class="source apply">
+              <strong>Apply</strong> · apply.realityhack.mit.edu<br />
+              <span style="color:var(--muted);font-size:12px">Deadline Feb 20</span>
+            </div>
+            <div class="ask">
+              <p class="section-label">Ask</p>
+              <input type="text" placeholder="Ask about this candidate…" value="Should I do this hackathon?" />
+              <div class="answer">
+                <div class="certainty">MEDIUM · advisory</div>
+                <p style="margin:8px 0 0">Worth considering if XR/accessibility is a fit. Strong official evidence; confirm prize and travel before approving.</p>
+              </div>
+            </div>
+          </div>
+          <aside class="doc-rail">
+            <div class="rail-box">
+              <p class="section-label">Facts</p>
+              <div style="display:grid;gap:8px;color:var(--muted)">
+                <div><strong style="color:var(--text)">Mode</strong> · In-person</div>
+                <div><strong style="color:var(--text)">Deadline</strong> · Feb 20</div>
+                <div><strong style="color:var(--text)">Relevance</strong> · 86</div>
+              </div>
+            </div>
+            <div class="rail-box">
+              <p class="section-label">Actions</p>
+              <div style="display:grid;gap:8px">
+                <button class="btn approve" type="button">Approve</button>
+                <button class="btn save" type="button">Save</button>
+                <button class="btn reject" type="button">Reject</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="label">Detail chrome · 390</p>
+  <section class="frame w390 sheet-grid" data-shot="drafting-detail-390">
+    <div class="main">
+      <div class="eyebrow">Candidate · Sheet</div>
+      <div class="doc-main">
+        <div class="status">New · Web</div>
+        <h2 class="title">MIT Reality Hack 2026</h2>
+        <p class="meta">Mar 14–16 · Cambridge · In-person</p>
+        <p class="summary">XR accessibility hackathon. Official + apply links verified.</p>
+        <p class="section-label">Evidence</p>
+        <div class="source official"><strong>Official</strong> · realityhack.mit.edu</div>
+        <div class="source apply"><strong>Apply</strong> · apply.realityhack.mit.edu</div>
+        <div class="ask">
+          <p class="section-label">Ask</p>
+          <input type="text" placeholder="Ask about this candidate…" />
+        </div>
+      </div>
+      <div class="decision" style="margin-top:16px;max-width:440px">
+        <button class="btn reject" type="button">Reject</button>
+        <button class="btn save" type="button">Save</button>
+        <button class="btn approve" type="button">Approve</button>
+      </div>
+    </div>
+    <nav class="bottom-nav" aria-label="Mobile">
+      <span>Queue</span><span>Saved</span><span>Approved</span><span>Settings</span>
+    </nav>
+  </section>
+</body>
+</html>

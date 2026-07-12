@@ -2,25 +2,37 @@
 
 /*
   Hackathon Finder — review workspace design system
-  Restrained technical blueprint: navy canvas, paper text, cyan structure.
-  Selected over Expressive Blueprint for readability (docs/design/DESIGN_REVIEW.md).
+  Drafting Sheet blueprint (Step 3): cobalt paper, warm ink, major/minor grid,
+  double-line frames, corner registration. Selected over Modern Blueprint —
+  see docs/design/BLUEPRINT_COMPARISON.md.
 */
 
 :root {
-  /* Surfaces — restrained blueprint */
-  --background: #0b1524;
-  --surface: #101c2e;
-  --card: #142338;
-  --inset: #0d1829;
-  --elevated: #182a40;
-  --foreground: #ebe8e0;
-  --muted: #8fa3b8;
-  --muted-strong: #a8b8c8;
+  /* Surfaces — cobalt drafting paper */
+  --background: #0c2748;
+  --surface: #0f2d52;
+  --card: #123258;
+  --panel: #123258;
+  --inset: #0a1f3d;
+  --elevated: #163860;
+  --foreground: #f0ebe2;
+  --muted: #9eb0c4;
+  --muted-strong: #b4c2d2;
 
-  /* Borders — fine cyan-blue structural lines */
-  --border: #2a3f56;
-  --border-subtle: #1a2b3e;
-  --border-strong: #3d5570;
+  /* Construction ink lines (warm off-white on cobalt) */
+  --ink-line: color-mix(in oklab, var(--foreground) 55%, transparent);
+  --ink-line-strong: color-mix(in oklab, var(--foreground) 78%, transparent);
+  --ink-line-faint: color-mix(in oklab, var(--foreground) 22%, transparent);
+  --border: color-mix(in oklab, var(--foreground) 32%, #0a1f3d);
+  --border-subtle: color-mix(in oklab, var(--foreground) 18%, #0a1f3d);
+  --border-strong: color-mix(in oklab, var(--foreground) 48%, #0a1f3d);
+
+  /* Grid — major / minor warm ink */
+  --grid-major: color-mix(in oklab, var(--foreground) 12%, transparent);
+  --grid-minor: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --grid-major-size: 64px;
+  --grid-minor-size: 8px;
+  --frame-gap: 3px;
 
   /* Semantic */
   --accent-approve: #3db87a;
@@ -28,11 +40,11 @@
   --accent-save: #5ba8c9;
   --accent-warn: #d4a04a;
   --accent-danger: #d97868;
-  --accent-focus: #5eb0d4;
+  --accent-focus: #6ec4d8;
 
-  /* Hero — near-panel navy, no glow brand */
-  --hero-from: #142338;
-  --hero-to: #0d1829;
+  /* Hero — near-panel cobalt, no glow */
+  --hero-from: #123258;
+  --hero-to: #0a1f3d;
 
   /* Spacing scale */
   --space-1: 0.25rem;
@@ -55,17 +67,19 @@
   --text-2xl: 1.5rem;
   --text-3xl: 1.875rem;
 
-  /* Radii */
-  --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
-  --radius-2xl: 1rem;
+  /* Radii — sheet-first, minimal rounding */
+  --radius-sheet: 2px;
+  --radius-control: 3px;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+  --radius-2xl: 4px;
   --radius-full: 9999px;
 
-  /* Shadows — navy depth, no glow */
-  --shadow-card: 0 12px 32px rgba(4, 12, 24, 0.42);
-  --shadow-soft: 0 8px 20px rgba(4, 12, 24, 0.32);
+  /* Shadows — ink on paper; no floating elevation */
+  --shadow-card: none;
+  --shadow-soft: none;
 
   /* Motion */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -73,14 +87,15 @@
   --duration-normal: 220ms;
   --duration-slow: 320ms;
 
-  /* Layout — fluid review workspace */
-  --content-queue: 40rem;
-  --content-queue-max: 56rem;
+  /* Layout — fluid review workspace (owned elsewhere; preserve values) */
+  --content-queue-min: 0;
+  --content-queue: 45rem; /* 720px preferred mid desktop */
+  --content-queue-max: 56.25rem; /* 900px upper primary band */
   --content-detail: 48rem;
   --content-rail: 17.5rem;
-  --sidebar-width: 14.5rem;
+  --sidebar-width: 14rem; /* 224px — inside 210–240 */
   --nav-mobile-height: 4.25rem;
-  --shell-max: 90rem;
+  --shell-max: 100rem; /* 1600px — headroom for 900px primary + padding */
 }
 
 .hf-shell-main {
@@ -91,13 +106,12 @@
 
 .hf-review-workspace {
   width: 100%;
-  max-width: var(--content-queue-max);
+  max-width: min(100%, var(--content-queue-max));
 }
 
-@container review (min-width: 56rem) {
-  .hf-review-workspace {
-    max-width: min(56rem, 100%);
-  }
+.hf-queue-column {
+  width: 100%;
+  max-width: min(100%, var(--content-queue-max));
 }
 
 @theme inline {
@@ -139,12 +153,30 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Major + minor drafting grid — background only */
+.hf-sheet-grid,
 .grid-background {
   background-color: var(--background);
   background-image:
-    linear-gradient(rgba(94, 176, 212, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(94, 176, 212, 0.035) 1px, transparent 1px);
-  background-size: 32px 32px;
+    linear-gradient(var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+  background-size:
+    var(--grid-minor-size) var(--grid-minor-size),
+    var(--grid-minor-size) var(--grid-minor-size),
+    var(--grid-major-size) var(--grid-major-size),
+    var(--grid-major-size) var(--grid-major-size);
+}
+
+@media (max-width: 639px) {
+  .hf-sheet-grid,
+  .grid-background {
+    background-image:
+      linear-gradient(var(--grid-major) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+    background-size: var(--grid-major-size) var(--grid-major-size);
+  }
 }
 
 .hf-doc-title {
@@ -169,21 +201,147 @@ body {
   outline: none;
 }
 .hf-focus:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--accent-focus) 70%, transparent);
+  outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
 }
 
+/* Double-line sheet frame */
+.hf-sheet-frame {
+  border: 1px solid var(--ink-line);
+  outline: 1px solid var(--ink-line-faint);
+  outline-offset: var(--frame-gap);
+  border-radius: var(--radius-sheet);
+  background: var(--panel);
+  box-shadow: none;
+}
+
+/* Corner registration L-marks */
+.hf-corner-marks {
+  position: relative;
+}
+.hf-corner-marks::before,
+.hf-corner-marks::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  border-color: var(--ink-line-strong);
+  border-style: solid;
+  z-index: 1;
+}
+.hf-corner-marks::before {
+  top: 0;
+  left: 0;
+  border-width: 2px 0 0 2px;
+}
+.hf-corner-marks::after {
+  bottom: 0;
+  right: 0;
+  border-width: 0 2px 2px 0;
+}
+.hf-corner-marks > .hf-corner-tr,
+.hf-corner-marks > .hf-corner-bl {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  border-color: var(--ink-line-strong);
+  border-style: solid;
+  z-index: 1;
+}
+.hf-corner-marks > .hf-corner-tr {
+  top: 0;
+  right: 0;
+  border-width: 2px 2px 0 0;
+}
+.hf-corner-marks > .hf-corner-bl {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 2px 2px;
+}
+
 .hf-panel {
-  border: 1px solid color-mix(in oklab, var(--border) 85%, var(--accent-focus));
-  border-radius: var(--radius-xl);
-  background: color-mix(in oklab, var(--inset) 92%, var(--surface));
+  position: relative;
+  border: 1px solid var(--ink-line);
+  outline: 1px solid var(--ink-line-faint);
+  outline-offset: var(--frame-gap);
+  border-radius: var(--radius-sheet);
+  background: color-mix(in oklab, var(--inset) 88%, var(--surface));
+  box-shadow: none;
 }
 
 .hf-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl);
-  background: color-mix(in oklab, var(--card) 94%, var(--surface));
-  box-shadow: var(--shadow-soft);
+  position: relative;
+  border: 1px solid var(--ink-line);
+  outline: 1px solid var(--ink-line-faint);
+  outline-offset: var(--frame-gap);
+  border-radius: var(--radius-sheet);
+  background: color-mix(in oklab, var(--card) 96%, var(--surface));
+  box-shadow: none;
+}
+
+.hf-title-block {
+  border: 1px solid var(--ink-line);
+  outline: 1px solid var(--ink-line-faint);
+  outline-offset: var(--frame-gap);
+  border-radius: var(--radius-sheet);
+  background: color-mix(in oklab, var(--surface) 92%, var(--inset));
+  padding: var(--space-3) var(--space-3);
+}
+
+.hf-technical-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hf-rule-dashed {
+  border: none;
+  border-top: 1px dashed var(--ink-line-faint);
+  margin: var(--space-3) 0;
+}
+
+.hf-status-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-save);
+  border: 1px solid color-mix(in oklab, var(--accent-save) 35%, transparent);
+  border-radius: var(--radius-sheet);
+  padding: 0.2rem 0.45rem;
+}
+.hf-status-stamp[data-tone="warn"] {
+  color: var(--accent-warn);
+  border-color: color-mix(in oklab, var(--accent-warn) 40%, transparent);
+}
+.hf-status-stamp[data-tone="approve"] {
+  color: var(--accent-approve);
+  border-color: color-mix(in oklab, var(--accent-approve) 40%, transparent);
+}
+.hf-status-stamp[data-tone="reject"] {
+  color: var(--accent-reject);
+  border-color: color-mix(in oklab, var(--accent-reject) 40%, transparent);
+}
+
+.hf-source-stamp {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-left: 2px solid var(--ink-line);
+  padding-left: var(--space-2);
 }
 
 .hf-section-label {
@@ -200,8 +358,9 @@ body {
   justify-content: center;
   gap: var(--space-2);
   min-height: 2.5rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--ink-line);
+  background: transparent;
   padding: 0.5rem 0.875rem;
   font-size: var(--text-sm);
   font-weight: 500;
@@ -216,7 +375,7 @@ body {
   opacity: 0.4;
 }
 .hf-btn:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--accent-focus) 70%, transparent);
+  outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
 }
 
@@ -224,30 +383,31 @@ body {
   color: var(--muted);
 }
 .hf-btn-ghost:hover:not(:disabled) {
-  border-color: color-mix(in oklab, var(--accent-save) 40%, var(--border));
+  border-color: var(--ink-line-strong);
   color: var(--foreground);
 }
 
 .hf-btn-primary {
-  border-color: color-mix(in oklab, var(--accent-save) 50%, transparent);
-  background: color-mix(in oklab, var(--accent-save) 86%, white);
-  color: #0b1524;
+  border-color: color-mix(in oklab, var(--accent-save) 55%, transparent);
+  background: transparent;
+  color: color-mix(in oklab, var(--accent-save) 92%, white);
   font-weight: 600;
 }
 .hf-btn-primary:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--accent-save) 76%, white);
+  background: color-mix(in oklab, var(--accent-save) 12%, transparent);
 }
 
 .hf-btn-approve {
-  border-color: color-mix(in oklab, var(--accent-approve) 50%, transparent);
+  border-color: color-mix(in oklab, var(--accent-approve) 55%, transparent);
   color: color-mix(in oklab, var(--accent-approve) 88%, white);
+  font-weight: 600;
 }
 .hf-btn-approve:hover:not(:disabled) {
   background: color-mix(in oklab, var(--accent-approve) 14%, transparent);
 }
 
 .hf-btn-save {
-  border-color: color-mix(in oklab, var(--accent-save) 45%, transparent);
+  border-color: color-mix(in oklab, var(--accent-save) 50%, transparent);
   color: color-mix(in oklab, var(--accent-save) 88%, white);
 }
 .hf-btn-save:hover:not(:disabled) {
@@ -265,8 +425,8 @@ body {
 .hf-input {
   width: 100%;
   min-height: 2.5rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--ink-line);
   background: color-mix(in oklab, var(--inset) 94%, var(--surface));
   padding: 0.5rem 0.75rem;
   font-size: var(--text-sm);
@@ -280,13 +440,15 @@ body {
   color: var(--muted);
 }
 .hf-input:focus {
-  border-color: color-mix(in oklab, var(--accent-focus) 65%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent-focus) 16%, transparent);
+  border-color: var(--accent-focus);
+  box-shadow: none;
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 1px;
 }
 
 .hf-chip {
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--ink-line);
   padding: 0.5rem 0.75rem;
   font-size: var(--text-xs);
   color: var(--muted);
@@ -297,10 +459,10 @@ body {
 }
 .hf-chip:hover:not(:disabled) {
   color: var(--foreground);
-  border-color: var(--border-strong);
+  border-color: var(--ink-line-strong);
 }
 .hf-chip:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--accent-focus) 70%, transparent);
+  outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
 }
 .hf-chip:disabled {
@@ -316,13 +478,30 @@ body {
   text-decoration: underline;
 }
 .hf-link-quiet:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--accent-focus) 70%, transparent);
+  outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
   border-radius: 2px;
 }
 
 .hf-expand {
   overflow: hidden;
+}
+
+/* Nav drafting cues */
+.hf-nav-link {
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-control);
+}
+.hf-nav-link[data-active="true"],
+.hf-nav-link[aria-current="page"] {
+  border-left-color: var(--ink-line-strong);
+  background: color-mix(in oklab, var(--foreground) 4%, transparent);
+  color: var(--foreground);
+}
+
+.hf-nav-mobile {
+  background: var(--background);
+  border-top: 1px solid var(--border-subtle);
 }
 
 @media (prefers-reduced-motion: reduce) {

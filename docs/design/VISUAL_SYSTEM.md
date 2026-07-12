@@ -40,39 +40,41 @@ Section gaps: 24px. Stack gaps inside sections: 12–16px. Page padding: 16 mobi
 - Detail ≥1200: primary column `minmax(0, 42rem)` + rail `18rem`  
 - Queue card max width: `27.5rem` centered in content
 
-## Surfaces
+## Surfaces (Drafting Sheet — Step 3)
+
+Canonical authenticity comparison: `docs/design/BLUEPRINT_COMPARISON.md`.
 
 | Token | Value | Use |
 |-------|-------|-----|
-| `--bg` | `#0a0a0c` | Page |
-| `--surface` | `#111114` | Sidebar / elevated |
-| `--panel` | `#16161a` | Review card / document panel |
-| `--inset` | `#0d0d10` | Nested fields / disclosures |
-| `--hairline` | `#2a2a32` | Borders |
-| `--hairline-strong` | `#3a3a46` | Active borders |
+| `--background` | `#0c2748` | Cobalt drafting paper |
+| `--surface` | `#0f2d52` | Sidebar / title block |
+| `--card` / `--panel` | `#123258` | Sheet panels |
+| `--inset` | `#0a1f3d` | Nested fields |
+| `--elevated` | `#163860` | Active / hover lift |
+| `--ink-line*` | warm foreground mixes | Construction / double borders |
+| `--grid-major` / `--grid-minor` | ~12% / ~5% warm ink | Background grid only |
 
-No gradients as primary surfaces. No glass/blur chrome except optional mobile nav (subtle).
+No gradients as primary surfaces. No glass/blur primary nav. No aircraft wallpaper.
 
 ## Radii
 
-`sm 4px` · `md 8px` · `lg 12px` · `xl 16px`  
-Prefer md/lg. Avoid pill-everything; full radius only for true circular icon buttons if retained.
+`--radius-sheet` 2px · `--radius-control` 3px · sm–xl retuned toward sheet. Avoid pills except true circular affordances.
 
 ## Shadows
 
-One soft elevation: `0 12px 32px rgba(0,0,0,0.35)` on the active queue card only. Elsewhere: border-only.
+None by default (`--shadow-card` / `--shadow-soft`: `none`). Ink sits on paper.
 
 ## Semantic colors
 
 | Role | Color | Use |
 |------|-------|-----|
-| Text | `#f2f2f4` | Primary |
-| Muted | `#8e8e9a` | Secondary |
-| Approve | `#3dcf7a` | Approve only |
-| Save / info | `#6ec8ff` | Save, links, focus ring |
-| Reject | `#9aa3b2` | Reject (quiet, not alarm) |
-| Warn | `#e0a54f` | NEEDS_REVIEW, uncertainty |
-| Danger | `#f07178` | Errors / destructive |
+| Text | `#f0ebe2` | Warm off-white ink |
+| Muted | `#9eb0c4` | Secondary blue-gray |
+| Approve | `#3db87a` | Approve |
+| Save / focus | `#5ba8c9` / `#6ec4d8` | Save, links, hard focus ring |
+| Reject | `#d97868` | Reject |
+| Warn | `#d4a04a` | NEEDS_REVIEW, uncertainty |
+| Danger | `#d97868` | Errors / destructive |
 
 ## Source credibility levels
 
@@ -88,8 +90,8 @@ Order evidence by level desc, then last verified.
 
 ## Interaction states
 
-- Hover: border → `--hairline-strong` or text → foreground (150ms)  
-- Focus-visible: 2px ring `color-mix(sky 70%, transparent)`, offset 2px  
+- Hover: border → `--ink-line-strong` or text → foreground (150ms)  
+- Focus-visible: 2px hard ring `--accent-focus` (`#6ec4d8`), offset 2px  
 - Disabled: opacity 0.4, no pointer  
 - Active press: slight opacity dip (CSS only)  
 - Loading: skeleton bars matching layout, not spinner-only

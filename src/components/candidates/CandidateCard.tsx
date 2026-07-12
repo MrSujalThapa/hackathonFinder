@@ -43,12 +43,14 @@ export function CandidateCardView({
   return (
     <article
       className={[
-        "flex w-full max-w-[var(--content-queue)] flex-col overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-card)]",
+        "hf-card hf-corner-marks flex w-full flex-col overflow-hidden",
         className,
       ].join(" ")}
       style={style}
       aria-label={candidate.name}
     >
+      <span className="hf-corner-tr" aria-hidden="true" />
+      <span className="hf-corner-bl" aria-hidden="true" />
       <CandidateHero candidate={candidate} />
 
       <div className="flex flex-1 flex-col gap-3 px-5 pb-3 pt-3">
