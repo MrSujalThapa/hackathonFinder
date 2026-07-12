@@ -265,7 +265,7 @@ export function printAgentSummary(summary: AgentRunSummary): void {
       console.log(base);
       if (summary.verbose) {
         console.log(
-          `   classification=${candidate.classification ?? "n/a"} authority=${candidate.sourceAuthority ?? "n/a"} deadlineState=${candidate.deadlineState ?? "n/a"} official=${candidate.hasOfficialUrl ? "yes" : "no"} apply=${candidate.hasApplyUrl ? "yes" : "no"}`,
+          `   status=${candidate.status} classification=${candidate.classification ?? "n/a"} authority=${candidate.sourceAuthority ?? "n/a"} deadlineState=${candidate.deadlineState ?? "n/a"} official=${candidate.hasOfficialUrl ? "yes" : "no"} apply=${candidate.hasApplyUrl ? "yes" : "no"}`,
         );
       } else {
         console.log(
