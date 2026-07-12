@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { LogoutButton } from "@/components/shell/LogoutButton";
 import { OpenSheetLink } from "@/components/shell/OpenSheetLink";
 import { getCounts, subscribe } from "@/lib/candidates/clientStore";
 
@@ -83,6 +84,7 @@ export function DesktopSidebar({ queueCount }: { queueCount?: number }) {
       </nav>
 
       <OpenSheetLink className="mt-4 rounded-xl border border-border/80 px-3 py-2.5 text-sm text-muted transition-colors hover:border-sky-500/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:cursor-not-allowed disabled:opacity-60" />
+      <LogoutButton className="mt-2 rounded-xl border border-border/80 px-3 py-2.5 text-left text-sm text-muted transition-colors hover:border-amber-500/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:cursor-not-allowed disabled:opacity-60" />
     </aside>
   );
 }
@@ -126,6 +128,9 @@ export function MobileNavigation({ queueCount }: { queueCount?: number }) {
             </li>
           );
         })}
+        <li className="flex-1">
+          <LogoutButton className="flex w-full flex-col items-center gap-0.5 px-1 py-2.5 text-[10px] font-medium text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400/60" />
+        </li>
       </ul>
     </nav>
   );

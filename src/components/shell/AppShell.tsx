@@ -1,3 +1,6 @@
+"use client";
+
+import { usePathname } from "next/navigation";
 import { DesktopSidebar, MobileNavigation } from "@/components/shell/Navigation";
 
 type AppShellProps = {
@@ -7,6 +10,15 @@ type AppShellProps = {
 };
 
 export function AppShell({ children, queueCount }: AppShellProps) {
+  const pathname = usePathname();
+  if (pathname === "/login") {
+    return (
+      <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-4 py-6 sm:px-6">
+        {children}
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-dvh w-full">
       <DesktopSidebar queueCount={queueCount} />
