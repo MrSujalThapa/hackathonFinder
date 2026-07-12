@@ -13,14 +13,17 @@ function notImplemented(name: string): SearchProvider {
   };
 }
 
-export function createBraveSearchProvider(_apiKey: string): SearchProvider {
+export function createBraveSearchProvider(apiKey: string): SearchProvider {
+  void apiKey;
   return notImplemented("brave");
 }
 
-export function createExaSearchProvider(_apiKey: string): SearchProvider {
+export function createExaSearchProvider(apiKey: string): SearchProvider {
+  void apiKey;
   return notImplemented("exa");
 }
 
-export function createSerpApiSearchProvider(_apiKey: string): SearchProvider {
+export function createSerpApiSearchProvider(apiKey: string): SearchProvider {
+  void apiKey;
   return notImplemented("serpapi");
 }

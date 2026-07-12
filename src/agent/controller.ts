@@ -184,9 +184,9 @@ export async function runDiscovery(
 
     const extracted = extractHackathonEvents(leads);
     const merged = mergeCrossSourceEvents(extracted);
+    summary.extracted = extracted.length;
     summary.uniqueLeads = merged.events.length;
     summary.crossSourceMerges = merged.mergeCount;
-    summary.extracted = merged.events.length;
 
     const accepted: AcceptedCandidate[] = [];
     const rejected: RejectedCandidate[] = [];

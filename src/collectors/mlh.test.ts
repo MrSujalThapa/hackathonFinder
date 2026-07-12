@@ -68,6 +68,47 @@ describe("parseMlhHtml", () => {
     assert.ok(!leads.some((lead) => (lead.title ?? "").includes("Past Spring")));
   });
 
+  it("parses Inertia upcomingEvents JSON embedded in MLH pages", () => {
+    const html = `<!DOCTYPE html><html><body>
+      <script data-page="app" type="application/json">${JSON.stringify({
+        component: "EventsListing",
+        props: {
+          upcomingEvents: [
+            {
+              id: "1",
+              slug: "toronto-ai-2026",
+              name: "Toronto AI Hackathon Inertia",
+              status: "upcoming",
+              startsAt: "2026-09-13T12:00:00Z",
+              endsAt: "2026-09-15T23:59:59Z",
+              dateRange: "SEP 13 - 15",
+              url: "/events/toronto-ai-2026/prizes",
+              location: "Toronto, Canada",
+              formatType: "physical",
+              websiteUrl: "https://hackto.example.com/ai",
+            },
+            {
+              id: "2",
+              slug: "ended-event",
+              name: "Ended Event",
+              status: "ended",
+              startsAt: "2026-01-01T00:00:00Z",
+              endsAt: "2026-01-02T00:00:00Z",
+              url: "/events/ended-event",
+              location: "Montreal, Canada",
+              formatType: "physical",
+            },
+          ],
+        },
+      })}</script>
+    </body></html>`;
+    const leads = parseMlhHtml(html, 20, { now: FIXED_NOW, seasonYear: 2026 });
+    assert.equal(leads.length, 1);
+    assert.equal(leads[0]?.title, "Toronto AI Hackathon Inertia");
+    assert.equal(leads[0]?.metadata?.startDate, "2026-09-13");
+    assert.equal(leads[0]?.metadata?.mode, "in-person");
+  });
+
   it("zero-card HTML yields no leads and supports a warning result", () => {
     const leads = parseMlhHtml("<html><body><p>No events</p></body></html>", 10, {
       now: FIXED_NOW,
