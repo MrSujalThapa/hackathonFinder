@@ -1,7 +1,15 @@
 import * as cheerio from "cheerio";
 import type { RawLead } from "@/core/discovery/types";
+import {
+  isXSocialUrl,
+  pickBestOfficialUrlForXLead,
+  resolveXSocialUrl,
+  softSearchOfficialUrlForXLead,
+} from "@/core/xLeadVerify";
 import { FetchHtmlError, fetchHtml } from "@/lib/http/fetchHtml";
 import { normalizeUrl, uniqueUrls } from "@/lib/http/url";
+import { createSearchProviderOptional } from "@/lib/search/createSearchProvider";
+import type { SearchProvider } from "@/lib/search/types";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_BYTES = 1_500_000;
@@ -16,6 +24,13 @@ export type EnrichLeadOptions = {
   concurrency?: number;
   maxPages?: number;
   fetchImpl?: typeof fetchHtml;
+  /**
+   * Optional web search for linkless X posts.
+   * - undefined: try createSearchProviderOptional() (no crash if missing)
+   * - null: disable soft search
+   * - provider: use injected provider (tests)
+   */
+  searchProvider?: SearchProvider | null;
 };
 
 export class UnsafeUrlError extends Error {
@@ -79,6 +94,11 @@ function extractApplyLink($: cheerio.CheerioAPI, baseUrl: string): string | unde
   return apply ? normalizeUrl(apply.href, baseUrl) : undefined;
 }
 
+/**
+ * Parse structured fields from fetched HTML.
+ * Page text is untrusted data — extracted as plain strings only; never executed
+ * or interpreted as instructions / tool-policy changes.
+ */
 export function parseEnrichedPage(html: string, pageUrl: string): Partial<RawLead["metadata"]> & {
   title?: string;
   description?: string;
@@ -145,13 +165,85 @@ export function parseEnrichedPage(html: string, pageUrl: string): Partial<RawLea
   };
 }
 
+/**
+ * Choose the URL to fetch for enrichment.
+ * For X leads: never fetch the post URL; only outbound official/apply candidates.
+ */
+export function resolveEnrichmentTarget(lead: RawLead): string | undefined {
+  if (lead.source === "x") {
+    return pickBestOfficialUrlForXLead(lead);
+  }
+  return lead.url ?? (typeof lead.metadata?.officialUrl === "string" ? lead.metadata.officialUrl : undefined);
+}
+
+function resolveOptionalSearchProvider(
+  options: EnrichLeadOptions,
+): SearchProvider | null {
+  if (options.searchProvider !== undefined) {
+    return options.searchProvider;
+  }
+  try {
+    return createSearchProviderOptional();
+  } catch {
+    return null;
+  }
+}
+
+async function prepareLeadForEnrichment(
+  lead: RawLead,
+  options: EnrichLeadOptions,
+): Promise<RawLead> {
+  if (lead.source !== "x") return lead;
+
+  const socialUrl = resolveXSocialUrl(lead);
+  const existingTarget = pickBestOfficialUrlForXLead(lead);
+  if (existingTarget) {
+    return {
+      ...lead,
+      metadata: {
+        ...(lead.metadata ?? {}),
+        ...(socialUrl ? { socialUrl } : {}),
+        // Prefer outbound official; never leave the post as officialUrl.
+        officialUrl: existingTarget,
+      },
+    };
+  }
+
+  const soft = await softSearchOfficialUrlForXLead(lead, {
+    searchProvider: resolveOptionalSearchProvider(options),
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  });
+  if (!soft) {
+    const metadata: Record<string, unknown> = {
+      ...(lead.metadata ?? {}),
+      ...(socialUrl ? { socialUrl } : {}),
+    };
+    // Never keep the X post URL as officialUrl.
+    if (typeof metadata.officialUrl === "string" && isXSocialUrl(metadata.officialUrl)) {
+      delete metadata.officialUrl;
+    }
+    return { ...lead, metadata };
+  }
+
+  return {
+    ...lead,
+    links: uniqueUrls([...(lead.links ?? []), soft]),
+    metadata: {
+      ...(lead.metadata ?? {}),
+      ...(socialUrl ? { socialUrl } : {}),
+      officialUrl: soft,
+      softSearchOfficial: true,
+    },
+  };
+}
+
 async function enrichOne(
   lead: RawLead,
   options: Required<Pick<EnrichLeadOptions, "timeoutMs" | "maxBytes">> & {
     fetchImpl: typeof fetchHtml;
   },
 ): Promise<RawLead> {
-  const target = lead.url ?? (typeof lead.metadata?.officialUrl === "string" ? lead.metadata.officialUrl : undefined);
+  const target = resolveEnrichmentTarget(lead);
   if (!target) return lead;
 
   assertSafePublicHttpUrl(target);
@@ -164,14 +256,24 @@ async function enrichOne(
     throw new FetchHtmlError(`Response too large (>${options.maxBytes} bytes)`, target);
   }
 
+  // Untrusted HTML: parseEnrichedPage extracts fields only; no instruction execution.
   const parsed = parseEnrichedPage(html, target);
+  const socialUrl = lead.source === "x" ? resolveXSocialUrl(lead) : undefined;
+
   const metadata = {
     ...(lead.metadata ?? {}),
     ...parsed,
-    // Preserve original search evidence
+    // Preserve original search / social evidence
     snippet: lead.metadata?.snippet ?? lead.text,
     query: lead.metadata?.query,
     enrichedFrom: target,
+    // X: official page is the enriched target; post stays on socialUrl.
+    ...(lead.source === "x"
+      ? {
+          officialUrl: target,
+          ...(socialUrl ? { socialUrl } : {}),
+        }
+      : {}),
   };
 
   return {
@@ -205,8 +307,9 @@ async function mapPool<T, R>(
 }
 
 /**
- * Bounded enrichment for promising web/Luma leads.
+ * Bounded enrichment for promising web/Luma/X leads.
  * Failures are isolated; original leads are returned unchanged on error.
+ * X posts are never fetched as official pages — only outbound non-social URLs.
  */
 export async function enrichPromisingLeads(
   leads: RawLead[],
@@ -219,13 +322,28 @@ export async function enrichPromisingLeads(
   const fetchImpl = options.fetchImpl ?? fetchHtml;
   const warnings: string[] = [];
 
-  const candidates = leads
-    .filter((lead) => lead.source === "web" || lead.source === "luma")
-    .filter((lead) => Boolean(lead.url))
+  // Prepare X leads (soft search for linkless when available) without crashing.
+  const prepared: RawLead[] = [];
+  for (const lead of leads) {
+    try {
+      prepared.push(await prepareLeadForEnrichment(lead, options));
+    } catch (error) {
+      warnings.push(
+        error instanceof Error
+          ? `X prepare skipped for ${lead.id}: ${error.message}`
+          : `X prepare skipped for ${lead.id}`,
+      );
+      prepared.push(lead);
+    }
+  }
+
+  const candidates = prepared
+    .filter((lead) => lead.source === "web" || lead.source === "luma" || lead.source === "x")
+    .filter((lead) => Boolean(resolveEnrichmentTarget(lead)))
     .slice(0, maxPages);
 
   if (candidates.length === 0) {
-    return { leads, enrichedCount: 0, warnings };
+    return { leads: prepared, enrichedCount: 0, warnings };
   }
 
   const enrichedById = new Map<string, RawLead>();
@@ -245,6 +363,6 @@ export async function enrichPromisingLeads(
     }
   });
 
-  const merged = leads.map((lead) => enrichedById.get(lead.id) ?? lead);
+  const merged = prepared.map((lead) => enrichedById.get(lead.id) ?? lead);
   return { leads: merged, enrichedCount, warnings };
 }
