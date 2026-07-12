@@ -12,6 +12,7 @@ import type {
   SheetSyncResult,
   SheetSyncStatus,
 } from "@/server/sheets/types";
+import { protectApiRequest } from "@/server/api/protection";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -44,10 +45,17 @@ function toSheetSyncResult(result: SheetReconcileResult): SheetSyncResult {
  * APPROVED → ensure row present; otherwise → ensure row absent (DeleteDimension).
  */
 export async function POST(
-  _request: Request,
+  request: Request,
   context: RouteContext,
 ): Promise<Response> {
   try {
+    const protection = protectApiRequest(request, {
+      requireSameOrigin: true,
+      maxBodyBytes: 512,
+      rateLimit: { key: "candidate-sheet-sync", limit: 20, windowMs: 60_000 },
+    });
+    if (protection) return protection;
+
     const { id } = await context.params;
     const parsedId = candidateIdSchema.safeParse(id);
     if (!parsedId.success) {

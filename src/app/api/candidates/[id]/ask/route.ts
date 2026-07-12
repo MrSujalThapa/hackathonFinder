@@ -7,6 +7,7 @@ import {
 } from "@/server/api/envelope";
 import { answerCandidateQuestion } from "@/core/candidateQuestionAnswer";
 import { getCandidateRepository } from "@/server/candidates/service";
+import { protectApiRequest } from "@/server/api/protection";
 
 const askBodySchema = z.object({
   question: z.string().trim().min(3).max(500),
@@ -21,6 +22,13 @@ export async function POST(
   context: RouteContext,
 ): Promise<Response> {
   try {
+    const protection = protectApiRequest(request, {
+      requireSameOrigin: true,
+      maxBodyBytes: 2_048,
+      rateLimit: { key: "candidate-ask", limit: 10, windowMs: 60_000 },
+    });
+    if (protection) return protection;
+
     const { id } = await context.params;
     const parsedId = candidateIdSchema.safeParse(id);
     if (!parsedId.success) return validationError(parsedId.error);

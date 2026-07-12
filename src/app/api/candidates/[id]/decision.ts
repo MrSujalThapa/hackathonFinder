@@ -8,6 +8,7 @@ import {
 } from "@/server/api/envelope";
 import { getCandidateRepository } from "@/server/candidates/service";
 import { timedAsync } from "@/lib/perf/timing";
+import { protectApiRequest } from "@/server/api/protection";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -27,6 +28,13 @@ async function applyDecision(
   action: "approve" | "reject" | "save" | "restore",
 ): Promise<Response> {
   try {
+    const protection = protectApiRequest(request, {
+      requireSameOrigin: true,
+      maxBodyBytes: 2_048,
+      rateLimit: { key: "candidate-status", limit: 60, windowMs: 60_000 },
+    });
+    if (protection) return protection;
+
     const { id } = await context.params;
     const parsedId = candidateIdSchema.safeParse(id);
     if (!parsedId.success) {

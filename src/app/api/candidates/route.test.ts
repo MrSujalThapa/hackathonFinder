@@ -15,6 +15,18 @@ import {
 
 const SAMPLE_ID = "11111111-1111-4111-8111-111111111111";
 const MISSING_ID = "22222222-2222-4222-8222-222222222222";
+const ORIGIN = "http://localhost";
+
+function mutationRequest(init: RequestInit = {}): Request {
+  return new Request(ORIGIN, {
+    ...init,
+    method: init.method ?? "POST",
+    headers: {
+      origin: ORIGIN,
+      ...(init.headers ?? {}),
+    },
+  });
+}
 
 function baseCard(overrides: Partial<CandidateCard> = {}): CandidateCard {
   return {
@@ -255,8 +267,7 @@ describe("decision endpoints", () => {
     setCandidateRepositoryForTests(createMockRepo(store));
 
     const response = await approveCandidate(
-      new Request("http://localhost", {
-        method: "POST",
+      mutationRequest({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({}),
       }),
@@ -275,7 +286,7 @@ describe("decision endpoints", () => {
     setCandidateRepositoryForTests(createMockRepo(store));
 
     const response = await rejectCandidate(
-      new Request("http://localhost", { method: "POST" }),
+      mutationRequest(),
       { params: Promise.resolve({ id: SAMPLE_ID }) },
     );
     assert.equal(response.status, 200);
@@ -289,7 +300,7 @@ describe("decision endpoints", () => {
     setCandidateRepositoryForTests(createMockRepo(store));
 
     const response = await saveCandidate(
-      new Request("http://localhost", { method: "POST" }),
+      mutationRequest(),
       { params: Promise.resolve({ id: SAMPLE_ID }) },
     );
     assert.equal(response.status, 200);
@@ -304,7 +315,7 @@ describe("decision endpoints", () => {
     setCandidateRepositoryForTests(createMockRepo(store));
 
     const response = await restoreCandidate(
-      new Request("http://localhost", { method: "POST" }),
+      mutationRequest(),
       { params: Promise.resolve({ id: SAMPLE_ID }) },
     );
     assert.equal(response.status, 200);
@@ -315,10 +326,25 @@ describe("decision endpoints", () => {
   it("returns 404 for unknown candidate decisions", async () => {
     setCandidateRepositoryForTests(createMockRepo(new Map()));
     const response = await approveCandidate(
-      new Request("http://localhost", { method: "POST" }),
+      mutationRequest(),
       { params: Promise.resolve({ id: MISSING_ID }) },
     );
     assert.equal(response.status, 404);
+  });
+
+  it("rejects cross-origin candidate decisions", async () => {
+    const store = new Map([[SAMPLE_ID, baseDetail()]]);
+    setCandidateRepositoryForTests(createMockRepo(store));
+
+    const response = await approveCandidate(
+      new Request(ORIGIN, {
+        method: "POST",
+        headers: { origin: "https://attacker.example" },
+      }),
+      { params: Promise.resolve({ id: SAMPLE_ID }) },
+    );
+
+    assert.equal(response.status, 403);
   });
 
   it("exposes repository via getter for wiring checks", () => {

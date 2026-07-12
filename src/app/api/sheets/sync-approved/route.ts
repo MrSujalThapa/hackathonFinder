@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { fail, ok, validationError } from "@/server/api/envelope";
+import { protectApiRequest } from "@/server/api/protection";
 import { syncPendingApproved } from "@/server/sheets/syncPendingApproved";
 
 const bodySchema = z.object({
@@ -8,6 +9,13 @@ const bodySchema = z.object({
 
 export async function POST(request: Request): Promise<Response> {
   try {
+    const protection = protectApiRequest(request, {
+      requireSameOrigin: true,
+      maxBodyBytes: 1_024,
+      rateLimit: { key: "batch-sheet-sync", limit: 5, windowMs: 60_000 },
+    });
+    if (protection) return protection;
+
     let raw: unknown = {};
     const contentType = request.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {

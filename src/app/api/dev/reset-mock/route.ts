@@ -1,9 +1,17 @@
 import { fail, ok } from "@/server/api/envelope";
+import { protectApiRequest } from "@/server/api/protection";
 import { isMockCandidatesEnabled } from "@/server/candidates/service";
 import { resetMockCandidateStore } from "@/server/candidates/mockStore";
 
-export async function POST(): Promise<Response> {
+export async function POST(request: Request): Promise<Response> {
   try {
+    const protection = protectApiRequest(request, {
+      requireSameOrigin: true,
+      maxBodyBytes: 256,
+      rateLimit: { key: "mock-reset", limit: 10, windowMs: 60_000 },
+    });
+    if (protection) return protection;
+
     if (!isMockCandidatesEnabled()) {
       return fail(
         "MOCK_MODE_REQUIRED",

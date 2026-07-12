@@ -32,7 +32,11 @@ export type ApiErrorCode =
   | "VALIDATION_ERROR"
   | "CANDIDATE_NOT_FOUND"
   | "INTERNAL_ERROR"
-  | "MOCK_MODE_REQUIRED";
+  | "MOCK_MODE_REQUIRED"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "PAYLOAD_TOO_LARGE"
+  | "RATE_LIMITED";
 
 export type ApiError = {
   code: ApiErrorCode;
