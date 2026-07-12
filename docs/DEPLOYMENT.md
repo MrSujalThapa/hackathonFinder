@@ -112,6 +112,13 @@ npm run check:prod
 
 `npm run check:all` runs the non-X production gate.
 
+For a protected browser smoke against a running local or preview deployment, set
+`SMOKE_BASE_URL` and `SMOKE_OWNER_PASSWORD`, then run:
+
+```bash
+npm run smoke:prod
+```
+
 ## 8. Rollback
 
 1. Use Vercel's previous deployment rollback.

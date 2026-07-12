@@ -185,6 +185,7 @@ X/Twitter MCP arrives in a later project step.
 | `npm run sync:sheets` | Idempotent recovery for approved unsynced candidates |
 | `npm run test` | Unit / component tests |
 | `npm run smoke:queue` | Browser smoke (requires `npm run dev` + mock/live data) |
+| `npm run smoke:prod` | Owner-login smoke for a running local/preview deployment |
 | `npm run agent -- "<command>"` | Run local discovery agent CLI |
 
 Opt-in live Sheets integration tests (not part of default CI):

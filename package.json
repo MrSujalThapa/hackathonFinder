@@ -17,6 +17,7 @@
     "check:prod": "tsx scripts/check-production-config.ts",
     "sync:sheets": "tsx src/cli/syncSheets.ts",
     "smoke:queue": "tsx scripts/smoke-queue.ts",
+    "smoke:prod": "tsx scripts/smoke-production-auth.ts",
     "candidates:audit-sources": "tsx scripts/audit-candidate-sources.ts",
     "hash:password": "tsx scripts/hash-password.ts",
     "test": "tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",
