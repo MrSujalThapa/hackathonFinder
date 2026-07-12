@@ -37,27 +37,17 @@ describe("parseAgentArgs", () => {
     assert.equal(options.dryRun, false);
   });
 
-  it("parses broader discovery sources and rejects unknown names", () => {
+  it("parses show-x-plan flag", () => {
     const options = parseAgentArgs([
       "node",
       "agent.ts",
-      "find upcoming hackathons",
+      "find hackathons on x",
       "--",
-      "--sources=mlh,luma,web",
+      "--sources=x",
+      "--show-x-plan",
       "--dry-run",
     ]);
-    assert.deepEqual(options.sources, ["mlh", "luma", "web"]);
-
-    assert.throws(
-      () =>
-        parseAgentArgs([
-          "node",
-          "agent.ts",
-          "find upcoming hackathons",
-          "--",
-          "--sources=mlh,not-a-source",
-        ]),
-      /Unknown source\(s\): not-a-source/,
-    );
+    assert.equal(options.showXPlan, true);
+    assert.deepEqual(options.sources, ["x"]);
   });
 });

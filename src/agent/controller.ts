@@ -30,6 +30,7 @@ import {
   eventToUpsertInput,
 } from "@/agent/summary";
 import { formatSearchPlan, planSearchQueries } from "@/agent/planSearchQueries";
+import { formatXPlan, planXQueries } from "@/agent/planXQueries";
 
 const SUPABASE_ENV_MESSAGE =
   "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in .env.local, or run with --dry-run.";
@@ -44,6 +45,7 @@ export type RunDiscoveryOptions = {
   sourceTimeoutMs?: number;
   totalTimeoutMs?: number;
   showSearchPlan?: boolean;
+  showXPlan?: boolean;
   dryRunPlan?: boolean;
   verbose?: boolean;
   now?: Date;
@@ -98,6 +100,13 @@ export async function runDiscovery(
     const queries = planSearchQueries(preferences);
     console.log("Search plan:");
     console.log(formatSearchPlan(queries));
+    console.log("");
+  }
+
+  if (options.showXPlan || (options.dryRunPlan && preferences.sources.includes("x"))) {
+    const xQueries = planXQueries(preferences);
+    console.log("X plan:");
+    console.log(formatXPlan(xQueries));
     console.log("");
   }
 

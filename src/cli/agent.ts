@@ -24,6 +24,7 @@ async function main(): Promise<void> {
       sourceTimeoutMs: options.sourceTimeoutMs,
       totalTimeoutMs: options.totalTimeoutMs,
       showSearchPlan: options.showSearchPlan,
+      showXPlan: options.showXPlan,
       dryRunPlan: options.dryRunPlan,
       verbose: options.verbose,
     });

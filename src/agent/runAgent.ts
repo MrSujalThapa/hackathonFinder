@@ -10,6 +10,7 @@ export type RunAgentOptions = {
   sourceTimeoutMs?: number;
   totalTimeoutMs?: number;
   showSearchPlan?: boolean;
+  showXPlan?: boolean;
   dryRunPlan?: boolean;
   verbose?: boolean;
 };
@@ -26,6 +27,7 @@ export async function runAgent(
     sourceTimeoutMs: cliOptions.sourceTimeoutMs,
     totalTimeoutMs: cliOptions.totalTimeoutMs,
     showSearchPlan: cliOptions.showSearchPlan,
+    showXPlan: cliOptions.showXPlan,
     dryRunPlan: cliOptions.dryRunPlan,
     verbose: cliOptions.verbose,
   });
