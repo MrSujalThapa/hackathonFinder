@@ -72,6 +72,7 @@ describe("POST /api/candidates/[id]/ask", () => {
     const response = await POST(
       new Request("http://test.local", {
         method: "POST",
+        headers: { origin: "http://test.local" },
         body: JSON.stringify({ question: "What is the deadline?" }),
       }),
       { params: Promise.resolve({ id: candidate.id }) },

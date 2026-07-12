@@ -13,6 +13,13 @@ import { setCandidateRepositoryForTests } from "@/server/candidates/service";
 
 const QUEUE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-000000000001";
 
+function sameOriginPost() {
+  return new Request("http://localhost/api/candidates/mock-decision", {
+    method: "POST",
+    headers: { origin: "http://localhost" },
+  });
+}
+
 afterEach(() => {
   setCandidateRepositoryForTests(null);
   resetMockCandidateStoreForTests();
@@ -32,29 +39,29 @@ describe("mock candidate workflow", () => {
   it("approve/reject/save/restore endpoints update status", async () => {
     setCandidateRepositoryForTests(createMockCandidateRepository());
 
-    let response = await approve(new Request("http://localhost", { method: "POST" }), {
+    let response = await approve(sameOriginPost(), {
       params: Promise.resolve({ id: QUEUE_ID }),
     });
     assert.equal((await response.json()).data.newStatus, "APPROVED");
 
     resetMockCandidateStoreForTests();
     setCandidateRepositoryForTests(createMockCandidateRepository());
-    response = await reject(new Request("http://localhost", { method: "POST" }), {
+    response = await reject(sameOriginPost(), {
       params: Promise.resolve({ id: QUEUE_ID }),
     });
     assert.equal((await response.json()).data.newStatus, "REJECTED");
 
-    response = await restore(new Request("http://localhost", { method: "POST" }), {
+    response = await restore(sameOriginPost(), {
       params: Promise.resolve({ id: QUEUE_ID }),
     });
     assert.equal((await response.json()).data.newStatus, "NEW");
 
-    response = await save(new Request("http://localhost", { method: "POST" }), {
+    response = await save(sameOriginPost(), {
       params: Promise.resolve({ id: QUEUE_ID }),
     });
     assert.equal((await response.json()).data.newStatus, "SAVED_FOR_LATER");
 
-    response = await restore(new Request("http://localhost", { method: "POST" }), {
+    response = await restore(sameOriginPost(), {
       params: Promise.resolve({ id: QUEUE_ID }),
     });
     assert.equal((await response.json()).data.newStatus, "NEW");
@@ -112,13 +119,13 @@ describe("optimistic queue rollback helpers", () => {
     };
 
     setCandidateRepositoryForTests(failingRepo);
-    const response = await approve(new Request("http://localhost", { method: "POST" }), {
+    const response = await approve(sameOriginPost(), {
       params: Promise.resolve({ id: QUEUE_ID }),
     });
     assert.equal(response.status, 500);
     const body = await response.json();
     assert.equal(body.error.code, "INTERNAL_ERROR");
-    assert.match(body.error.message, /simulated write failure/);
+    assert.equal(body.error.message, "Failed to update candidate");
   });
 
   it("records fetch mock for client decideCandidate", async () => {

@@ -101,6 +101,13 @@ afterEach(() => {
   setCandidateRepositoryForTests(null);
 });
 
+function sameOriginPost() {
+  return new Request("http://localhost/api/candidates/sync-sheet", {
+    method: "POST",
+    headers: { origin: "http://localhost" },
+  });
+}
+
 describe("POST /api/candidates/[id]/sync-sheet", () => {
   it("returns already_synced when APPROVED sheet metadata is present", async () => {
     const store = new Map([
@@ -115,7 +122,7 @@ describe("POST /api/candidates/[id]/sync-sheet", () => {
     ]);
     setCandidateRepositoryForTests(createMockRepo(store));
 
-    const response = await syncCandidateSheet(new Request("http://localhost"), {
+    const response = await syncCandidateSheet(sameOriginPost(), {
       params: Promise.resolve({ id: SAMPLE_ID }),
     });
     assert.equal(response.status, 200);
@@ -130,7 +137,7 @@ describe("POST /api/candidates/[id]/sync-sheet", () => {
     const store = new Map([[SAMPLE_ID, baseDetail({ status: "NEW" })]]);
     setCandidateRepositoryForTests(createMockRepo(store));
 
-    const response = await syncCandidateSheet(new Request("http://localhost"), {
+    const response = await syncCandidateSheet(sameOriginPost(), {
       params: Promise.resolve({ id: SAMPLE_ID }),
     });
     assert.equal(response.status, 200);
@@ -146,7 +153,7 @@ describe("POST /api/candidates/[id]/sync-sheet", () => {
   it("returns 404 when candidate is missing", async () => {
     setCandidateRepositoryForTests(createMockRepo(new Map()));
 
-    const response = await syncCandidateSheet(new Request("http://localhost"), {
+    const response = await syncCandidateSheet(sameOriginPost(), {
       params: Promise.resolve({ id: MISSING_ID }),
     });
     assert.equal(response.status, 404);
@@ -155,7 +162,7 @@ describe("POST /api/candidates/[id]/sync-sheet", () => {
   });
 
   it("returns 400 for invalid uuid", async () => {
-    const response = await syncCandidateSheet(new Request("http://localhost"), {
+    const response = await syncCandidateSheet(sameOriginPost(), {
       params: Promise.resolve({ id: "not-a-uuid" }),
     });
     assert.equal(response.status, 400);
