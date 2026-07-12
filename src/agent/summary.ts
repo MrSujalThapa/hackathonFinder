@@ -15,6 +15,7 @@ import type {
 import type { EvidenceType } from "@/lib/supabase/database.types";
 import type { AddEvidenceInput } from "@/core/candidates/types";
 import { normalizeDatePart } from "@/core/dedupe";
+import { deterministicCandidateSummary } from "@/core/candidateSummary";
 
 export function mapEvidenceType(type: HackathonEvidence["type"]): EvidenceType {
   switch (type) {
@@ -71,7 +72,7 @@ export function eventToUpsertInput(
     themes: event.themes,
     eligibility: event.eligibility ?? null,
     description: event.description ?? null,
-    summary: event.description?.slice(0, 280) ?? null,
+    summary: deterministicCandidateSummary(event, 280),
     whyMatch: score.whyMatch,
     redFlags,
     sourceIds: event.sourceIds ?? {},
