@@ -2,6 +2,7 @@ import { planSearchQueries } from "@/agent/planSearchQueries";
 import type { RawLead } from "@/core/discovery/types";
 import type { Collector, CollectorInput, CollectorResult } from "@/collectors/types";
 import { emptyCollectorResult } from "@/collectors/types";
+import { classifyEventPage } from "@/core/classifyEventPage";
 import {
   createSearchProviderOptional,
 } from "@/lib/search/createSearchProvider";
@@ -30,12 +31,29 @@ function hostnameOf(url: string): string {
 export function isPromisingSearchResult(result: SearchResult): boolean {
   const text = `${result.title} ${result.snippet} ${result.url}`;
   if (NOISE_VOCAB.test(text)) return false;
-  if (/(mlh\.io|devpost\.com|lu\.ma|luma\.com|eventbrite\.com|unstop\.com)/i.test(result.url)) {
-    return true;
+
+  const classified = classifyEventPage({
+    name: result.title,
+    title: result.title,
+    url: result.url,
+    description: result.snippet,
+    text: result.snippet,
+  });
+  if (
+    classified.classification === "EVENT_DIRECTORY" ||
+    classified.classification === "ARTICLE" ||
+    classified.classification === "ORGANIZATION_PAGE"
+  ) {
+    return false;
+  }
+
+  if (/(mlh\.io|mlh\.com|devpost\.com|lu\.ma|luma\.com|eventbrite\.com|unstop\.com)/i.test(result.url)) {
+    return EVENT_VOCAB.test(text) || classified.classification === "INDIVIDUAL_EVENT";
   }
   if (/\.edu(\.|$)/i.test(result.url) && EVENT_VOCAB.test(text)) return true;
   return EVENT_VOCAB.test(text);
 }
+
 
 export function searchResultsToLeads(
   results: Array<SearchResult & { query?: string }>,

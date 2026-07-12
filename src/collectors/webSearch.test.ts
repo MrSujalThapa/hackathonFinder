@@ -68,12 +68,20 @@ describe("web search filtering", () => {
           source: "mlh.io",
           query: "q2",
         },
+        {
+          title: "Hack the North 2026",
+          url: "https://hackthenorth.com/",
+          snippet: "Waterloo hackathon registration apply",
+          source: "hackthenorth.com",
+          query: "q2",
+        },
       ],
       10,
     );
 
     assert.equal(leads.length, 2);
     assert.ok(leads.every((lead) => lead.metadata?.query));
+    assert.ok(!leads.some((lead) => /mlh\.io\/seasons/i.test(lead.url ?? "")));
   });
 
   it("respects maxResults", () => {
