@@ -193,6 +193,17 @@ export type AgentRunObservability = {
   provider?: string;
   model?: string;
   llmCalls: number;
+  planningCalls?: number;
+  extractionCalls?: number;
+  verificationCalls?: number;
+  summaryCalls?: number;
+  plannerLatencyMs?: number;
+  plannerSucceeded?: boolean;
+  tokenUsage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+  };
   toolCalls: number;
   sourcesSelected: SourceName[];
   stopReason: string;
