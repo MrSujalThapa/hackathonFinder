@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { LoginForm } from "@/app/login/LoginForm";
 
 export default function LoginPage() {
@@ -11,7 +12,9 @@ export default function LoginPage() {
         <p className="mt-2 text-sm text-muted">
           Review candidates, sync Sheets, and ask follow-up questions from a private session.
         </p>
-        <LoginForm />
+        <Suspense fallback={<div className="mt-6 h-40 rounded-xl bg-background/70" />}>
+          <LoginForm />
+        </Suspense>
       </section>
     </main>
   );
