@@ -38,6 +38,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { messageForSheetSync } from "@/hooks/useCandidateQueue";
+import { suggestedCandidateQuestions } from "@/core/candidateQuestionAnswer";
 
 export function CandidateDetailView({ id }: { id: string }) {
   const [candidate, setCandidate] = useState<CandidateDetail | null>(null);
@@ -381,13 +382,7 @@ export function CandidateDetailView({ id }: { id: string }) {
             Type any question — suggestions are shortcuts, not limits.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {[
-              "Deadline?",
-              "Remote?",
-              "Prizes?",
-              "Eligibility?",
-              "Official application link?",
-            ].map((item) => (
+            {suggestedCandidateQuestions(candidate).map((item) => (
               <button
                 key={item}
                 type="button"
@@ -429,9 +424,6 @@ export function CandidateDetailView({ id }: { id: string }) {
           {candidate.answers.length > 0 ? (
             <ul className="mt-4 space-y-3">
               {candidate.answers.map((answer) => {
-                const sources = Array.isArray(answer.sources)
-                  ? (answer.sources as Array<{ url?: string; label?: string }>)
-                  : [];
                 return (
                   <li
                     key={answer.id}
@@ -443,28 +435,48 @@ export function CandidateDetailView({ id }: { id: string }) {
                       </p>
                       <span className="text-[11px] uppercase tracking-wider text-muted">
                         {answer.confidence ?? "low"}
+                        {typeof answer.sources === "object" &&
+                        answer.sources &&
+                        !Array.isArray(answer.sources) &&
+                        (answer.sources as { liveVerification?: boolean })
+                          .liveVerification
+                          ? " · live check"
+                          : ""}
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-foreground/80">
                       {answer.answer}
                     </p>
-                    {sources.length > 0 ? (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {sources
-                          .filter((source) => source.url)
-                          .map((source) => (
-                            <a
-                              key={`${answer.id}-${source.url}`}
-                              href={source.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-sky-300 hover:underline"
-                            >
-                              {source.label ?? "Source"}
-                            </a>
-                          ))}
-                      </div>
-                    ) : null}
+                    {(() => {
+                      const raw = answer.sources;
+                      const links = Array.isArray(raw)
+                        ? (raw as Array<{ url?: string; label?: string }>)
+                        : raw &&
+                            typeof raw === "object" &&
+                            Array.isArray(
+                              (raw as { links?: unknown }).links,
+                            )
+                          ? ((raw as { links: Array<{ url?: string; label?: string }> })
+                              .links)
+                          : [];
+                      return links.length > 0 ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {links
+                            .filter((source) => source.url)
+                            .map((source) => (
+                              <a
+                                key={`${answer.id}-${source.url}`}
+                                href={source.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-sky-300 hover:underline"
+                              >
+                                {source.label ?? "Source"}
+                              </a>
+                            ))}
+                        </div>
+                      ) : null;
+                    })()}
                   </li>
                 );
               })}
