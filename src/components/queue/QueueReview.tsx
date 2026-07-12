@@ -53,6 +53,13 @@ export function QueueReview() {
           }
         />
 
+        <div className="mb-4 hidden rounded-xl border border-border/70 bg-card/50 px-3 py-2 text-xs text-muted sm:block">
+          Keyboard: <span className="text-foreground">Left</span> reject,{" "}
+          <span className="text-foreground">Right</span> approve,{" "}
+          <span className="text-foreground">S</span> save,{" "}
+          <span className="text-foreground">Enter</span> details.
+        </div>
+
         {sources.length > 1 ? (
           <label className="mb-4 block text-sm">
             <span className="sr-only">Filter by source</span>
@@ -115,6 +122,7 @@ export function QueueReview() {
               <p
                 className="mb-3 text-center text-xs text-sky-100/90"
                 role="status"
+                aria-live="polite"
               >
                 {queue.syncMessage}
                 <button
@@ -127,7 +135,11 @@ export function QueueReview() {
               </p>
             ) : null}
             {queue.error ? (
-              <p className="mb-3 text-center text-xs text-amber-200/90" role="status">
+              <p
+                className="mb-3 text-center text-xs text-amber-200/90"
+                role="alert"
+                aria-live="assertive"
+              >
                 {queue.error}
                 <button
                   type="button"

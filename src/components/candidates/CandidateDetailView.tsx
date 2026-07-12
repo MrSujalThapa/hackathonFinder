@@ -272,6 +272,18 @@ export function CandidateDetailView({ id }: { id: string }) {
 
         <CandidateTags themes={candidate.themes} />
 
+        {candidate.status === "NEEDS_REVIEW" ? (
+          <section className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+            <h2 className="text-xs font-semibold uppercase tracking-wider">
+              Needs review
+            </h2>
+            <p className="mt-1 text-amber-100/85">
+              This candidate was not confident enough for normal scoring. Check
+              official/apply links and evidence before approving.
+            </p>
+          </section>
+        ) : null}
+
         {candidate.status === "APPROVED" ? (
           <section className="rounded-2xl border border-border/70 bg-black/20 px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -482,18 +494,25 @@ export function CandidateDetailView({ id }: { id: string }) {
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
               Action history
             </h2>
-            <ul className="mt-2 space-y-2">
+            <ul className="mt-3 space-y-3">
               {candidate.actions.map((action) => (
-                <li key={action.id} className="text-sm text-foreground/75">
-                  <span className="font-medium text-foreground">
-                    {action.action}
-                  </span>
-                  {action.previousStatus && action.newStatus
-                    ? ` · ${action.previousStatus} → ${action.newStatus}`
-                    : null}
-                  <span className="ml-2 text-xs text-muted">
-                    {new Date(action.createdAt).toLocaleString()}
-                  </span>
+                <li
+                  key={action.id}
+                  className="border-l border-border pl-3 text-sm text-foreground/75"
+                >
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="font-medium text-foreground">
+                      {action.action}
+                    </span>
+                    <span className="text-xs text-muted">
+                      {new Date(action.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  {action.previousStatus && action.newStatus ? (
+                    <p className="mt-1 text-xs text-muted">
+                      {action.previousStatus} -&gt; {action.newStatus}
+                    </p>
+                  ) : null}
                 </li>
               ))}
             </ul>
