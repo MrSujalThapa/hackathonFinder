@@ -1,14 +1,34 @@
+import { mkdirSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import type { Page } from "playwright";
 import type { RawLead } from "@/core/discovery/types";
 import type { Collector, CollectorInput, CollectorResult } from "@/collectors/types";
 import { emptyCollectorResult } from "@/collectors/types";
 import {
+  detectHakkuAuth,
+  filterUpcomingHakkuCards,
+  type HakkuAuthStatus,
+  type HakkuCollectMode,
+  type HakkuStopReason,
+} from "@/lib/browser/hakkuAuth";
+import {
   formatPlaywrightInstallHint,
   isPlaywrightBrowserMissingError,
-  withPlaywright,
+  readHakkuBrowserHeadless,
+  redactProfilePaths,
+  resolveHakkuProfileDir,
+  withPersistentPlaywright,
 } from "@/lib/browser/playwright";
+import { hakkuProfileExists, writeHakkuSessionMeta } from "@/lib/browser/sessionMeta";
 import { normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
-const HAKKU_URL = "https://tryhakku.vercel.app/swipe";
+export const HAKKU_SWIPE_URL = "https://tryhakku.vercel.app/swipe";
+const HAKKU_ORIGIN = "https://tryhakku.vercel.app";
+
+const MAX_SCROLL_ROUNDS = 4;
+const CONTENT_SELECTOR =
+  "main, [data-testid='swipe-card'], article, .card, h1, h2, h3, input[type='password'], form";
 
 export type HakkuCard = {
   title: string;
@@ -16,6 +36,14 @@ export type HakkuCard = {
   text?: string;
   links: string[];
   tags: string[];
+};
+
+export type HakkuExtractResult = {
+  cards: HakkuCard[];
+  authStatus: HakkuAuthStatus;
+  pagesInspected: number;
+  mode: HakkuCollectMode;
+  stopReason: HakkuStopReason;
 };
 
 export function parseHakkuCards(cards: HakkuCard[], maxResults: number): RawLead[] {
@@ -27,7 +55,7 @@ export function parseHakkuCards(cards: HakkuCard[], maxResults: number): RawLead
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const links = uniqueUrls([card.url, ...card.links].filter(Boolean) as string[], HAKKU_URL);
+    const links = uniqueUrls([card.url, ...card.links].filter(Boolean) as string[], HAKKU_SWIPE_URL);
     const mode = card.tags.some((tag) => /online|remote/i.test(tag))
       ? "online"
       : card.tags.some((tag) => /in[- ]?person|hybrid|both/i.test(tag))
@@ -38,9 +66,9 @@ export function parseHakkuCards(cards: HakkuCard[], maxResults: number): RawLead
       id: `hakku-${slugify(card.title)}`,
       source: "hakku",
       title: card.title,
-      url: card.url ?? HAKKU_URL,
+      url: card.url ?? HAKKU_SWIPE_URL,
       text: [card.text, ...card.tags].filter(Boolean).join(" — "),
-      links: links.length > 0 ? links : [HAKKU_URL],
+      links: links.length > 0 ? links : [HAKKU_SWIPE_URL],
       postedAt: new Date().toISOString(),
       metadata: {
         themes: card.tags.filter((tag) => /ai|web3|cloud|agent/i.test(tag)),
@@ -56,74 +84,250 @@ export function parseHakkuCards(cards: HakkuCard[], maxResults: number): RawLead
   return leads;
 }
 
-async function extractVisibleHakkuCards(
-  timeoutMs: number,
-): Promise<{ cards: HakkuCard[]; loginRequired: boolean }> {
-  return withPlaywright(async ({ page }) => {
-    await page.goto(HAKKU_URL, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+async function collectPageSignals(page: Page): Promise<{
+  url: string;
+  title: string;
+  bodyText: string;
+  hasSwipeCards: boolean;
+  hasPasswordField: boolean;
+}> {
+  const url = page.url();
+  const title = await page.title().catch(() => "");
+  const bodyText = (await page.locator("body").innerText().catch(() => "")).slice(0, 8_000);
+  const hasPasswordField = (await page.locator("input[type='password']").count().catch(() => 0)) > 0;
+  const hasSwipeCards =
+    (await page
+      .locator("[data-testid='swipe-card'], article.card, .swipe-card, [class*='SwipeCard']")
+      .count()
+      .catch(() => 0)) > 0;
 
-    await page
-      .locator("main, [data-testid='swipe-card'], article, .card, h1, h2, h3")
-      .first()
-      .waitFor({ state: "visible", timeout: Math.min(timeoutMs, 8_000) })
-      .catch(() => undefined);
+  return { url, title, bodyText, hasSwipeCards, hasPasswordField };
+}
 
-    const bodyText = (await page.locator("body").innerText().catch(() => "")).toLowerCase();
-    const loginRequired =
-      (/welcome back/.test(bodyText) && /sign in|credentials/.test(bodyText)) ||
-      (/enter your credentials/.test(bodyText) && /password/.test(bodyText));
+async function extractCardsFromPage(page: Page): Promise<HakkuCard[]> {
+  return page.evaluate(() => {
+    const cards: HakkuCard[] = [];
+    const seenTitles = new Set<string>();
 
-    if (loginRequired) {
-      return { cards: [], loginRequired: true };
+    const cardRoots = Array.from(
+      document.querySelectorAll(
+        "[data-testid='swipe-card'], article, .card, [class*='card'], main section",
+      ),
+    );
+
+    const roots = cardRoots.length > 0 ? cardRoots : [document.body];
+
+    for (const root of roots) {
+      const titleNode =
+        root.querySelector("h1, h2, h3, [data-testid='title'], .title") ??
+        root.querySelector("strong");
+      const title = titleNode?.textContent?.trim() ?? "";
+      if (!title || title.length < 3 || seenTitles.has(title.toLowerCase())) continue;
+      if (/welcome back|sign in|sign up|enter your credentials/i.test(title)) continue;
+      seenTitles.add(title.toLowerCase());
+
+      const links = Array.from(root.querySelectorAll("a[href]"))
+        .map((anchor) => {
+          const href = anchor.getAttribute("href") ?? "";
+          try {
+            return new URL(href, "https://tryhakku.vercel.app").toString();
+          } catch {
+            return "";
+          }
+        })
+        .filter((href) => /^https?:\/\//.test(href));
+
+      const tagTexts = Array.from(root.querySelectorAll("span, .tag, .badge"))
+        .map((node) => node.textContent?.trim() ?? "")
+        .filter((text) => text.length > 0 && text.length < 40);
+
+      const paragraphs = Array.from(root.querySelectorAll("p"))
+        .map((node) => node.textContent?.trim() ?? "")
+        .filter(Boolean);
+
+      cards.push({
+        title,
+        url: links[0],
+        text: paragraphs.join(" "),
+        links,
+        tags: tagTexts,
+      });
     }
 
-    const cards = await page.evaluate(() => {
-      const cards: HakkuCard[] = [];
-      const seenTitles = new Set<string>();
+    return cards;
+  });
+}
 
-      const cardRoots = Array.from(
-        document.querySelectorAll(
-          "[data-testid='swipe-card'], article, .card, [class*='card'], main section",
-        ),
-      );
+async function boundedScrollForMore(page: Page, timeoutMs: number): Promise<void> {
+  const perRound = Math.min(2_500, Math.max(500, Math.floor(timeoutMs / MAX_SCROLL_ROUNDS)));
+  for (let i = 0; i < MAX_SCROLL_ROUNDS; i += 1) {
+    await page.mouse.wheel(0, 1400).catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, Math.min(perRound, 400)));
+  }
+}
 
-      const roots = cardRoots.length > 0 ? cardRoots : [document.body];
+async function captureFailureScreenshot(page: Page, label: string): Promise<void> {
+  try {
+    const dir = path.join(os.tmpdir(), "hackathon-finder-hakku-debug");
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `hakku-${label}-${Date.now()}.png`);
+    await page.screenshot({ path: file, fullPage: true });
+  } catch {
+    // Debug artifacts are best-effort only.
+  }
+}
 
-      for (const root of roots) {
-        const titleNode =
-          root.querySelector("h1, h2, h3, [data-testid='title'], .title") ??
-          root.querySelector("strong");
-        const title = titleNode?.textContent?.trim() ?? "";
-        if (!title || title.length < 3 || seenTitles.has(title.toLowerCase())) continue;
-        if (/welcome back|sign in|sign up/i.test(title)) continue;
-        seenTitles.add(title.toLowerCase());
-
-        const links = Array.from(root.querySelectorAll("a[href]"))
-          .map((anchor) => anchor.getAttribute("href") ?? "")
-          .filter((href) => /^https?:\/\//.test(href));
-
-        const tagTexts = Array.from(root.querySelectorAll("span, .tag, .badge"))
-          .map((node) => node.textContent?.trim() ?? "")
-          .filter((text) => text.length > 0 && text.length < 40);
-
-        const paragraphs = Array.from(root.querySelectorAll("p"))
-          .map((node) => node.textContent?.trim() ?? "")
-          .filter(Boolean);
-
-        cards.push({
-          title,
-          url: links[0],
-          text: paragraphs.join(" "),
-          links,
-          tags: tagTexts,
+export async function probeHakkuAuth(options: {
+  profileDir: string;
+  timeoutMs?: number;
+  headless?: boolean;
+  captureFailure?: boolean;
+}): Promise<{ authStatus: HakkuAuthStatus; pagesInspected: number }> {
+  const timeoutMs = options.timeoutMs ?? 15_000;
+  return withPersistentPlaywright(
+    options.profileDir,
+    async ({ page }) => {
+      let pagesInspected = 0;
+      try {
+        await page.goto(HAKKU_SWIPE_URL, {
+          waitUntil: "domcontentloaded",
+          timeout: timeoutMs,
         });
+        pagesInspected = 1;
+        await page
+          .locator(CONTENT_SELECTOR)
+          .first()
+          .waitFor({ state: "visible", timeout: Math.min(timeoutMs, 8_000) })
+          .catch(() => undefined);
+
+        const signals = await collectPageSignals(page);
+        const authStatus = detectHakkuAuth(signals);
+        if (authStatus === "login_required" && options.captureFailure) {
+          await captureFailureScreenshot(page, "auth-required");
+        }
+        return { authStatus, pagesInspected };
+      } catch (error) {
+        if (options.captureFailure) {
+          await captureFailureScreenshot(page, "probe-error");
+        }
+        throw error;
       }
+    },
+    { timeoutMs, headless: options.headless ?? true },
+  );
+}
 
-      return cards;
-    });
+async function extractVisibleHakkuCards(options: {
+  profileDir: string;
+  timeoutMs: number;
+  headless: boolean;
+}): Promise<HakkuExtractResult> {
+  const { profileDir, timeoutMs, headless } = options;
 
-    return { cards, loginRequired: false };
-  }, { timeoutMs });
+  return withPersistentPlaywright(
+    profileDir,
+    async ({ page }) => {
+      let pagesInspected = 0;
+      try {
+        await page.goto(HAKKU_SWIPE_URL, {
+          waitUntil: "domcontentloaded",
+          timeout: timeoutMs,
+        });
+        pagesInspected = 1;
+
+        await page
+          .locator(CONTENT_SELECTOR)
+          .first()
+          .waitFor({ state: "visible", timeout: Math.min(timeoutMs, 8_000) })
+          .catch(() => undefined);
+
+        let signals = await collectPageSignals(page);
+        let authStatus = detectHakkuAuth(signals);
+
+        if (authStatus === "login_required") {
+          await captureFailureScreenshot(page, "auth-required");
+          return {
+            cards: [],
+            authStatus,
+            pagesInspected,
+            mode: "unauthenticated",
+            stopReason: "auth_required",
+          };
+        }
+
+        // Soft health: if we landed off-swipe, try once more on the swipe route.
+        if (!signals.url.includes("/swipe")) {
+          await page.goto(HAKKU_SWIPE_URL, {
+            waitUntil: "domcontentloaded",
+            timeout: Math.min(timeoutMs, 10_000),
+          });
+          pagesInspected += 1;
+          await page
+            .locator(CONTENT_SELECTOR)
+            .first()
+            .waitFor({ state: "visible", timeout: Math.min(timeoutMs, 5_000) })
+            .catch(() => undefined);
+          signals = await collectPageSignals(page);
+          authStatus = detectHakkuAuth(signals);
+          if (authStatus === "login_required") {
+            await captureFailureScreenshot(page, "auth-required");
+            return {
+              cards: [],
+              authStatus,
+              pagesInspected,
+              mode: "unauthenticated",
+              stopReason: "auth_required",
+            };
+          }
+        }
+
+        await boundedScrollForMore(page, timeoutMs);
+        const rawCards = await extractCardsFromPage(page);
+        const cards = filterUpcomingHakkuCards(rawCards);
+
+        const mode: HakkuCollectMode =
+          authStatus === "authenticated" ? "authenticated" : "public";
+
+        return {
+          cards,
+          authStatus,
+          pagesInspected,
+          mode,
+          stopReason: cards.length === 0 ? "no_cards" : "completed",
+        };
+      } catch (error) {
+        await captureFailureScreenshot(page, "collect-error");
+        if (error instanceof Error) {
+          error.message = redactProfilePaths(error.message, profileDir);
+        }
+        throw error;
+      }
+    },
+    { timeoutMs, headless },
+  );
+}
+
+function applyHakkuMetrics(
+  result: CollectorResult,
+  extract: HakkuExtractResult,
+  accepted: number,
+): void {
+  const authCode =
+    extract.authStatus === "authenticated" ? 1 : extract.authStatus === "login_required" ? 0 : -1;
+  const modeCode =
+    extract.mode === "authenticated" ? 1 : extract.mode === "public" ? 0 : -1;
+
+  result.metrics = {
+    pagesInspected: extract.pagesInspected,
+    rawLeads: extract.cards.length,
+    accepted,
+    authStatus: authCode,
+    mode: modeCode,
+  };
+
+  result.warnings.push(`mode=${extract.mode}`);
+  result.warnings.push(`auth_status=${extract.authStatus}`);
+  result.warnings.push(`stop_reason=${extract.stopReason}`);
 }
 
 export const hakkuCollector: Collector = {
@@ -132,29 +336,86 @@ export const hakkuCollector: Collector = {
   async collect(input: CollectorInput): Promise<CollectorResult> {
     const startedAt = Date.now();
     const result = emptyCollectorResult("hakku", startedAt);
+    const profileDir = resolveHakkuProfileDir();
+    const headless = readHakkuBrowserHeadless(process.env, true);
 
     try {
-      const { cards, loginRequired } = await extractVisibleHakkuCards(input.timeoutMs);
-      result.leads = parseHakkuCards(cards, input.maxResults);
-
-      if (loginRequired) {
-        result.warnings.push(
-          "Hakku requires login; public swipe cards are not available without authentication.",
+      if (!hakkuProfileExists()) {
+        result.errors.push(
+          "auth_required: Hakku browser profile is missing. Run: npm run source:connect -- hakku",
         );
-      } else if (result.leads.length === 0) {
+        result.warnings.push("mode=unauthenticated");
+        result.warnings.push("auth_status=login_required");
+        result.warnings.push("stop_reason=profile_missing");
+        result.metrics = {
+          pagesInspected: 0,
+          rawLeads: 0,
+          accepted: 0,
+          authStatus: 0,
+          mode: -1,
+        };
+        writeHakkuSessionMeta("profile_missing");
+        result.durationMs = Date.now() - startedAt;
+        return result;
+      }
+
+      const extract = await extractVisibleHakkuCards({
+        profileDir,
+        timeoutMs: input.timeoutMs,
+        headless,
+      });
+
+      if (extract.stopReason === "auth_required") {
+        result.leads = [];
+        result.errors.push(
+          "auth_required: Hakku session is not authenticated (login redirect detected).",
+        );
+        applyHakkuMetrics(result, extract, 0);
+        writeHakkuSessionMeta("reconnect_required");
+        result.durationMs = Date.now() - startedAt;
+        return result;
+      }
+
+      const acceptedCards = extract.cards.slice(0, input.maxResults);
+      result.leads = parseHakkuCards(acceptedCards, input.maxResults);
+      applyHakkuMetrics(result, extract, result.leads.length);
+
+      if (extract.authStatus === "authenticated") {
+        writeHakkuSessionMeta("connected");
+      } else if (extract.authStatus === "unknown") {
+        writeHakkuSessionMeta("unknown");
+      }
+
+      if (result.leads.length === 0 && extract.stopReason === "no_cards") {
         result.warnings.push(
-          "Hakku returned no visible cards; UI may have changed or requires interaction.",
+          "Hakku returned no upcoming event cards; UI may have changed or the feed is empty.",
         );
       }
     } catch (error) {
       if (isPlaywrightBrowserMissingError(error)) {
         result.errors.push(formatPlaywrightInstallHint());
+        result.warnings.push("stop_reason=browser_missing");
       } else {
-        result.errors.push(error instanceof Error ? error.message : "Hakku collection failed");
+        const message =
+          error instanceof Error
+            ? redactProfilePaths(error.message, profileDir)
+            : "Hakku collection failed";
+        result.errors.push(message);
+        result.warnings.push("stop_reason=error");
       }
+      result.metrics = {
+        pagesInspected: result.metrics?.pagesInspected ?? 0,
+        rawLeads: 0,
+        accepted: 0,
+        authStatus: -1,
+        mode: -1,
+      };
     }
 
     result.durationMs = Date.now() - startedAt;
     return result;
   },
 };
+
+// Keep origin constant available for tests without exporting secrets/paths.
+export const HAKKU_PUBLIC_ORIGIN = HAKKU_ORIGIN;
