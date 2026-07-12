@@ -4,7 +4,6 @@ import type {
   HackathonEvidence,
   RawLead,
 } from "@/core/discovery/types";
-import { normalizeDatePart } from "@/core/dedupe";
 import { parseDatesFromText } from "@/core/dates";
 
 function asString(value: unknown): string | undefined {
@@ -76,10 +75,6 @@ function detectLocationFromText(text: string): { city?: string; country?: string
   }
 
   return {};
-}
-
-function parseIsoDate(value: string): string | undefined {
-  return normalizeDatePart(value) ?? undefined;
 }
 
 function buildEvidence(lead: RawLead, event: Partial<HackathonEvent>): HackathonEvidence[] {
