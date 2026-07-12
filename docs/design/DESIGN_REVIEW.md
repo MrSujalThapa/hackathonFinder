@@ -1,8 +1,70 @@
-# Design review — proposed Editorial operations UI
+# Design review — Blueprint visual direction
 
-Figma MCP unavailable; proposals live in `docs/design/mockups/editorial-operations.html` with screenshots in `artifacts/design/proposed/`.
+Figma MCP unavailable; proposals live in design-lab mockups. Screenshots intended at 390×844, 768×1024, 1440×1000 from:
 
-## Scan order (queue)
+- `docs/design/mockups/blueprint-restrained.html` (Variant A)
+- `docs/design/mockups/blueprint-expressive.html` (Variant B)
+
+Prior editorial-operations mockup remains at `docs/design/mockups/editorial-operations.html` (layout/IA reference only).
+
+---
+
+## Steps 13–14 — Blueprint variant comparison
+
+### Intent
+
+Replace generic near-black SaaS neutrals with a **restrained technical blueprint** look: deep navy canvas, lighter blue panels, warm off-white text, fine cyan structure, clear semantic actions — without neon, purple glow, glass, or all-mono UI.
+
+### Variant A — Restrained Blueprint
+
+| Token role | Value | Notes |
+|------------|-------|-------|
+| Canvas | `#0b1524` | Deep blueprint navy |
+| Surface / sidebar | `#101c2e` | Slightly lifted |
+| Panel / card | `#142338` | Lighter blue panel |
+| Inset | `#0d1829` | Nested fields |
+| Elevated | `#182a40` | Active nav / hover |
+| Text | `#ebe8e0` | Warm blueprint-paper |
+| Muted | `#8fa3b8` | Blue-gray secondary |
+| Border | `#2a3f56` | Fine structural line |
+| Border strong | `#3d5570` | Hover / emphasis |
+| Approve | `#3db87a` | Green, not neon |
+| Reject | `#d97868` | Coral |
+| Warn | `#d4a04a` | Amber |
+| Save / focus | `#5ba8c9` / `#5eb0d4` | Cyan, restrained |
+| Grid | cyan @ ~3.5% | Background only |
+
+**Strengths:** Highest body/meta contrast on navy; grid stays behind content; semantic colors readable without competing chrome; calm for long review sessions.
+
+### Variant B — Expressive Blueprint
+
+| Token role | Value | Notes |
+|------------|-------|-------|
+| Canvas | `#07121f` | Deeper navy |
+| Panel / card | `#12304a` | Stronger blue lift |
+| Borders | `#2f6f8f` → `#45a0c4` | Cyan-forward structure |
+| Muted | `#7eb0cc` | Brighter blue-gray |
+| Save / focus | `#4ec8e8` | Stronger cyan |
+| Grid | cyan @ ~8.5%, 28px | More visible drafting |
+| Buttons / cards | Tinted fills + cyan rim | Stronger identity |
+
+**Strengths:** Clearer “blueprint” identity at a glance; stronger frame on cards and active nav.
+
+**Weaknesses vs A:** Brighter cyan borders and denser grid compete with title/summary; muted text sits closer to accent hue (weaker hierarchy); filled decision buttons add visual noise next to Approve/Save/Reject.
+
+### Selection
+
+**Selected: Variant A — Restrained Blueprint.**
+
+Expressive does **not** clearly win on readability. Restrained preserves warm paper text contrast, quieter structure lines, and semantic color reserved for actions/status — better for daylight and dark environments and for dense queue + detail reading.
+
+### Production mapping (Step 14)
+
+Applied in `src/app/globals.css` `:root` color tokens. Layout tokens (`--content-queue`, `.hf-shell-main`, etc.) unchanged. Component classes (`.grid-background`, `.hf-panel`, `.hf-card`, buttons, focus) retuned to cyan-structural borders and blueprint surfaces.
+
+---
+
+## Scan order (queue) — preserved from editorial ops
 
 1. Status/context (New · Web)  
 2. Title  
@@ -14,41 +76,11 @@ Figma MCP unavailable; proposals live in `docs/design/mockups/editorial-operatio
 
 ## Dominant action
 
-**Approve** is visually primary among decisions (stronger border/color weight). Reject stays quiet gray. Save is informational blue. No competing neon score orb in the first viewport.
-
-## De-emphasized information
-
-- Score moves to detail rail (or small meta), not a glowing circle on the card.  
-- Theme pills removed from first viewport.  
-- Keyboard hints live in desktop lede, not under cramped buttons.  
-- Technical history collapsed behind a single summary line.
-
-## Evidence hierarchy
-
-Official → Apply → Directory → Social/Article. Left-border credibility cue + label. Seen count only when >1. No duplicate official/apply pair cards.
-
-## Candidate-detail structure
-
-- **Desktop:** document column + facts/actions rail.  
-- **Mobile:** single column; decisions sticky above bottom nav.  
-- Ask sits in the investigation flow after sources.  
-- Activity secondary under Ask.
-
-## Mobile behavior
-
-44px decision targets; bottom nav remains; card content no longer fights oversized circular buttons.
-
-## Desktop layout
-
-Sidebar + intentional content width; detail uses two columns ≥1200px.
-
-## Ask integration
-
-Composer + “shortcuts not limits” copy; chips optional; answers show certainty + citations.
+**Approve** remains visually primary among decisions (stronger border/color weight). Reject uses coral (blueprint semantic), not quiet gray. Save is cyan. No competing neon score orb in the first viewport.
 
 ## Why this avoids generic generated-dashboard styling
 
 - No purple glow, glass stacks, or hero gradients.  
-- Document serif titles + mono meta instead of badge soup.  
-- Flat panels with hairline borders; one shadow on the active review card.  
-- Left-aligned editorial hierarchy rather than centered SaaS marketing cards.
+- Deep navy + paper text instead of near-black SaaS neutrals.  
+- Fine cyan hairlines and a subtle drafting grid on the page background only.  
+- Document serif titles + mono meta; not badge soup or all-mono chrome.

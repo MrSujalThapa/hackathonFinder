@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hackathon Finder — Blueprint Restrained (design lab)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      /* Restrained Blueprint — subtle grid, strongest usability */
+      --bg: #0b1524;
+      --surface: #101c2e;
+      --panel: #142338;
+      --inset: #0d1829;
+      --elevated: #182a40;
+      --hairline: #2a3f56;
+      --hairline-strong: #3d5570;
+      --text: #ebe8e0;
+      --muted: #8fa3b8;
+      --muted-strong: #a8b8c8;
+      --approve: #3db87a;
+      --save: #5ba8c9;
+      --reject: #d97868;
+      --warn: #d4a04a;
+      --danger: #d97868;
+      --focus: #5eb0d4;
+      --grid-line: rgba(94, 176, 212, 0.035);
+      --sans: "IBM Plex Sans", system-ui, sans-serif;
+      --serif: "Source Serif 4", Georgia, serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 var(--sans);
+    }
+    .lab-banner {
+      background: #1a2a14;
+      color: #c8dfb0;
+      padding: 8px 16px;
+      font-size: 12px;
+      border-bottom: 1px solid #2e4220;
+    }
+    .grid-bg {
+      background-color: var(--bg);
+      background-image:
+        linear-gradient(var(--grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+    .frame {
+      border: 1px solid var(--hairline);
+      background: var(--bg);
+      margin: 24px auto;
+      overflow: hidden;
+    }
+    .frame.w390 { width: 390px; min-height: 844px; }
+    .frame.w768 { width: 768px; min-height: 1024px; }
+    .frame.w1440 { width: 1440px; min-height: 1000px; }
+    .label {
+      max-width: 1440px;
+      margin: 40px auto 8px;
+      padding: 0 16px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .shell { display: flex; min-height: inherit; }
+    .side {
+      width: 224px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--hairline);
+      padding: 24px 12px;
+      display: none;
+    }
+    .w1440 .side { display: flex; flex-direction: column; gap: 4px; }
+    .brand { font-weight: 600; font-size: 17px; padding: 0 8px 16px; }
+    .brand small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; margin-top: 4px; }
+    .nav a {
+      display: flex; gap: 10px; padding: 10px 12px; border-radius: 8px;
+      color: var(--muted); text-decoration: none;
+    }
+    .nav a.active { background: var(--elevated); color: var(--text); }
+    .main { flex: 1; padding: 20px 16px 88px; }
+    .w1440 .main { padding: 28px 32px 32px; }
+    .eyebrow { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+    h1 { font-size: 24px; margin: 0 0 6px; font-weight: 600; }
+    .lede { color: var(--muted); margin: 0 0 20px; max-width: 36rem; }
+    .review-card {
+      background: color-mix(in oklab, var(--panel) 94%, transparent);
+      border: 1px solid var(--hairline);
+      border-radius: 12px;
+      padding: 16px;
+      max-width: 440px;
+      box-shadow: 0 10px 28px rgba(4, 12, 24, 0.38);
+    }
+    .status { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--save); margin-bottom: 8px; }
+    .status.warn { color: var(--warn); }
+    .title { font-family: var(--serif); font-size: 22px; line-height: 1.25; margin: 0 0 6px; font-weight: 600; }
+    .meta { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .summary { margin: 14px 0; color: color-mix(in oklab, var(--text) 88%, var(--muted)); }
+    .facts { display: grid; gap: 8px; margin: 12px 0; font-size: 13px; color: var(--muted); }
+    .facts strong { color: var(--text); font-weight: 500; }
+    .evidence-mini {
+      border-left: 2px solid var(--approve);
+      padding-left: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      margin: 12px 0 16px;
+    }
+    .decision { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
+    .btn {
+      min-height: 44px; border-radius: 8px; border: 1px solid var(--hairline);
+      background: transparent; color: var(--text); font: 500 13px var(--sans); cursor: pointer;
+    }
+    .btn:focus-visible {
+      outline: 2px solid color-mix(in oklab, var(--focus) 70%, transparent);
+      outline-offset: 2px;
+    }
+    .btn.approve { border-color: color-mix(in oklab, var(--approve) 50%, transparent); color: var(--approve); }
+    .btn.save { border-color: color-mix(in oklab, var(--save) 45%, transparent); color: var(--save); }
+    .btn.reject { border-color: color-mix(in oklab, var(--reject) 45%, transparent); color: var(--reject); }
+    .bottom-nav {
+      position: sticky; bottom: 0; display: flex; justify-content: space-between;
+      border-top: 1px solid var(--hairline);
+      background: color-mix(in oklab, var(--bg) 94%, transparent);
+      padding: 8px 6px; font-size: 10px; color: var(--muted);
+    }
+    .w1440 .bottom-nav { display: none; }
+    .doc { display: grid; gap: 24px; }
+    .w1440 .doc { grid-template-columns: minmax(0, 42rem) 18rem; align-items: start; }
+    .doc-main {
+      background: color-mix(in oklab, var(--panel) 94%, transparent);
+      border: 1px solid var(--hairline);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .doc-rail { display: grid; gap: 12px; }
+    .rail-box {
+      background: color-mix(in oklab, var(--inset) 92%, transparent);
+      border: 1px solid var(--hairline);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 13px;
+    }
+    .section-label {
+      font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--muted); margin: 0 0 10px;
+    }
+    .source { border-left: 2px solid var(--hairline); padding: 10px 0 10px 12px; margin-bottom: 8px; }
+    .source.official { border-left-color: var(--approve); }
+    .source.apply { border-left-color: var(--save); }
+    .source.directory { border-left-color: #6a8498; }
+    .ask { border-top: 1px solid var(--hairline); padding-top: 16px; margin-top: 16px; }
+    .ask input {
+      width: 100%; min-height: 44px; border-radius: 8px;
+      border: 1px solid var(--hairline); background: var(--inset);
+      color: var(--text); padding: 0 12px; font: 14px var(--sans);
+    }
+    .ask input:focus {
+      outline: none;
+      border-color: color-mix(in oklab, var(--save) 65%, transparent);
+      box-shadow: 0 0 0 3px color-mix(in oklab, var(--save) 16%, transparent);
+    }
+    .answer {
+      background: var(--inset); border: 1px solid var(--hairline);
+      border-radius: 8px; padding: 12px; margin-top: 12px;
+    }
+    .certainty { font-family: var(--mono); font-size: 11px; color: var(--warn); letter-spacing: .04em; }
+  </style>
+</head>
+<body>
+  <div class="lab-banner">Design lab — Variant A: Restrained Blueprint. Not linked from production.</div>
+
+  <p class="label">Queue card · 390</p>
+  <section class="frame w390 grid-bg" data-shot="restrained-queue-390">
+    <div class="main">
+      <div class="eyebrow">Review</div>
+      <h1>Queue</h1>
+      <p class="lede">12 candidates · swipe or decide</p>
+      <article class="review-card">
+        <div class="status">New · Web</div>
+        <h2 class="title">MIT Reality Hack 2026</h2>
+        <p class="meta">Mar 14–16 · Cambridge, MA · In-person</p>
+        <p class="summary">XR accessibility hackathon hosted by MIT. Apply by Feb 20. Strong official site + Devpost listing.</p>
+        <div class="facts">
+          <div><strong>Deadline</strong> · Feb 20, 2026</div>
+          <div><strong>Eligibility</strong> · Students + recent grads</div>
+        </div>
+        <div class="evidence-mini">Official · realityhack.mit.edu · verified 2d ago</div>
+        <div class="decision">
+          <button class="btn reject" type="button">Reject</button>
+          <button class="btn save" type="button">Save</button>
+          <button class="btn approve" type="button">Approve</button>
+        </div>
+      </article>
+    </div>
+    <nav class="bottom-nav" aria-label="Mobile">
+      <span>Queue</span><span>Saved</span><span>Approved</span><span>Settings</span>
+    </nav>
+  </section>
+
+  <p class="label">Queue card · 768</p>
+  <section class="frame w768 grid-bg" data-shot="restrained-queue-768">
+    <div class="main">
+      <div class="eyebrow">Review</div>
+      <h1>Queue</h1>
+      <p class="lede">Keyboard: ← reject · → approve · S save</p>
+      <article class="review-card">
+        <div class="status warn">Needs review · Web</div>
+        <h2 class="title">MIT Reality Hack 2026</h2>
+        <p class="meta">Mar 14–16 · Cambridge, MA · In-person</p>
+        <p class="summary">XR accessibility hackathon. Apply by Feb 20. Official + Devpost evidence present; prize amount unclear.</p>
+        <div class="facts">
+          <div><strong>Deadline</strong> · Feb 20, 2026</div>
+          <div><strong>Eligibility</strong> · Students + recent grads</div>
+        </div>
+        <div class="evidence-mini">Official · realityhack.mit.edu · verified 2d ago</div>
+        <div class="decision">
+          <button class="btn reject" type="button">Reject</button>
+          <button class="btn save" type="button">Save</button>
+          <button class="btn approve" type="button">Approve</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <p class="label">Detail chrome · 1440</p>
+  <section class="frame w1440 grid-bg" data-shot="restrained-detail-1440">
+    <div class="shell">
+      <aside class="side">
+        <div class="brand">Hackathon Finder<small>Private review</small></div>
+        <nav class="nav">
+          <a class="active" href="#">Queue</a>
+          <a href="#">Saved</a>
+          <a href="#">Approved</a>
+          <a href="#">Rejected</a>
+          <a href="#">Settings</a>
+        </nav>
+      </aside>
+      <div class="main">
+        <div class="eyebrow">Candidate</div>
+        <div class="doc">
+          <div class="doc-main">
+            <div class="status">New · Web</div>
+            <h2 class="title" style="font-size:28px">MIT Reality Hack 2026</h2>
+            <p class="meta">Mar 14–16 · Cambridge, MA · In-person · id · cand_8f2a</p>
+            <p class="summary" style="max-width:40rem">
+              Weekend XR accessibility hackathon. Teams build assistive experiences; mentors from MIT Media Lab and industry sponsors.
+            </p>
+            <p class="section-label">Evidence</p>
+            <div class="source official">
+              <strong>Official</strong> · realityhack.mit.edu<br />
+              <span style="color:var(--muted);font-size:12px">Registration open · last verified 2d ago</span>
+            </div>
+            <div class="source apply">
+              <strong>Apply</strong> · apply.realityhack.mit.edu<br />
+              <span style="color:var(--muted);font-size:12px">Deadline Feb 20</span>
+            </div>
+            <div class="source directory">
+              <strong>Directory</strong> · Devpost<br />
+              <span style="color:var(--muted);font-size:12px">Listing mirrors dates; prize field empty</span>
+            </div>
+            <div class="ask">
+              <p class="section-label">Ask</p>
+              <input type="text" placeholder="Ask about this candidate…" value="Should I do this hackathon?" />
+              <div class="answer">
+                <div class="certainty">MEDIUM · advisory</div>
+                <p style="margin:8px 0 0">Worth considering if XR/accessibility is a fit. Strong official evidence; confirm prize and travel before approving.</p>
+              </div>
+            </div>
+          </div>
+          <aside class="doc-rail">
+            <div class="rail-box">
+              <p class="section-label">Facts</p>
+              <div style="display:grid;gap:8px;color:var(--muted)">
+                <div><strong style="color:var(--text)">Mode</strong> · In-person</div>
+                <div><strong style="color:var(--text)">Deadline</strong> · Feb 20</div>
+                <div><strong style="color:var(--text)">Relevance</strong> · 86</div>
+              </div>
+            </div>
+            <div class="rail-box">
+              <p class="section-label">Actions</p>
+              <div style="display:grid;gap:8px">
+                <button class="btn approve" type="button">Approve</button>
+                <button class="btn save" type="button">Save</button>
+                <button class="btn reject" type="button">Reject</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="label">Detail chrome · 390</p>
+  <section class="frame w390 grid-bg" data-shot="restrained-detail-390">
+    <div class="main">
+      <div class="eyebrow">Candidate</div>
+      <div class="doc-main">
+        <div class="status">New · Web</div>
+        <h2 class="title">MIT Reality Hack 2026</h2>
+        <p class="meta">Mar 14–16 · Cambridge · In-person</p>
+        <p class="summary">XR accessibility hackathon. Official + apply links verified.</p>
+        <p class="section-label">Evidence</p>
+        <div class="source official"><strong>Official</strong> · realityhack.mit.edu</div>
+        <div class="source apply"><strong>Apply</strong> · apply.realityhack.mit.edu</div>
+        <div class="ask">
+          <p class="section-label">Ask</p>
+          <input type="text" placeholder="Ask about this candidate…" />
+        </div>
+      </div>
+      <div class="decision" style="margin-top:16px;max-width:440px">
+        <button class="btn reject" type="button">Reject</button>
+        <button class="btn save" type="button">Save</button>
+        <button class="btn approve" type="button">Approve</button>
+      </div>
+    </div>
+    <nav class="bottom-nav" aria-label="Mobile">
+      <span>Queue</span><span>Saved</span><span>Approved</span><span>Settings</span>
+    </nav>
+  </section>
+</body>
+</html>
