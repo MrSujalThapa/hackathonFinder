@@ -27,7 +27,14 @@ async function main(): Promise<number> {
   console.log(`VERCEL_ENV: ${env.VERCEL_ENV ?? "(unset)"}`);
   console.log(`Supabase: ${env.NEXT_PUBLIC_SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY ? "configured" : "missing"}`);
   console.log(`Google Sheets: ${env.GOOGLE_SHEET_ID && env.GOOGLE_SERVICE_ACCOUNT_JSON ? "configured" : "missing"}`);
-  console.log(`Owner auth: ${env.APP_OWNER_PASSWORD_HASH && env.APP_SESSION_SECRET ? "configured" : "missing"}`);
+  console.log(
+    `Owner auth: ${
+      (env.APP_OWNER_PASSWORD_HASH_B64 || env.APP_OWNER_PASSWORD_HASH) &&
+      env.APP_SESSION_SECRET
+        ? "configured"
+        : "missing"
+    }`,
+  );
   console.log(`Mock candidates: ${env.USE_MOCK_CANDIDATES ? "enabled" : "disabled"}`);
   console.log(`X: ${env.X_BEARER_TOKEN ? "configured" : "not configured"} (not required)`);
 

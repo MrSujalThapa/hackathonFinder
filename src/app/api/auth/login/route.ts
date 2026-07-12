@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerEnv } from "@/config/env";
-import { verifyOwnerPassword } from "@/lib/auth/password";
+import {
+  resolveOwnerPasswordHash,
+  verifyOwnerPassword,
+} from "@/lib/auth/password";
 import {
   createSessionToken,
   SESSION_COOKIE_NAME,
@@ -31,16 +34,24 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const env = getServerEnv();
-  const hash = env.APP_OWNER_PASSWORD_HASH;
+  let resolved;
+  try {
+    resolved = resolveOwnerPasswordHash(env);
+  } catch {
+    return NextResponse.json(
+      { data: null, error: { code: "AUTH_NOT_CONFIGURED", message: "Owner access is not configured." } },
+      { status: 503 },
+    );
+  }
   const secret = env.APP_SESSION_SECRET;
-  if (!hash || !secret || secret.length < 32) {
+  if (!resolved || !secret || secret.length < 32) {
     return NextResponse.json(
       { data: null, error: { code: "AUTH_NOT_CONFIGURED", message: "Owner access is not configured." } },
       { status: 503 },
     );
   }
 
-  if (!verifyOwnerPassword(parsed.data.password, hash)) {
+  if (!verifyOwnerPassword(parsed.data.password, resolved.hash)) {
     return NextResponse.json(
       { data: null, error: { code: "AUTH_FAILED", message: "Invalid credentials." } },
       { status: 401 },
