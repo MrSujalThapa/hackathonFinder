@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { actionIdsFor, getCandidateActions } from "./actionPolicy.ts";
+import { actionIdsFor, getCandidateActions } from "./actionPolicy";
 import type { CandidateStatus } from "@/lib/supabase/database.types";
 
 const ALL: CandidateStatus[] = [

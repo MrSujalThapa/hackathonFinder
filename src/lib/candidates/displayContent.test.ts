@@ -6,7 +6,7 @@ import {
   getDetailDescription,
   getQueueSummary,
   truncateToSentences,
-} from "./displayContent.ts";
+} from "./displayContent";
 
 describe("displayContent", () => {
   it("strips Devpost boilerplate", () => {
