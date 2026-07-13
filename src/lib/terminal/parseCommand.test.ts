@@ -189,6 +189,22 @@ describe("parseTerminalCommand", () => {
     assert.deepEqual(list, { kind: "site", action: "list", raw: "/sites" });
   });
 
+  it("parses custom site auto mode and table strategy", () => {
+    const parsed = parseTerminalCommand(
+      '/site configure hackathonradar --mode=auto --strategy=table --title-column="Title" --date-column="Start Date" --type-column="Type" --url-column="Website"',
+    );
+    assert.equal(parsed.kind, "site");
+    if (parsed.kind !== "site") return;
+    assert.equal(parsed.action, "configure");
+    assert.equal(parsed.name, "hackathonradar");
+    assert.equal(parsed.mode, "auto");
+    assert.equal(parsed.selectors?.strategy, "table");
+    assert.equal(parsed.selectors?.titleColumn, "Title");
+    assert.equal(parsed.selectors?.dateColumn, "Start Date");
+    assert.equal(parsed.selectors?.typeColumn, "Type");
+    assert.equal(parsed.selectors?.urlColumn, "Website");
+  });
+
   it("parses confirmed custom site removal", () => {
     const parsed = parseTerminalCommand("/confirm site remove hacker-calendar");
     assert.deepEqual(parsed, {

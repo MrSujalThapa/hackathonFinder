@@ -3,7 +3,6 @@ import { createServiceSupabaseClient } from "@/lib/supabase/createServiceClient"
 import {
   assertSafeCustomSourceUrl,
   normalizeCustomSourceSlug,
-  resolveSafeRedirects,
 } from "@/server/customSources/urlSafety";
 import type {
   CreateCustomSourceInput,
@@ -11,6 +10,7 @@ import type {
   CustomSourceHealthUpdate,
   CustomSourceMode,
   CustomSourceSelectors,
+  CustomSourceStrategy,
   UpdateCustomSourceInput,
 } from "@/server/customSources/types";
 
@@ -44,21 +44,48 @@ function selectorObject(value: Json): CustomSourceSelectors {
     cardSelector: typeof raw.cardSelector === "string" ? raw.cardSelector : undefined,
     titleSelector: typeof raw.titleSelector === "string" ? raw.titleSelector : undefined,
     linkSelector: typeof raw.linkSelector === "string" ? raw.linkSelector : undefined,
+    strategy: isCustomSourceStrategy(raw.strategy) ? raw.strategy : undefined,
+    titleColumn: typeof raw.titleColumn === "string" ? raw.titleColumn : undefined,
+    dateColumn: typeof raw.dateColumn === "string" ? raw.dateColumn : undefined,
+    typeColumn: typeof raw.typeColumn === "string" ? raw.typeColumn : undefined,
+    urlColumn: typeof raw.urlColumn === "string" ? raw.urlColumn : undefined,
   };
 }
 
 function validateMode(mode: CustomSourceMode | undefined): CustomSourceMode {
   if (!mode) return "static";
-  if (mode !== "static" && mode !== "playwright" && mode !== "rss" && mode !== "sitemap") {
+  if (mode !== "auto" && mode !== "static" && mode !== "playwright" && mode !== "rss" && mode !== "sitemap") {
     throw new Error("Unsupported custom source mode.");
   }
   return mode;
+}
+
+function isCustomSourceStrategy(value: unknown): value is CustomSourceStrategy {
+  return value === "auto" || value === "cards" || value === "table" || value === "list";
+}
+
+function validateColumnName(key: string, value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  if (value.length > 80) throw new Error(`${key} is too long.`);
+  if (/[{}()[\]<>;=]|javascript:|script/i.test(value)) {
+    throw new Error(`${key} contains unsupported syntax.`);
+  }
+  return value.trim();
 }
 
 export function validateCustomSourceSelectors(selectors: CustomSourceSelectors): CustomSourceSelectors {
   const out: CustomSourceSelectors = {};
   for (const [key, value] of Object.entries(selectors) as Array<[keyof CustomSourceSelectors, string | undefined]>) {
     if (!value) continue;
+    if (key === "strategy") {
+      if (!isCustomSourceStrategy(value)) throw new Error("Unsupported custom source strategy.");
+      out.strategy = value;
+      continue;
+    }
+    if (key === "titleColumn" || key === "dateColumn" || key === "typeColumn" || key === "urlColumn") {
+      out[key] = validateColumnName(key, value);
+      continue;
+    }
     if (value.length > 300) throw new Error(`${key} is too long.`);
     if (/[{}]|<script|javascript:/i.test(value)) {
       throw new Error(`${key} contains unsupported syntax.`);
@@ -76,8 +103,8 @@ export function validateCustomSourceSelectors(selectors: CustomSourceSelectors):
   return out;
 }
 
-async function sourceRowFromInput(input: CreateCustomSourceInput) {
-  const finalUrl = await resolveSafeRedirects(input.listingUrl);
+async function sourceRowFromInput(input: CreateCustomSourceInput, options: { prevalidatedUrl?: URL } = {}) {
+  const finalUrl = options.prevalidatedUrl ?? (await assertSafeCustomSourceUrl(input.listingUrl));
   const base = `${finalUrl.protocol}//${finalUrl.host}`;
   const row: Database["public"]["Tables"]["custom_sources"]["Insert"] = {
     name: input.name.trim(),
@@ -94,9 +121,12 @@ async function sourceRowFromInput(input: CreateCustomSourceInput) {
   return row;
 }
 
-export async function createCustomSource(input: CreateCustomSourceInput): Promise<CustomSource> {
+export async function createCustomSource(
+  input: CreateCustomSourceInput,
+  options: { prevalidatedUrl?: URL } = {},
+): Promise<CustomSource> {
   const supabase = createServiceSupabaseClient();
-  const row = await sourceRowFromInput(input);
+  const row = await sourceRowFromInput(input, options);
   const { data, error } = await supabase
     .from("custom_sources")
     .insert(row)
@@ -151,7 +181,7 @@ export async function updateCustomSource(
   if (input.maxItems != null) patch.max_items = Math.min(Math.max(input.maxItems, 1), 100);
   if (input.selectors) patch.selectors = validateCustomSourceSelectors(input.selectors) as Json;
   if (input.listingUrl) {
-    const finalUrl = await resolveSafeRedirects(input.listingUrl);
+    const finalUrl = await assertSafeCustomSourceUrl(input.listingUrl);
     patch.listing_url = finalUrl.toString();
     patch.base_url = `${finalUrl.protocol}//${finalUrl.host}`;
   }

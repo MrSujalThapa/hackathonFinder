@@ -316,8 +316,12 @@ function parseSiteCommand(actionToken: string | undefined, rest: string, raw: st
   const name = parsed.positional[0];
   if (!name) return reject("missing_site_name", `Usage: /site ${action} <name>`, raw);
   const mode = parsed.flags.mode?.toLowerCase();
-  if (mode && mode !== "static" && mode !== "playwright") {
-    return reject("invalid_site_mode", "--mode must be static or playwright", raw);
+  if (mode && mode !== "auto" && mode !== "static" && mode !== "playwright") {
+    return reject("invalid_site_mode", "--mode must be auto, static, or playwright", raw);
+  }
+  const strategy = parsed.flags.strategy?.toLowerCase();
+  if (strategy && strategy !== "auto" && strategy !== "cards" && strategy !== "table" && strategy !== "list") {
+    return reject("invalid_site_strategy", "--strategy must be auto, cards, table, or list", raw);
   }
   const maxItems = parsed.flags["max-items"] ? Number(parsed.flags["max-items"]) : undefined;
   if (maxItems !== undefined && (!Number.isInteger(maxItems) || maxItems < 1 || maxItems > 100)) {
@@ -328,7 +332,7 @@ function parseSiteCommand(actionToken: string | undefined, rest: string, raw: st
     action: action as SiteCommandAction,
     name,
     url: parsed.flags.url,
-    mode: mode as "static" | "playwright" | undefined,
+    mode: mode as "auto" | "static" | "playwright" | undefined,
     location: parsed.flags.location,
     topics: parsed.flags.topics?.split(",").map((topic) => topic.trim()).filter(Boolean),
     maxItems,
@@ -337,6 +341,11 @@ function parseSiteCommand(actionToken: string | undefined, rest: string, raw: st
       cardSelector: parsed.flags["card-selector"],
       titleSelector: parsed.flags["title-selector"],
       linkSelector: parsed.flags["link-selector"],
+      strategy: strategy as "auto" | "cards" | "table" | "list" | undefined,
+      titleColumn: parsed.flags["title-column"],
+      dateColumn: parsed.flags["date-column"],
+      typeColumn: parsed.flags["type-column"],
+      urlColumn: parsed.flags["url-column"],
     },
     raw,
   } as ParsedTerminalCommand;

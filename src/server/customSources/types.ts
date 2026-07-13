@@ -1,4 +1,5 @@
-export type CustomSourceMode = "static" | "playwright" | "rss" | "sitemap";
+export type CustomSourceMode = "auto" | "static" | "playwright" | "rss" | "sitemap";
+export type CustomSourceStrategy = "auto" | "cards" | "table" | "list";
 export type CustomSourceStatus =
   | "healthy"
   | "degraded"
@@ -11,6 +12,11 @@ export type CustomSourceSelectors = {
   cardSelector?: string;
   titleSelector?: string;
   linkSelector?: string;
+  strategy?: CustomSourceStrategy;
+  titleColumn?: string;
+  dateColumn?: string;
+  typeColumn?: string;
+  urlColumn?: string;
 };
 
 export type CustomSource = {

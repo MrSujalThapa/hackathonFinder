@@ -201,7 +201,7 @@ export async function runTerminalSiteCommand(input: {
     | "configure";
   name?: string;
   url?: string;
-  mode?: "static" | "playwright";
+  mode?: "auto" | "static" | "playwright";
   location?: string;
   topics?: string[];
   maxItems?: number;
@@ -210,6 +210,11 @@ export async function runTerminalSiteCommand(input: {
     cardSelector?: string;
     titleSelector?: string;
     linkSelector?: string;
+    strategy?: "auto" | "cards" | "table" | "list";
+    titleColumn?: string;
+    dateColumn?: string;
+    typeColumn?: string;
+    urlColumn?: string;
   };
 }): Promise<TerminalSiteCommandResult> {
   const response = await fetch("/api/terminal/site", {

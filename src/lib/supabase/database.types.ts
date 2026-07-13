@@ -208,7 +208,7 @@ export type Database = {
           slug: string;
           base_url: string;
           listing_url: string;
-          mode: "static" | "playwright" | "rss" | "sitemap";
+          mode: "auto" | "static" | "playwright" | "rss" | "sitemap";
           enabled: boolean;
           location_scope: string;
           topic_scope: string[];
@@ -226,7 +226,7 @@ export type Database = {
           slug: string;
           base_url: string;
           listing_url: string;
-          mode?: "static" | "playwright" | "rss" | "sitemap";
+          mode?: "auto" | "static" | "playwright" | "rss" | "sitemap";
           enabled?: boolean;
           location_scope?: string;
           topic_scope?: string[];

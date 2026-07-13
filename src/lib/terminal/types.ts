@@ -187,7 +187,7 @@ export type ParsedTerminalCommand =
       action: SiteCommandAction;
       name?: string;
       url?: string;
-      mode?: "static" | "playwright";
+      mode?: "auto" | "static" | "playwright";
       location?: string;
       topics?: string[];
       maxItems?: number;
@@ -196,6 +196,11 @@ export type ParsedTerminalCommand =
         cardSelector?: string;
         titleSelector?: string;
         linkSelector?: string;
+        strategy?: "auto" | "cards" | "table" | "list";
+        titleColumn?: string;
+        dateColumn?: string;
+        typeColumn?: string;
+        urlColumn?: string;
       };
       raw: string;
     }

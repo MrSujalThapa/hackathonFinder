@@ -18,7 +18,7 @@ create table if not exists public.custom_sources (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint custom_sources_slug_chk check (slug ~ '^[a-z0-9][a-z0-9_-]{0,62}$'),
-  constraint custom_sources_mode_chk check (mode in ('static', 'playwright', 'rss', 'sitemap')),
+  constraint custom_sources_mode_chk check (mode in ('auto', 'static', 'playwright', 'rss', 'sitemap')),
   constraint custom_sources_status_chk check (status in ('healthy', 'degraded', 'auth_required', 'failed', 'disabled', 'unknown')),
   constraint custom_sources_max_items_chk check (max_items between 1 and 100),
   constraint custom_sources_selectors_object_chk check (jsonb_typeof(selectors) = 'object')
