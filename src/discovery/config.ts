@@ -75,6 +75,7 @@ export function assertLocalExecutionAllowed(
 export const createJobBodySchema = z.object({
   command: z.string().trim().min(1).max(2_000),
   sources: z.array(z.string().min(1)).max(12).optional(),
+  terminalSessionId: z.string().uuid().optional(),
   dryRun: z.boolean().optional(),
   maxAgentCalls: z.coerce.number().int().min(1).max(24).optional(),
   mode: z.enum(["auto", "agent", "deterministic"]).optional(),

@@ -3,6 +3,7 @@ import { runDiscovery } from "@/discovery/runDiscovery";
 import { readDiscoveryRuntimeConfig } from "@/discovery/config";
 import type { SourceName } from "@/core/discovery/types";
 import { getDiscoveryJobStore } from "@/jobs/store";
+import { getTerminalSessionStore } from "@/server/terminal";
 import type { DiscoveryJob, DiscoveryJobStatus } from "@/jobs/types";
 
 const stageByEvent: Partial<Record<DiscoveryEvent["type"], DiscoveryJobStatus>> = {
@@ -115,6 +116,25 @@ export async function executeDiscoveryJob(
     },
   };
 
+  const detachTerminalActiveJob = async () => {
+    try {
+      const terminalStore = getTerminalSessionStore();
+      const sessions = await terminalStore.listSessions({
+        includeClosed: true,
+        limit: 200,
+      });
+      await Promise.all(
+        sessions
+          .filter((session) => session.activeJobId === job.id)
+          .map((session) =>
+            terminalStore.detachCompletedActiveJob(session.id, job.id),
+          ),
+      );
+    } catch {
+      // Terminal session persistence is best-effort relative to job completion.
+    }
+  };
+
   try {
     const result = await runDiscovery({
       command: job.command,
@@ -132,7 +152,7 @@ export async function executeDiscoveryJob(
     });
 
     if (result.cancelled) {
-      return store.updateJob(job.id, {
+      const updated = await store.updateJob(job.id, {
         status: "cancelled",
         progress: 100,
         currentStage: "cancelled",
@@ -142,10 +162,12 @@ export async function executeDiscoveryJob(
         durationMs: result.summary.durationMs,
         safeErrorMessage: "Cancelled",
       });
+      await detachTerminalActiveJob();
+      return updated;
     }
 
     const summary = result.summary;
-    return store.updateJob(job.id, {
+    const updated = await store.updateJob(job.id, {
       status: "completed",
       progress: 100,
       currentStage: "completed",
@@ -166,6 +188,8 @@ export async function executeDiscoveryJob(
         agent: summary.agent ?? null,
       },
     });
+    await detachTerminalActiveJob();
+    return updated;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Discovery job failed";
@@ -174,7 +198,7 @@ export async function executeDiscoveryJob(
       level: "error",
       message,
     });
-    return store.updateJob(job.id, {
+    const updated = await store.updateJob(job.id, {
       status: "failed",
       progress: 100,
       currentStage: "failed",
@@ -182,6 +206,8 @@ export async function executeDiscoveryJob(
       failureCategory: "execution_error",
       safeErrorMessage: message.slice(0, 500),
     });
+    await detachTerminalActiveJob();
+    return updated;
   } finally {
     clearTimeout(timeout);
     clearInterval(cancelPoll);

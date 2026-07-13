@@ -275,7 +275,10 @@ export function DiscoveryTerminal() {
       ]);
 
       try {
-        const job = await createDiscoveryJob({ command: request });
+        const job = await createDiscoveryJob({
+          command: request,
+          terminalSessionId: sessionId,
+        });
         patchSession(sessionId, {
           seenEventIds: [],
           lastSequence: 0,

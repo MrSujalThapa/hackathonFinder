@@ -15,13 +15,16 @@ import type {
 
 type SessionRow = {
   id: string;
-  name: string;
+  title: string;
   status: TerminalSessionStatus;
+  active_job_id: string | null;
+  selected_job_id: string | null;
   is_selected: boolean;
   created_at: string;
   updated_at: string;
-  last_active_at: string;
   closed_at: string | null;
+  last_selected_at: string | null;
+  sort_order: number;
   metadata: Record<string, unknown> | null;
 };
 
@@ -36,13 +39,16 @@ type HistoryRow = {
 function mapSession(row: SessionRow): TerminalSession {
   return {
     id: row.id,
-    name: row.name,
+    title: row.title,
     status: row.status,
+    activeJobId: row.active_job_id,
+    selectedJobId: row.selected_job_id,
     isSelected: row.is_selected,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    lastActiveAt: row.last_active_at,
     closedAt: row.closed_at,
+    lastSelectedAt: row.last_selected_at,
+    sortOrder: row.sort_order,
     metadata: row.metadata,
   };
 }
@@ -59,6 +65,19 @@ function mapHistory(row: HistoryRow): TerminalCommandHistoryEntry {
 
 function tableMissingMessage(error: { message?: string }): string {
   return `Terminal session tables unavailable (${error.message ?? "unknown"}). Apply supabase/migrations/007_terminal_sessions.sql or use the DEV-ONLY in-memory store in development.`;
+}
+
+function sanitizeTitle(input?: string): string {
+  return (input?.trim() || "Session").slice(0, 120);
+}
+
+function sanitizeMetadata(
+  metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!metadata || typeof metadata !== "object") return {};
+  const encoded = JSON.stringify(metadata);
+  if (encoded.length > 4_096) return { truncated: true };
+  return metadata;
 }
 
 export function createSupabaseTerminalSessionStore(): TerminalSessionRepository {
@@ -84,17 +103,26 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
     return data ? mapSession(data as SessionRow) : null;
   }
 
-  async function touchSession(id: string): Promise<TerminalSession> {
-    const existing = await getSession(id);
-    if (!existing) throw new Error(`Terminal session not found: ${id}`);
-    if (existing.status === "closed") {
+  async function requireSession(id: string): Promise<TerminalSession> {
+    const session = await getSession(id);
+    if (!session) throw new Error(`Terminal session not found: ${id}`);
+    return session;
+  }
+
+  async function requireOpenSession(id: string): Promise<TerminalSession> {
+    const session = await requireSession(id);
+    if (session.status === "closed") {
       throw new Error(`Terminal session is closed: ${id}`);
     }
+    return session;
+  }
 
+  async function touchSession(id: string): Promise<TerminalSession> {
+    await requireOpenSession(id);
     const now = new Date().toISOString();
     const { data, error } = await supabase
       .from("terminal_sessions")
-      .update({ updated_at: now, last_active_at: now })
+      .update({ updated_at: now })
       .eq("id", id)
       .select("*")
       .single();
@@ -103,7 +131,7 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
     return mapSession(data as SessionRow);
   }
 
-  return {
+  const repo: TerminalSessionRepository = {
     listSessions: async (
       params: ListTerminalSessionsParams = {},
     ): Promise<TerminalSession[]> => {
@@ -111,7 +139,9 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
       let query = supabase
         .from("terminal_sessions")
         .select("*")
-        .order("last_active_at", { ascending: false })
+        .order("status", { ascending: false })
+        .order("sort_order", { ascending: true })
+        .order("last_selected_at", { ascending: false, nullsFirst: false })
         .limit(limit);
 
       if (params.includeClosed !== true) {
@@ -125,12 +155,45 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
 
     getSession,
 
+    findSessionByTitleOrId: async (
+      target: string,
+    ): Promise<TerminalSession | null> => {
+      const needle = target.trim();
+      if (!needle) return null;
+      const byId = await getSession(needle).catch(() => null);
+      if (byId) return byId;
+
+      const { data, error } = await supabase
+        .from("terminal_sessions")
+        .select("*")
+        .or(`title.ilike.${needle}%,id.ilike.${needle}%`)
+        .order("status", { ascending: false })
+        .order("last_selected_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(tableMissingMessage(error));
+      return data ? mapSession(data as SessionRow) : null;
+    },
+
     getSelectedSession: async (): Promise<TerminalSession | null> => {
       const { data, error } = await supabase
         .from("terminal_sessions")
         .select("*")
         .eq("is_selected", true)
         .eq("status", "open")
+        .maybeSingle();
+      if (error) throw new Error(tableMissingMessage(error));
+      return data ? mapSession(data as SessionRow) : repo.restoreLatestSelectedSession();
+    },
+
+    restoreLatestSelectedSession: async (): Promise<TerminalSession | null> => {
+      const { data, error } = await supabase
+        .from("terminal_sessions")
+        .select("*")
+        .eq("status", "open")
+        .order("last_selected_at", { ascending: false, nullsFirst: false })
+        .order("updated_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (error) throw new Error(tableMissingMessage(error));
       return data ? mapSession(data as SessionRow) : null;
@@ -146,13 +209,17 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
       const { data, error } = await supabase
         .from("terminal_sessions")
         .insert({
-          name: (input.name?.trim() || "Session").slice(0, 120),
+          id: input.id,
+          title: sanitizeTitle(input.title ?? input.name),
           status: "open",
+          active_job_id: null,
+          selected_job_id: null,
           is_selected: select,
           created_at: now,
           updated_at: now,
-          last_active_at: now,
-          metadata: input.metadata ?? {},
+          last_selected_at: select ? now : null,
+          sort_order: input.sortOrder ?? 0,
+          metadata: sanitizeMetadata(input.metadata),
         })
         .select("*")
         .single();
@@ -163,15 +230,15 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
 
     renameSession: async (
       id: string,
-      name: string,
+      title: string,
     ): Promise<TerminalSession> => {
-      const trimmed = name.trim();
-      if (!trimmed) throw new Error("Session name cannot be empty.");
+      const trimmed = title.trim();
+      if (!trimmed) throw new Error("Session title cannot be empty.");
 
       const { data, error } = await supabase
         .from("terminal_sessions")
         .update({
-          name: trimmed.slice(0, 120),
+          title: trimmed.slice(0, 120),
           updated_at: new Date().toISOString(),
         })
         .eq("id", id)
@@ -200,13 +267,25 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
       return mapSession(data as SessionRow);
     },
 
-    selectSession: async (id: string): Promise<TerminalSession> => {
-      const existing = await getSession(id);
-      if (!existing) throw new Error(`Terminal session not found: ${id}`);
-      if (existing.status === "closed") {
-        throw new Error(`Terminal session is closed: ${id}`);
-      }
+    reopenSession: async (id: string): Promise<TerminalSession> => {
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("terminal_sessions")
+        .update({
+          status: "open",
+          updated_at: now,
+          closed_at: null,
+        })
+        .eq("id", id)
+        .select("*")
+        .single();
 
+      if (error) throw new Error(tableMissingMessage(error));
+      return mapSession(data as SessionRow);
+    },
+
+    selectSession: async (id: string): Promise<TerminalSession> => {
+      await requireOpenSession(id);
       await clearSelection();
       const now = new Date().toISOString();
       const { data, error } = await supabase
@@ -214,7 +293,7 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
         .update({
           is_selected: true,
           updated_at: now,
-          last_active_at: now,
+          last_selected_at: now,
         })
         .eq("id", id)
         .select("*")
@@ -226,20 +305,56 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
 
     touchSession,
 
-    linkJob: async (sessionId: string, jobId: string): Promise<void> => {
-      const session = await getSession(sessionId);
-      if (!session) throw new Error(`Terminal session not found: ${sessionId}`);
+    attachJob: async (
+      sessionId: string,
+      jobId: string,
+    ): Promise<TerminalSession> => {
+      await requireSession(sessionId);
 
-      const { error } = await supabase
+      const { error: jobError } = await supabase
         .from("discovery_jobs")
         .update({ terminal_session_id: sessionId })
         .eq("id", jobId);
 
-      if (error) throw new Error(tableMissingMessage(error));
+      if (jobError) throw new Error(tableMissingMessage(jobError));
 
-      if (session.status === "open") {
-        await touchSession(sessionId);
-      }
+      const { data, error } = await supabase
+        .from("terminal_sessions")
+        .update({
+          active_job_id: jobId,
+          selected_job_id: jobId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", sessionId)
+        .select("*")
+        .single();
+
+      if (error) throw new Error(tableMissingMessage(error));
+      return mapSession(data as SessionRow);
+    },
+
+    linkJob: async (sessionId: string, jobId: string): Promise<void> => {
+      await repo.attachJob(sessionId, jobId);
+    },
+
+    detachCompletedActiveJob: async (
+      sessionId: string,
+      jobId: string,
+    ): Promise<TerminalSession> => {
+      const session = await requireSession(sessionId);
+      const { data, error } = await supabase
+        .from("terminal_sessions")
+        .update({
+          active_job_id: session.activeJobId === jobId ? null : session.activeJobId,
+          selected_job_id: session.selectedJobId ?? jobId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", sessionId)
+        .select("*")
+        .single();
+
+      if (error) throw new Error(tableMissingMessage(error));
+      return mapSession(data as SessionRow);
     },
 
     listSessionJobIds: async (
@@ -258,23 +373,25 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
       return ((data ?? []) as { id: string }[]).map((row) => row.id);
     },
 
+    listTerminalHistory: async (
+      sessionId: string,
+      options: { limit?: number } = {},
+    ): Promise<string[]> => {
+      return repo.listSessionJobIds(sessionId, options);
+    },
+
     appendCommandHistory: async (
       sessionId: string,
       command: string,
     ): Promise<TerminalCommandHistoryEntry> => {
-      const session = await getSession(sessionId);
-      if (!session) throw new Error(`Terminal session not found: ${sessionId}`);
-      if (session.status === "closed") {
-        throw new Error(`Terminal session is closed: ${sessionId}`);
-      }
-
+      const session = await requireOpenSession(sessionId);
       const trimmed = command.trim();
       if (!trimmed) throw new Error("Command history entry cannot be empty.");
 
       const { data: lastRows, error: lastError } = await supabase
         .from("terminal_command_history")
         .select("sequence")
-        .eq("session_id", sessionId)
+        .eq("session_id", session.id)
         .order("sequence", { ascending: false })
         .limit(1);
 
@@ -286,7 +403,7 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
       const { data, error } = await supabase
         .from("terminal_command_history")
         .insert({
-          session_id: sessionId,
+          session_id: session.id,
           command: trimmed.slice(0, 2_000),
           sequence: nextSequence,
         })
@@ -294,7 +411,7 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
         .single();
 
       if (error) throw new Error(tableMissingMessage(error));
-      await touchSession(sessionId);
+      await touchSession(session.id);
       return mapHistory(data as HistoryRow);
     },
 
@@ -311,8 +428,9 @@ export function createSupabaseTerminalSessionStore(): TerminalSessionRepository 
         .limit(limit);
 
       if (error) throw new Error(tableMissingMessage(error));
-      // Return chronological (oldest → newest) for arrow-up UX.
       return ((data ?? []) as HistoryRow[]).map(mapHistory).reverse();
     },
   };
+
+  return repo;
 }

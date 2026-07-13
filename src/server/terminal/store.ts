@@ -5,12 +5,20 @@ import type { TerminalSessionRepository } from "@/server/terminal/types";
 
 let overrideStore: TerminalSessionRepository | null = null;
 let cachedStore: TerminalSessionRepository | null = null;
+let cachedMode: "database" | "memory" | null = null;
+
+export type TerminalStorageCapability = {
+  mode: "database" | "memory";
+  durable: boolean;
+  migrationReady: boolean;
+};
 
 export function setTerminalSessionStoreForTests(
   store: TerminalSessionRepository | null,
 ): void {
   overrideStore = store;
   cachedStore = null;
+  cachedMode = store ? "memory" : null;
 }
 
 /**
@@ -38,6 +46,7 @@ export function getTerminalSessionStore(): TerminalSessionRepository {
       );
     }
     cachedStore = createMemoryTerminalSessionStore();
+    cachedMode = "memory";
     return cachedStore;
   }
 
@@ -48,6 +57,7 @@ export function getTerminalSessionStore(): TerminalSessionRepository {
       );
     }
     cachedStore = createSupabaseTerminalSessionStore();
+    cachedMode = "database";
     return cachedStore;
   }
 
@@ -57,7 +67,20 @@ export function getTerminalSessionStore(): TerminalSessionRepository {
     );
   }
 
-  // Development fallback — clearly labeled inside memory store constructor.
+  // Development fallback; the memory store constructor emits the visible diagnostic.
   cachedStore = createMemoryTerminalSessionStore();
+  cachedMode = "memory";
   return cachedStore;
+}
+
+export function getTerminalStorageCapability(): TerminalStorageCapability {
+  if (!cachedMode) {
+    getTerminalSessionStore();
+  }
+  const mode = cachedMode ?? "memory";
+  return {
+    mode,
+    durable: mode === "database",
+    migrationReady: mode === "database",
+  };
 }

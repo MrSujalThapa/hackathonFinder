@@ -184,6 +184,7 @@ export type ParsedTerminalCommand =
 export type CreateDiscoveryJobInput = {
   command: string;
   sources?: string[];
+  terminalSessionId?: string;
   dryRun?: boolean;
   maxAgentCalls?: number;
   mode?: "auto" | "agent" | "deterministic";

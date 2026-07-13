@@ -6,6 +6,7 @@ import {
 import { sourceNameSchema } from "@/core/discovery/schemas";
 import { enqueueDiscoveryJob } from "@/jobs/enqueue";
 import { getDiscoveryJobStore } from "@/jobs/store";
+import { getTerminalSessionStore } from "@/server/terminal";
 import { fail, ok, validationError } from "@/server/api/envelope";
 import { protectApiRequest } from "@/server/api/protection";
 import { withRequestLogging } from "@/server/observability/logger";
@@ -89,6 +90,21 @@ export async function POST(request: Request): Promise<Response> {
         maxAgentCalls: parsed.data.maxAgentCalls,
         allSources: parsed.data.allSources === true,
       });
+
+      if (parsed.data.terminalSessionId) {
+        const terminalStore = getTerminalSessionStore();
+        const existing = await terminalStore.getSession(
+          parsed.data.terminalSessionId,
+        );
+        if (!existing) {
+          await terminalStore.createSession({
+            id: parsed.data.terminalSessionId,
+            title: "Session",
+            select: true,
+          });
+        }
+        await terminalStore.attachJob(parsed.data.terminalSessionId, job.id);
+      }
 
       return ok({ job, execution }, { status: 201 });
     } catch (error) {

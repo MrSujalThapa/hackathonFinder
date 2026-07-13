@@ -16,7 +16,7 @@ import type {
 
 type MemoryState = {
   sessions: Map<string, TerminalSession>;
-  /** jobId → sessionId */
+  /** jobId -> sessionId */
   jobLinks: Map<string, string>;
   history: Map<string, TerminalCommandHistoryEntry[]>;
   historySequences: Map<string, number>;
@@ -40,6 +40,29 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function sanitizeTitle(input?: string): string {
+  return (input?.trim() || "Session").slice(0, 120);
+}
+
+function sanitizeMetadata(
+  metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!metadata || typeof metadata !== "object") return {};
+  const encoded = JSON.stringify(metadata);
+  if (encoded.length > 4_096) {
+    return { truncated: true };
+  }
+  return metadata;
+}
+
+function sortSessions(a: TerminalSession, b: TerminalSession): number {
+  if (a.status !== b.status) return a.status === "open" ? -1 : 1;
+  if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+  return (b.lastSelectedAt ?? b.updatedAt).localeCompare(
+    a.lastSelectedAt ?? a.updatedAt,
+  );
+}
+
 function requireOpenSession(id: string): TerminalSession {
   const session = globalState.sessions.get(id);
   if (!session) throw new Error(`Terminal session not found: ${id}`);
@@ -55,13 +78,13 @@ function requireSession(id: string): TerminalSession {
   return session;
 }
 
-function clearSelection(): void {
+function clearSelection(now = nowIso()): void {
   for (const [id, session] of globalState.sessions) {
     if (session.isSelected) {
       globalState.sessions.set(id, {
         ...session,
         isSelected: false,
-        updatedAt: nowIso(),
+        updatedAt: now,
       });
     }
   }
@@ -73,11 +96,11 @@ export function createMemoryTerminalSessionStore(): TerminalSessionRepository {
   if (!memoryStoreNoticeShown) {
     memoryStoreNoticeShown = true;
     console.info(
-      "[terminal-sessions] Using DEV-ONLY in-memory session store. Not for production persistence.",
+      "Terminal persistence is using the development memory store.\nApply migration 007 for durable sessions.",
     );
   }
 
-  return {
+  const repo: TerminalSessionRepository = {
     async listSessions(
       params: ListTerminalSessionsParams = {},
     ): Promise<TerminalSession[]> {
@@ -85,7 +108,7 @@ export function createMemoryTerminalSessionStore(): TerminalSessionRepository {
       const includeClosed = params.includeClosed === true;
       return [...globalState.sessions.values()]
         .filter((s) => includeClosed || s.status === "open")
-        .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
+        .sort(sortSessions)
         .slice(0, limit);
     },
 
@@ -93,44 +116,74 @@ export function createMemoryTerminalSessionStore(): TerminalSessionRepository {
       return globalState.sessions.get(id) ?? null;
     },
 
+    async findSessionByTitleOrId(target: string): Promise<TerminalSession | null> {
+      const needle = target.trim().toLowerCase();
+      if (!needle) return null;
+      const sessions = [...globalState.sessions.values()];
+      return (
+        sessions.find((s) => s.id === target || s.id.toLowerCase().startsWith(needle)) ??
+        sessions.find((s) => s.title.toLowerCase() === needle) ??
+        sessions.find((s) => s.title.toLowerCase().startsWith(needle)) ??
+        null
+      );
+    },
+
     async getSelectedSession(): Promise<TerminalSession | null> {
       for (const session of globalState.sessions.values()) {
         if (session.isSelected && session.status === "open") return session;
       }
-      return null;
+      return repo.restoreLatestSelectedSession();
+    },
+
+    async restoreLatestSelectedSession(): Promise<TerminalSession | null> {
+      return (
+        [...globalState.sessions.values()]
+          .filter((session) => session.status === "open")
+          .sort((a, b) =>
+            (b.lastSelectedAt ?? b.updatedAt).localeCompare(
+              a.lastSelectedAt ?? a.updatedAt,
+            ),
+          )[0] ?? null
+      );
     },
 
     async createSession(
       input: CreateTerminalSessionInput = {},
     ): Promise<TerminalSession> {
       const select = input.select !== false;
-      if (select) clearSelection();
-
       const now = nowIso();
+      if (select) clearSelection(now);
+
       const session: TerminalSession = {
-        id: randomUUID(),
-        name: (input.name?.trim() || "Session").slice(0, 120),
+        id: input.id ?? randomUUID(),
+        title: sanitizeTitle(input.title ?? input.name),
         status: "open",
+        activeJobId: null,
+        selectedJobId: null,
         isSelected: select,
         createdAt: now,
         updatedAt: now,
-        lastActiveAt: now,
         closedAt: null,
-        metadata: input.metadata ?? null,
+        lastSelectedAt: select ? now : null,
+        sortOrder: input.sortOrder ?? globalState.sessions.size,
+        metadata: sanitizeMetadata(input.metadata),
       };
+      if (globalState.sessions.has(session.id)) {
+        throw new Error(`Terminal session already exists: ${session.id}`);
+      }
       globalState.sessions.set(session.id, session);
       globalState.history.set(session.id, []);
       globalState.historySequences.set(session.id, 0);
       return session;
     },
 
-    async renameSession(id: string, name: string): Promise<TerminalSession> {
+    async renameSession(id: string, title: string): Promise<TerminalSession> {
       const session = requireSession(id);
-      const trimmed = name.trim();
-      if (!trimmed) throw new Error("Session name cannot be empty.");
+      const trimmed = title.trim();
+      if (!trimmed) throw new Error("Session title cannot be empty.");
       const updated: TerminalSession = {
         ...session,
-        name: trimmed.slice(0, 120),
+        title: trimmed.slice(0, 120),
         updatedAt: nowIso(),
       };
       globalState.sessions.set(id, updated);
@@ -151,15 +204,28 @@ export function createMemoryTerminalSessionStore(): TerminalSessionRepository {
       return updated;
     },
 
+    async reopenSession(id: string): Promise<TerminalSession> {
+      const session = requireSession(id);
+      const now = nowIso();
+      const updated: TerminalSession = {
+        ...session,
+        status: "open",
+        updatedAt: now,
+        closedAt: null,
+      };
+      globalState.sessions.set(id, updated);
+      return updated;
+    },
+
     async selectSession(id: string): Promise<TerminalSession> {
       const session = requireOpenSession(id);
-      clearSelection();
       const now = nowIso();
+      clearSelection(now);
       const updated: TerminalSession = {
         ...session,
         isSelected: true,
         updatedAt: now,
-        lastActiveAt: now,
+        lastSelectedAt: now,
       };
       globalState.sessions.set(id, updated);
       return updated;
@@ -167,28 +233,45 @@ export function createMemoryTerminalSessionStore(): TerminalSessionRepository {
 
     async touchSession(id: string): Promise<TerminalSession> {
       const session = requireOpenSession(id);
-      const now = nowIso();
       const updated: TerminalSession = {
         ...session,
-        updatedAt: now,
-        lastActiveAt: now,
+        updatedAt: nowIso(),
       };
       globalState.sessions.set(id, updated);
       return updated;
     },
 
-    async linkJob(sessionId: string, jobId: string): Promise<void> {
-      requireSession(sessionId);
+    async attachJob(sessionId: string, jobId: string): Promise<TerminalSession> {
+      const session = requireSession(sessionId);
       globalState.jobLinks.set(jobId, sessionId);
-      const session = globalState.sessions.get(sessionId);
-      if (session && session.status === "open") {
-        const now = nowIso();
-        globalState.sessions.set(sessionId, {
-          ...session,
-          updatedAt: now,
-          lastActiveAt: now,
-        });
-      }
+      const now = nowIso();
+      const updated: TerminalSession = {
+        ...session,
+        activeJobId: jobId,
+        selectedJobId: jobId,
+        updatedAt: now,
+      };
+      globalState.sessions.set(sessionId, updated);
+      return updated;
+    },
+
+    async linkJob(sessionId: string, jobId: string): Promise<void> {
+      await repo.attachJob(sessionId, jobId);
+    },
+
+    async detachCompletedActiveJob(
+      sessionId: string,
+      jobId: string,
+    ): Promise<TerminalSession> {
+      const session = requireSession(sessionId);
+      const updated: TerminalSession = {
+        ...session,
+        activeJobId: session.activeJobId === jobId ? null : session.activeJobId,
+        selectedJobId: session.selectedJobId ?? jobId,
+        updatedAt: nowIso(),
+      };
+      globalState.sessions.set(sessionId, updated);
+      return updated;
     },
 
     async listSessionJobIds(
@@ -201,7 +284,14 @@ export function createMemoryTerminalSessionStore(): TerminalSessionRepository {
       for (const [jobId, sid] of globalState.jobLinks) {
         if (sid === sessionId) ids.push(jobId);
       }
-      return ids.slice(0, limit);
+      return ids.slice(-limit).reverse();
+    },
+
+    async listTerminalHistory(
+      sessionId: string,
+      options: { limit?: number } = {},
+    ): Promise<string[]> {
+      return repo.listSessionJobIds(sessionId, options);
     },
 
     async appendCommandHistory(
@@ -224,7 +314,6 @@ export function createMemoryTerminalSessionStore(): TerminalSessionRepository {
       };
       const list = globalState.history.get(sessionId) ?? [];
       list.push(entry);
-      // Cap in-memory history to avoid unbounded growth in long-lived dev servers.
       if (list.length > 500) list.splice(0, list.length - 500);
       globalState.history.set(sessionId, list);
       return entry;
@@ -240,4 +329,6 @@ export function createMemoryTerminalSessionStore(): TerminalSessionRepository {
       return list.slice(-limit);
     },
   };
+
+  return repo;
 }

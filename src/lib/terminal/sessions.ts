@@ -7,13 +7,16 @@ export type TerminalSessionStatus = "open" | "closed";
 
 export type TerminalSession = {
   id: string;
-  name: string;
+  title: string;
   status: TerminalSessionStatus;
+  activeJobId: string | null;
+  selectedJobId: string | null;
   isSelected: boolean;
   createdAt: string;
   updatedAt: string;
-  lastActiveAt: string;
   closedAt?: string | null;
+  lastSelectedAt?: string | null;
+  sortOrder: number;
   metadata?: Record<string, unknown> | null;
 };
 
@@ -26,7 +29,7 @@ export type TerminalCommandHistoryEntry = {
 };
 
 export type CreateTerminalSessionInput = {
-  name?: string;
+  title?: string;
   select?: boolean;
 };
 
@@ -54,9 +57,12 @@ export function isOpenTerminalSession(
 export function sortTerminalSessionsByActivity(
   sessions: TerminalSession[],
 ): TerminalSession[] {
-  return [...sessions].sort((a, b) =>
-    b.lastActiveAt.localeCompare(a.lastActiveAt),
-  );
+  return [...sessions].sort((a, b) => {
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return (b.lastSelectedAt ?? b.updatedAt).localeCompare(
+      a.lastSelectedAt ?? a.updatedAt,
+    );
+  });
 }
 
 /** Chronological command strings for arrow-up recall (oldest → newest). */

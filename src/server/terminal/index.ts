@@ -9,6 +9,11 @@ export type {
 
 export { TERMINAL_SESSION_STATUSES } from "@/server/terminal/types";
 
-export { getTerminalSessionStore, setTerminalSessionStoreForTests } from "@/server/terminal/store";
+export {
+  getTerminalSessionStore,
+  getTerminalStorageCapability,
+  setTerminalSessionStoreForTests,
+  type TerminalStorageCapability,
+} from "@/server/terminal/store";
 export { createMemoryTerminalSessionStore, resetMemoryTerminalSessionStoreForTests } from "@/server/terminal/memoryStore";
 export { createSupabaseTerminalSessionStore } from "@/server/terminal/supabaseStore";

@@ -1,4 +1,4 @@
--- Terminal sessions + job linkage (proposal — DO NOT APPLY without explicit approval)
+-- Terminal sessions + job linkage (proposal - DO NOT APPLY without explicit approval)
 --
 -- Enables multi-session discovery terminal persistence across refresh/navigation.
 -- Depends on migration 006_discovery_jobs.sql (discovery_jobs table).
@@ -13,26 +13,43 @@ begin;
 create table if not exists public.terminal_sessions (
   id uuid primary key default gen_random_uuid(),
 
-  name text not null default 'Session',
+  title text not null default 'Session',
   status text not null default 'open' check (status in ('open', 'closed')),
+
+  active_job_id uuid references public.discovery_jobs(id) on delete set null,
+  selected_job_id uuid references public.discovery_jobs(id) on delete set null,
 
   -- At most one selected session (enforced by partial unique index below).
   is_selected boolean not null default false,
 
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  last_active_at timestamptz not null default now(),
   closed_at timestamptz,
+  last_selected_at timestamptz,
+  sort_order int not null default 0,
 
-  metadata jsonb not null default '{}'::jsonb
+  -- Bounded metadata only; no output buffers, cookies, credentials, or storage state.
+  metadata jsonb not null default '{}'::jsonb,
+  constraint terminal_sessions_metadata_object_chk
+    check (jsonb_typeof(metadata) = 'object'),
+  constraint terminal_sessions_metadata_size_chk
+    check (pg_column_size(metadata) <= 4096)
 );
 
-create index if not exists terminal_sessions_status_active_idx
-  on public.terminal_sessions (status, last_active_at desc);
+create index if not exists terminal_sessions_status_sort_idx
+  on public.terminal_sessions (status, sort_order, last_selected_at desc);
 
-create index if not exists terminal_sessions_open_created_idx
-  on public.terminal_sessions (created_at desc)
+create index if not exists terminal_sessions_open_selected_idx
+  on public.terminal_sessions (last_selected_at desc)
   where status = 'open';
+
+create index if not exists terminal_sessions_active_job_idx
+  on public.terminal_sessions (active_job_id)
+  where active_job_id is not null;
+
+create index if not exists terminal_sessions_selected_job_idx
+  on public.terminal_sessions (selected_job_id)
+  where selected_job_id is not null;
 
 -- Exactly zero or one selected session at a time.
 create unique index if not exists terminal_sessions_one_selected_idx
