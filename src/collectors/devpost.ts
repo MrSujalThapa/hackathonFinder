@@ -9,7 +9,6 @@ import * as cheerio from "cheerio";
 import type { DiscoveryPreferences, RawLead } from "@/core/discovery/types";
 import type { Collector, CollectorInput, CollectorResult } from "@/collectors/types";
 import { emptyCollectorResult } from "@/collectors/types";
-import { fetchHtml, FetchHtmlError } from "@/lib/http/fetchHtml";
 import {
   formatPlaywrightInstallHint,
   isPlaywrightBrowserMissingError,
@@ -18,16 +17,32 @@ import {
 import { normalizeUrl, normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
 const DEVPOST_BASE = "https://devpost.com";
-const MAX_SEARCH_URLS = 5;
+export const DEVPOST_OPEN_UPCOMING_URL =
+  "https://devpost.com/hackathons?status[]=upcoming&status[]=open";
+const DEVPOST_MAX_SCROLLS = 12;
+const DEVPOST_MAX_CARDS = 200;
+const DEVPOST_SCROLL_WAIT_MS = 1_200;
 
 export type DevpostFailureHint =
   | "network"
   | "anti_bot"
   | "rate_limit"
   | "browser_missing"
+  | "page_load"
+  | "redirected"
+  | "listing_container_missing"
   | "selector_parser_failure"
+  | "lazy_loading_timeout"
   | "zero_matching_results"
   | "no_current_events";
+
+export type DevpostLazyLoadStopReason =
+  | "end_marker_reached"
+  | "no_additional_cards"
+  | "maximum_scrolls_reached"
+  | "maximum_cards_reached"
+  | "timeout"
+  | "parser_failure";
 
 type ParsedDevpostCard = {
   title: string;
@@ -51,8 +66,16 @@ export function describeDevpostFailure(hint: DevpostFailureHint, detail?: string
       return `Devpost rate limit${detail ? `: ${detail}` : ""}`;
     case "browser_missing":
       return detail ?? formatPlaywrightInstallHint();
+    case "page_load":
+      return `Devpost page failed to load${detail ? `: ${detail}` : ""}`;
+    case "redirected":
+      return `Devpost filtered URL redirected unexpectedly${detail ? `: ${detail}` : ""}`;
+    case "listing_container_missing":
+      return `Devpost listing container missing${detail ? `: ${detail}` : ""}`;
     case "selector_parser_failure":
       return `Devpost selector/parser failure: UI may have changed${detail ? ` (${detail})` : ""}`;
+    case "lazy_loading_timeout":
+      return `Devpost lazy-loading timeout${detail ? `: ${detail}` : ""}`;
     case "no_current_events":
       return "Devpost returned no current/upcoming hackathons.";
     case "zero_matching_results":
@@ -146,56 +169,8 @@ function isEndedStatus(status: string | undefined, text: string): boolean {
  * Source-specific public listing queries: Canada, Toronto, remote, AI, upcoming.
  */
 export function buildDevpostSearchUrls(preferences: DiscoveryPreferences): string[] {
-  const urls: string[] = [];
-
-  const push = (extra: Record<string, string | string[]>) => {
-    const params = new URLSearchParams();
-    params.append("status[]", "upcoming");
-    params.append("challenge_type[]", "online");
-    params.append("challenge_type[]", "in-person");
-    for (const [key, value] of Object.entries(extra)) {
-      if (Array.isArray(value)) {
-        for (const item of value) params.append(key, item);
-      } else {
-        params.set(key, value);
-      }
-    }
-    urls.push(`${DEVPOST_BASE}/hackathons?${params.toString()}`);
-  };
-
-  // Baseline upcoming listing
-  push({});
-
-  const themeTerms = preferences.themes
-    .filter((t) => !/^(canada|remote|online)$/i.test(t))
-    .slice(0, 2);
-  for (const theme of themeTerms) {
-    push({ search: theme });
-  }
-  if (!themeTerms.some((t) => /ai/i.test(t))) {
-    push({ search: "AI" });
-  }
-
-  const locationTerms = preferences.locations
-    .filter((l) => !/^(remote|online)$/i.test(l))
-    .slice(0, 2);
-  for (const location of locationTerms) {
-    push({ search: location });
-  }
-  if (!locationTerms.some((l) => /toronto/i.test(l))) {
-    push({ search: "Toronto" });
-  }
-  if (!locationTerms.some((l) => /canada/i.test(l))) {
-    push({ search: "Canada" });
-  }
-
-  if (preferences.includeRemote) {
-    push({ search: "remote", "challenge_type[]": ["online"] });
-  } else {
-    push({ search: "remote" });
-  }
-
-  return [...new Set(urls)].slice(0, MAX_SEARCH_URLS);
+  void preferences;
+  return [DEVPOST_OPEN_UPCOMING_URL];
 }
 
 function extractTileFields(
@@ -341,7 +316,8 @@ export function parseDevpostHtml(html: string, maxResults: number): RawLead[] {
         officialUrl: card.url,
         applyUrl: card.url,
         attribution: "devpost",
-        provenance: "devpost_listing",
+        provenance: "native_devpost",
+        discoveryMode: "native_devpost",
         sourceAuthority: "devpost",
         sourceIds: { devpost: slugify(card.title) },
       },
@@ -353,32 +329,149 @@ export function parseDevpostHtml(html: string, maxResults: number): RawLead[] {
   return leads;
 }
 
-async function fetchDevpostWithPlaywright(
+export type DevpostRenderedListing = {
+  html: string;
+  warnings: string[];
+  initialCardCount: number;
+  finalCardCount: number;
+  scrollAttempts: number;
+  noGrowthAttempts: number;
+  stopReason: DevpostLazyLoadStopReason;
+  finalUrl: string;
+  listingContainerFound: boolean;
+  emptyStateFound: boolean;
+};
+
+async function collectRenderedDevpostListing(
   url: string,
   timeoutMs: number,
-): Promise<{ html: string; warnings: string[] }> {
+  logger?: (message: string) => void,
+): Promise<DevpostRenderedListing> {
   const warnings: string[] = [];
+  const startedAt = Date.now();
 
-  const html = await withPlaywright(async ({ page }) => {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+  return withPlaywright(async ({ page }) => {
+    logger?.("Opening filtered listings...");
+    const response = await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: timeoutMs,
+    });
+    if (!response || response.status() >= 400) {
+      throw new Error(
+        describeDevpostFailure("page_load", `HTTP ${response?.status() ?? "unknown"}`),
+      );
+    }
+
+    const finalUrl = page.url();
+    if (!finalUrl.includes("/hackathons") || !finalUrl.includes("status")) {
+      warnings.push(describeDevpostFailure("redirected", finalUrl));
+    }
+
+    await page.waitForLoadState("networkidle", { timeout: Math.min(timeoutMs, 12_000) }).catch(() => {
+      warnings.push(describeDevpostFailure("lazy_loading_timeout", "network idle not reached"));
+    });
+
+    const listingContainerFound =
+      (await page.locator(".hackathons, [class*='hackathon'], a.tile-anchor").count().catch(() => 0)) > 0;
+    const emptyStateFound =
+      (await page
+        .locator("text=/no hackathons|no results|nothing found/i")
+        .count()
+        .catch(() => 0)) > 0;
+
+    if (!listingContainerFound && !emptyStateFound) {
+      warnings.push(describeDevpostFailure("listing_container_missing"));
+    }
+
     await page
-      .locator("a.tile-anchor, a.block-wrapper-link, a[href*='.devpost.com/']")
+      .locator("a.tile-anchor")
       .first()
       .waitFor({ state: "attached", timeout: Math.min(timeoutMs, 12_000) })
-      .catch(() => {
-        warnings.push(
-          "Devpost listing content did not fully render within timeout (Playwright public page).",
-        );
-      });
-    return page.content();
-  }, { timeoutMs });
+      .catch(() => undefined);
 
-  return { html, warnings };
+    const uniqueCardCount = async () =>
+      page.locator("a.tile-anchor").evaluateAll((anchors) => {
+        const urls = anchors
+          .map((anchor) => (anchor as HTMLAnchorElement).href)
+          .filter(Boolean);
+        return new Set(urls).size;
+      });
+
+    const initialCardCount = await uniqueCardCount().catch(() => 0);
+    logger?.("Initial listing batch loaded");
+    logger?.(`${initialCardCount} event cards found`);
+
+    let finalCardCount = initialCardCount;
+    let scrollAttempts = 0;
+    let noGrowthAttempts = 0;
+    let stopReason: DevpostLazyLoadStopReason = "no_additional_cards";
+
+    while (scrollAttempts < DEVPOST_MAX_SCROLLS && finalCardCount < DEVPOST_MAX_CARDS) {
+      if (Date.now() - startedAt > timeoutMs) {
+        stopReason = "timeout";
+        warnings.push(describeDevpostFailure("lazy_loading_timeout"));
+        break;
+      }
+
+      scrollAttempts += 1;
+      logger?.("Loading more listings...");
+      const before = finalCardCount;
+      await page.mouse.wheel(0, 2600).catch(() => undefined);
+      await page.waitForTimeout(DEVPOST_SCROLL_WAIT_MS);
+      await page.waitForLoadState("networkidle", { timeout: DEVPOST_SCROLL_WAIT_MS }).catch(() => undefined);
+      finalCardCount = await uniqueCardCount().catch(() => before);
+
+      if (finalCardCount > before) {
+        noGrowthAttempts = 0;
+        logger?.(`${finalCardCount} event cards found`);
+      } else {
+        noGrowthAttempts += 1;
+      }
+
+      const endMarker =
+        (await page
+          .locator("text=/end of results|no more hackathons|no additional/i")
+          .count()
+          .catch(() => 0)) > 0;
+      if (endMarker) {
+        stopReason = "end_marker_reached";
+        break;
+      }
+      if (noGrowthAttempts >= 3) {
+        stopReason = "no_additional_cards";
+        break;
+      }
+    }
+
+    if (finalCardCount >= DEVPOST_MAX_CARDS) stopReason = "maximum_cards_reached";
+    else if (scrollAttempts >= DEVPOST_MAX_SCROLLS && noGrowthAttempts < 3) {
+      stopReason = "maximum_scrolls_reached";
+    }
+
+    logger?.("Lazy loading complete");
+
+    return {
+      html: await page.content(),
+      warnings,
+      initialCardCount,
+      finalCardCount,
+      scrollAttempts,
+      noGrowthAttempts,
+      stopReason,
+      finalUrl: page.url(),
+      listingContainerFound,
+      emptyStateFound,
+    };
+  }, { timeoutMs });
 }
 
 function countDevpostTiles(html: string): number {
   const $ = cheerio.load(html);
   return $("a.tile-anchor, a.block-wrapper-link, a.challenge-listing").length;
+}
+
+function hasDevpostChallengePage(html: string): boolean {
+  return /captcha|cloudflare|verify you are human|access denied|blocked/i.test(html);
 }
 
 export const devpostCollector: Collector = {
@@ -389,104 +482,75 @@ export const devpostCollector: Collector = {
     const result = emptyCollectorResult("devpost", startedAt);
     const searchUrls = buildDevpostSearchUrls(input.preferences);
     const seen = new Set<string>();
-    let pagesFetched = 0;
-    let usedPlaywright = 0;
-    let staticEmpty = 0;
 
     result.warnings.push(
-      "Devpost uses Playwright for public hackathon listings because static HTML omits challenge tiles.",
+      "Devpost uses Playwright for public open/upcoming hackathon listings because static HTML may omit challenge tiles.",
     );
 
     try {
-      for (const searchUrl of searchUrls) {
-        if (Date.now() - startedAt > input.timeoutMs) {
-          result.warnings.push("Devpost collector stopped early after timeout budget.");
-          break;
-        }
+      const searchUrl = searchUrls[0] ?? DEVPOST_OPEN_UPCOMING_URL;
+      const rendered = await collectRenderedDevpostListing(
+        searchUrl,
+        input.timeoutMs,
+        input.logger,
+      );
+      result.warnings.push(...rendered.warnings);
+
+      if (rendered.finalCardCount === 0 && hasDevpostChallengePage(rendered.html)) {
+        result.errors.push(describeDevpostFailure("anti_bot"));
+      }
+
+      const pageLeads = parseDevpostHtml(rendered.html, input.maxResults);
+      for (const lead of pageLeads) {
+        const key = lead.url ? normalizeUrlForDedupe(lead.url) : lead.id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.leads.push(lead);
         if (result.leads.length >= input.maxResults) break;
-
-        const remaining = Math.max(2_000, input.timeoutMs - (Date.now() - startedAt));
-        let html = "";
-
-        try {
-          html = await fetchHtml(searchUrl, { timeoutMs: Math.min(remaining, 8_000), retries: 1 });
-          pagesFetched += 1;
-        } catch (error) {
-          if (error instanceof FetchHtmlError && (error.status === 403 || error.status === 503)) {
-            result.warnings.push(describeDevpostFailure("anti_bot", error.message));
-          } else if (error instanceof FetchHtmlError && error.status === 429) {
-            result.warnings.push(describeDevpostFailure("rate_limit", error.message));
-          } else {
-            result.warnings.push(
-              describeDevpostFailure(
-                "network",
-                error instanceof Error ? error.message : "static fetch failed",
-              ),
-            );
-          }
-        }
-
-        let pageLeads = html ? parseDevpostHtml(html, input.maxResults) : [];
-        if (pageLeads.length === 0) {
-          staticEmpty += 1;
-          try {
-            const rendered = await fetchDevpostWithPlaywright(searchUrl, remaining);
-            usedPlaywright += 1;
-            pagesFetched += 1;
-            html = rendered.html;
-            result.warnings.push(...rendered.warnings);
-            pageLeads = parseDevpostHtml(html, input.maxResults - result.leads.length);
-          } catch (error) {
-            if (isPlaywrightBrowserMissingError(error)) {
-              result.errors.push(describeDevpostFailure("browser_missing"));
-              break;
-            }
-            result.warnings.push(
-              error instanceof Error ? error.message : "Devpost Playwright fallback failed",
-            );
-          }
-        }
-
-        if (html && pageLeads.length === 0 && countDevpostTiles(html) === 0) {
-          // Keep going across queries; record once at end if still empty.
-        }
-
-        for (const lead of pageLeads) {
-          const key = lead.url ? normalizeUrlForDedupe(lead.url) : lead.id;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          result.leads.push(lead);
-          if (result.leads.length >= input.maxResults) break;
-        }
       }
 
       result.metrics = {
-        pagesFetched,
-        playwrightPages: usedPlaywright,
-        staticEmptyPages: staticEmpty,
+        pagesFetched: 1,
+        playwrightPages: 1,
+        initialCardCount: rendered.initialCardCount,
+        finalCardCount: rendered.finalCardCount,
+        scrollAttempts: rendered.scrollAttempts,
+        noGrowthAttempts: rendered.noGrowthAttempts,
         leadsEmitted: result.leads.length,
-        searchUrls: searchUrls.length,
+        searchUrls: 1,
       };
 
       if (result.leads.length === 0 && result.errors.length === 0) {
-        if (usedPlaywright > 0) {
+        const visibleCards = countDevpostTiles(rendered.html);
+        if (visibleCards > 0) {
           result.warnings.push(
             describeDevpostFailure(
               "selector_parser_failure",
-              "Playwright rendered pages but no challenge tiles parsed",
+              "Filtered listing page loaded, but no event cards matched the parser. The Devpost page structure may have changed.",
             ),
           );
+          input.logger?.(
+            "Filtered listing page loaded, but no event cards matched the parser. The Devpost page structure may have changed.",
+          );
+        } else if (rendered.emptyStateFound) {
+          result.warnings.push(describeDevpostFailure("no_current_events"));
         } else {
           result.warnings.push(describeDevpostFailure("zero_matching_results"));
         }
+      } else if (result.leads.length > 0) {
+        input.logger?.(`${result.leads.length} matching leads accepted`);
       }
     } catch (error) {
-      result.errors.push(
-        describeDevpostFailure(
-          "network",
-          error instanceof Error ? error.message : "Devpost fetch failed",
-        ),
-      );
+      if (isPlaywrightBrowserMissingError(error)) {
+        result.errors.push(describeDevpostFailure("browser_missing"));
+      } else {
+        result.errors.push(
+          describeDevpostFailure(
+            "page_load",
+            error instanceof Error ? error.message : "Devpost rendered listing failed",
+          ),
+        );
+      }
     }
 
     result.durationMs = Date.now() - startedAt;

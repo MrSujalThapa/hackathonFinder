@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import {
   buildDevpostSearchUrls,
   canonicalizeDevpostUrl,
+  DEVPOST_OPEN_UPCOMING_URL,
   describeDevpostFailure,
   isDevpostHackathonUrl,
   isRejectedDevpostUrl,
@@ -35,6 +36,8 @@ describe("parseDevpostHtml", () => {
     assert.equal(toronto!.metadata?.location, "Toronto, Canada");
     assert.match(String(toronto!.metadata?.prize ?? ""), /10,000/);
     assert.equal(toronto!.metadata?.attribution, "devpost");
+    assert.equal(toronto!.metadata?.provenance, "native_devpost");
+    assert.equal(toronto!.metadata?.discoveryMode, "native_devpost");
   });
 
   it("dedupes duplicate listing URLs", () => {
@@ -42,6 +45,25 @@ describe("parseDevpostHtml", () => {
     const leads = parseDevpostHtml(html, 10);
     const toronto = leads.filter((lead) => /Toronto Builder/i.test(lead.title ?? ""));
     assert.equal(toronto.length, 1);
+  });
+
+  it("parses lazy-loaded appended cards and removes duplicate URLs", () => {
+    const html = `${fs.readFileSync(fixturePath, "utf8")}
+      <a class="flex-row tile-anchor" href="https://lazy-loaded.devpost.com/?ref_feature=challenge">
+        <div class="content">
+          <h3>Lazy Loaded Hackathon</h3>
+          <div class="status-label open">20 days left</div>
+          <div class="info"><span>Online</span></div>
+          <div><span class="prize-amount">$5,000</span> in prizes</div>
+          <div>Sep 10 - Oct 1, 2026</div>
+        </div>
+      </a>`;
+    const leads = parseDevpostHtml(html, 20);
+    assert.ok(leads.some((lead) => /Lazy Loaded Hackathon/i.test(lead.title ?? "")));
+    assert.equal(
+      leads.filter((lead) => /toronto-builder\.devpost\.com/i.test(lead.url ?? "")).length,
+      1,
+    );
   });
 
   it("rejects ended, portfolio, project, and generic pages", () => {
@@ -72,22 +94,16 @@ describe("devpost url helpers", () => {
     assert.equal(isDevpostHackathonUrl("https://devpost.com/software/foo"), false);
   });
 
-  it("builds Canada/Toronto/remote/AI/upcoming search URLs", () => {
+  it("uses the exact filtered open/upcoming discovery URL", () => {
     const prefs = getDefaultDiscoveryPreferences("find AI hackathons in Canada Toronto remote");
-    prefs.themes = ["AI"];
-    prefs.locations = ["Canada", "Toronto"];
-    prefs.includeRemote = true;
     const urls = buildDevpostSearchUrls(prefs);
-    assert.ok(urls.length >= 3);
-    assert.ok(urls.every((url) => /status(%5B%5D|\[\])=upcoming/.test(url)));
-    assert.ok(urls.some((url) => /search=AI/i.test(url)));
-    assert.ok(urls.some((url) => /search=Toronto/i.test(url)));
-    assert.ok(urls.some((url) => /search=Canada/i.test(url)));
-    assert.ok(urls.some((url) => /search=remote/i.test(url)));
+    assert.deepEqual(urls, [DEVPOST_OPEN_UPCOMING_URL]);
+    assert.match(urls[0]!, /status\[\]=upcoming&status\[\]=open$/);
   });
 
   it("formats failure categories for health classification", () => {
     assert.match(describeDevpostFailure("browser_missing"), /Playwright/i);
     assert.match(describeDevpostFailure("selector_parser_failure"), /selector\/parser/i);
+    assert.match(describeDevpostFailure("listing_container_missing"), /container missing/i);
   });
 });
