@@ -64,6 +64,10 @@ Levels: `info` | `success` | `warning` | `error`.
 
 The UI does not invent progress — it only renders events from the stream.
 
+## Concurrency
+
+Overlapping jobs are queued (not rejected) up to `DISCOVERY_MAX_QUEUED_JOBS`. See [CONCURRENCY.md](./CONCURRENCY.md) for active/queued limits, Hakku profile locking, and queue-position events.
+
 ## Auth / middleware (parent integration)
 
 Add `/terminal` to `PROTECTED_PAGE_PREFIXES` in `src/middleware.ts` (`/api/discovery` is already listed). Also protect `/api/sources` if not already.

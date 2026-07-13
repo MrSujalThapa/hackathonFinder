@@ -49,6 +49,7 @@ Examples:
 - Login redirect → `auth_required` error (not a fake zero-lead success).
 - Bounded navigation/scroll; upcoming filtering; failure screenshots only under the OS temp debug dir.
 - Metrics include mode, pages inspected, raw/accepted leads, auth status, and stop reason.
+- **Profile lock:** discovery serializes Hakku to one Chromium persistent context at a time (see [CONCURRENCY.md](./CONCURRENCY.md)). A lock wait timeout degrades Hakku only — other sources continue.
 
 ## Manual acceptance (next phase)
 

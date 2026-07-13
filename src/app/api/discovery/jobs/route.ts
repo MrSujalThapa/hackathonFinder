@@ -94,7 +94,11 @@ export async function POST(request: Request): Promise<Response> {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to create discovery job";
-      if (/too many active/i.test(message) || /allowlisted/i.test(message)) {
+      if (
+        /too many active/i.test(message) ||
+        /job queue is full/i.test(message) ||
+        /allowlisted/i.test(message)
+      ) {
         return fail("VALIDATION_ERROR", message, 400);
       }
       return fail("INTERNAL_ERROR", message, 500);

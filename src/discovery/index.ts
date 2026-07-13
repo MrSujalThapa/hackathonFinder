@@ -45,3 +45,28 @@ export {
   type DiscoveryExecutionMode,
   type DiscoveryRuntimeConfig,
 } from "@/discovery/config";
+export {
+  getDiscoveryJobConcurrencyGate,
+  resetDiscoveryJobConcurrencyGateForTests,
+  assertJobQueueAdmission,
+  isDiscoveryJobQueueFullError,
+  isDiscoveryJobCancelledWhileQueuedError,
+  DiscoveryJobQueueFullError,
+  RUNNING_JOB_STATUSES,
+  type DiscoveryJobConcurrencyGate,
+  type JobLoadSnapshot,
+} from "@/discovery/concurrency";
+export {
+  acquireSourceLock,
+  withSourceLock,
+  collectWithSourceLocks,
+  resetSourceLocksForTests,
+  hakkuProfileLockKey,
+  sourceLockKey,
+  sourceLockMax,
+  readPublicSourceConcurrency,
+  readSourceLockWaitTimeoutMs,
+  isSourceLockTimeoutError,
+  SourceLockTimeoutError,
+  SourceLockCancelledError,
+} from "@/discovery/sourceLocks";

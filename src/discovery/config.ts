@@ -6,7 +6,14 @@ export type DiscoveryRuntimeConfig = {
   executionMode: DiscoveryExecutionMode;
   workerSharedSecret: string | undefined;
   browserProfileRoot: string | undefined;
+  /** Max concurrently executing discovery jobs. */
   maxActiveJobs: number;
+  /** Max jobs waiting for an execution slot. */
+  maxQueuedJobs: number;
+  /** Bounded concurrency for public (non-Hakku) collectors. */
+  publicSourceConcurrency: number;
+  /** Max wait for a per-source lock before degrading that source. */
+  sourceLockWaitMs: number;
   jobTimeoutMs: number;
   eventRetentionDays: number;
 };
@@ -29,7 +36,16 @@ export function readDiscoveryRuntimeConfig(
     executionMode,
     workerSharedSecret: env.WORKER_SHARED_SECRET?.trim() || undefined,
     browserProfileRoot: env.BROWSER_PROFILE_ROOT?.trim() || undefined,
-    maxActiveJobs: parsePositiveInt(env.DISCOVERY_MAX_ACTIVE_JOBS, 1),
+    maxActiveJobs: parsePositiveInt(env.DISCOVERY_MAX_ACTIVE_JOBS, 2),
+    maxQueuedJobs: parsePositiveInt(env.DISCOVERY_MAX_QUEUED_JOBS, 10),
+    publicSourceConcurrency: parsePositiveInt(
+      env.DISCOVERY_PUBLIC_SOURCE_CONCURRENCY,
+      3,
+    ),
+    sourceLockWaitMs: parsePositiveInt(
+      env.DISCOVERY_SOURCE_LOCK_WAIT_MS,
+      60_000,
+    ),
     jobTimeoutMs: parsePositiveInt(env.DISCOVERY_JOB_TIMEOUT_MS, 10 * 60_000),
     eventRetentionDays: parsePositiveInt(env.DISCOVERY_EVENT_RETENTION_DAYS, 14),
   };

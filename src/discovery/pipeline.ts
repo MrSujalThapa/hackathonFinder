@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Json } from "@/lib/supabase/database.types";
-import { runCollectors } from "@/collectors/registry";
-import { DEFAULT_COLLECTOR_TIMEOUT_MS } from "@/collectors/types";
+import { getCollector } from "@/collectors/registry";
+import {
+  DEFAULT_COLLECTOR_TIMEOUT_MS,
+  emptyCollectorResult,
+} from "@/collectors/types";
+import { collectWithSourceLocks } from "@/discovery/sourceLocks";
+import { readDiscoveryRuntimeConfig } from "@/discovery/config";
 import { hasSupabaseConfig, getServerEnv } from "@/config/env";
 import type {
   AcceptedCandidate,
@@ -209,15 +214,43 @@ export async function executeDiscoveryPipeline(
       await emitter.emit("source_started", `Starting…`, { source });
     }
 
-    const collectorPromise = runCollectors(
-      {
-        preferences,
-        maxResults: preferences.maxResults,
-        timeoutMs: effectiveSourceTimeout,
-        dryRun,
-        requestId: agentRunId ?? runId,
-      },
+    const runtimeConfig = readDiscoveryRuntimeConfig();
+    const collectorInput = {
+      preferences,
+      maxResults: preferences.maxResults,
+      timeoutMs: effectiveSourceTimeout,
+      dryRun,
+      requestId: agentRunId ?? runId,
+    };
+    const collectorPromise = collectWithSourceLocks(
       preferences.sources,
+      async (source) => {
+        const collector = getCollector(source);
+        if (!collector) {
+          const missing = emptyCollectorResult(source);
+          missing.errors.push(`No collector registered for source: ${source}`);
+          return missing;
+        }
+        const startedAt = Date.now();
+        try {
+          return await collector.collect(collectorInput);
+        } catch (error) {
+          const failed = emptyCollectorResult(source, startedAt);
+          failed.errors.push(
+            error instanceof Error
+              ? error.message
+              : `Collector ${source} failed`,
+          );
+          return failed;
+        }
+      },
+      {
+        runId,
+        eventSink: options.eventSink,
+        cancellationSignal: options.cancellationSignal,
+        lockWaitTimeoutMs: runtimeConfig.sourceLockWaitMs,
+        publicConcurrency: runtimeConfig.publicSourceConcurrency,
+      },
     );
 
     let timedOut = false;
