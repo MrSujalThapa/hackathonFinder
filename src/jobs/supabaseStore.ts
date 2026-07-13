@@ -1,6 +1,7 @@
 /**
  * Supabase-backed discovery job repository.
- * Requires migration 006_discovery_jobs.sql to be applied.
+ * Requires migrations 006_discovery_jobs.sql and
+ * 008_atomic_discovery_events.sql to be applied.
  */
 
 import { randomUUID } from "node:crypto";
@@ -67,6 +68,29 @@ type EventRow = {
   created_at: string;
 };
 
+type SupabaseClientLike = {
+  from: (table: string) => unknown;
+  rpc: (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: SupabaseDbError | null }>;
+};
+
+type SupabaseDbError = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+  status?: number;
+};
+
+export type DiscoveryDbErrorKind =
+  | "schema_unavailable"
+  | "unique_conflict"
+  | "authorization"
+  | "temporary"
+  | "unknown";
+
 function mapJob(row: JobRow): DiscoveryJob {
   return {
     id: row.id,
@@ -117,14 +141,128 @@ function mapEvent(row: EventRow): DiscoveryEvent {
   };
 }
 
-function tableMissingMessage(error: { message?: string }): string {
-  return `Discovery job tables unavailable (${error.message ?? "unknown"}). Apply supabase/migrations/006_discovery_jobs.sql or use the DEV-ONLY in-memory store in development.`;
+function errorText(error: unknown): string {
+  if (!error || typeof error !== "object") return String(error ?? "unknown");
+  const db = error as SupabaseDbError;
+  return [db.message, db.details, db.hint].filter(Boolean).join(" | ") || "unknown";
 }
 
-export function createSupabaseDiscoveryJobStore(): DiscoveryJobRepository {
+export function classifyDiscoveryDbError(error: unknown): DiscoveryDbErrorKind {
+  const db = (error ?? {}) as SupabaseDbError;
+  const code = db.code;
+  const status = db.status;
+  const text = errorText(error).toLowerCase();
+
+  if (
+    code === "42P01" ||
+    code === "42703" ||
+    code === "42883" ||
+    code === "PGRST202" ||
+    code === "PGRST204" ||
+    /relation .* does not exist|column .* does not exist|function .* does not exist|could not find .*function|schema cache/.test(
+      text,
+    )
+  ) {
+    return "schema_unavailable";
+  }
+  if (code === "23505" || /duplicate key value violates unique constraint/.test(text)) {
+    return "unique_conflict";
+  }
+  if (
+    code === "42501" ||
+    status === 401 ||
+    status === 403 ||
+    /row-level security|permission denied|not authorized|unauthorized|forbidden|jwt/.test(
+      text,
+    )
+  ) {
+    return "authorization";
+  }
+  if (
+    /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timeout|temporarily unavailable/.test(
+      text,
+    )
+  ) {
+    return "temporary";
+  }
+  return "unknown";
+}
+
+function discoveryDbErrorMessage(
+  error: unknown,
+  context: { operation: string; migrationHint?: string },
+): string {
+  const kind = classifyDiscoveryDbError(error);
+  const text = errorText(error);
+  switch (kind) {
+    case "schema_unavailable":
+      return `Discovery job database schema unavailable while ${context.operation}: ${text}. Apply ${context.migrationHint ?? "the pending Supabase migrations"}.`;
+    case "unique_conflict":
+      return `Discovery job database unique conflict while ${context.operation}: ${text}.`;
+    case "authorization":
+      return `Discovery job database authorization/configuration error while ${context.operation}: ${text}. Check service-role server configuration and RLS.`;
+    case "temporary":
+      return `Temporary discovery job database error while ${context.operation}: ${text}.`;
+    default:
+      return `Discovery job database error while ${context.operation}: ${text}.`;
+  }
+}
+
+function throwDiscoveryDbError(
+  error: unknown,
+  context: { operation: string; migrationHint?: string },
+): never {
+  throw new Error(discoveryDbErrorMessage(error, context));
+}
+
+function isUniqueConflict(error: unknown): boolean {
+  return classifyDiscoveryDbError(error) === "unique_conflict";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function jobPatchToRow(
+  patch: Parameters<DiscoveryJobRepository["updateJob"]>[1],
+): Record<string, unknown> {
+  const row: Record<string, unknown> = {};
+  if (patch.status !== undefined) row.status = patch.status;
+  if (patch.progress !== undefined) row.progress = patch.progress;
+  if (patch.currentStage !== undefined) row.current_stage = patch.currentStage;
+  if (patch.effectiveSources !== undefined) {
+    row.effective_sources = patch.effectiveSources;
+  }
+  if (patch.failureCategory !== undefined) {
+    row.failure_category = patch.failureCategory;
+  }
+  if (patch.safeErrorMessage !== undefined) {
+    row.safe_error_message = patch.safeErrorMessage;
+  }
+  if (patch.agentRunId !== undefined) row.agent_run_id = patch.agentRunId;
+  if (patch.createdCount !== undefined) row.created_count = patch.createdCount;
+  if (patch.updatedCount !== undefined) row.updated_count = patch.updatedCount;
+  if (patch.acceptedCount !== undefined) row.accepted_count = patch.acceptedCount;
+  if (patch.rejectedCount !== undefined) {
+    row.rejected_count = patch.rejectedCount;
+  }
+  if (patch.needsReviewCount !== undefined) {
+    row.needs_review_count = patch.needsReviewCount;
+  }
+  if (patch.rawLeadsCount !== undefined) row.raw_leads_count = patch.rawLeadsCount;
+  if (patch.durationMs !== undefined) row.duration_ms = patch.durationMs;
+  if (patch.summary !== undefined) row.summary = patch.summary;
+  if (patch.completedAt !== undefined) row.completed_at = patch.completedAt;
+  if (patch.cancelledAt !== undefined) row.cancelled_at = patch.cancelledAt;
+  return row;
+}
+
+export function createSupabaseDiscoveryJobStore(
+  client?: SupabaseClientLike,
+): DiscoveryJobRepository {
   // discovery_jobs tables are added by migration 006; regenerate database.types after apply.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const supabase = createServiceSupabaseClient() as any;
+  const supabase = (client ?? createServiceSupabaseClient()) as any;
 
   return {
     async createJob(input: CreateDiscoveryJobInput): Promise<DiscoveryJob> {
@@ -145,7 +283,12 @@ export function createSupabaseDiscoveryJobStore(): DiscoveryJobRepository {
         .select("*")
         .single();
 
-      if (error) throw new Error(tableMissingMessage(error));
+      if (error) {
+        throwDiscoveryDbError(error, {
+          operation: "creating discovery job",
+          migrationHint: "supabase/migrations/006_discovery_jobs.sql",
+        });
+      }
       return mapJob(data as JobRow);
     },
 
@@ -155,7 +298,12 @@ export function createSupabaseDiscoveryJobStore(): DiscoveryJobRepository {
         .select("*")
         .eq("id", id)
         .maybeSingle();
-      if (error) throw new Error(tableMissingMessage(error));
+      if (error) {
+        throwDiscoveryDbError(error, {
+          operation: "reading discovery job",
+          migrationHint: "supabase/migrations/006_discovery_jobs.sql",
+        });
+      }
       return data ? mapJob(data as JobRow) : null;
     },
 
@@ -168,7 +316,12 @@ export function createSupabaseDiscoveryJobStore(): DiscoveryJobRepository {
         .limit(limit);
       if (params.status) query = query.eq("status", params.status);
       const { data, error } = await query;
-      if (error) throw new Error(tableMissingMessage(error));
+      if (error) {
+        throwDiscoveryDbError(error, {
+          operation: "listing discovery jobs",
+          migrationHint: "supabase/migrations/006_discovery_jobs.sql",
+        });
+      }
       return (data as JobRow[]).map(mapJob);
     },
 
@@ -177,7 +330,12 @@ export function createSupabaseDiscoveryJobStore(): DiscoveryJobRepository {
         .from("discovery_jobs")
         .select("id", { count: "exact", head: true })
         .in("status", ACTIVE_JOB_STATUSES);
-      if (error) throw new Error(tableMissingMessage(error));
+      if (error) {
+        throwDiscoveryDbError(error, {
+          operation: "counting active discovery jobs",
+          migrationHint: "supabase/migrations/006_discovery_jobs.sql",
+        });
+      }
       return count ?? 0;
     },
 
@@ -188,24 +346,18 @@ export function createSupabaseDiscoveryJobStore(): DiscoveryJobRepository {
         return existing;
       }
 
-      const patch =
-        existing.status === "queued"
-          ? {
-              cancel_requested: true,
-              status: "cancelled",
-              cancelled_at: new Date().toISOString(),
-              completed_at: new Date().toISOString(),
-              current_stage: "cancelled",
-            }
-          : { cancel_requested: true };
-
       const { data, error } = await supabase
         .from("discovery_jobs")
-        .update(patch)
+        .update({ cancel_requested: true })
         .eq("id", id)
         .select("*")
         .single();
-      if (error) throw new Error(tableMissingMessage(error));
+      if (error) {
+        throwDiscoveryDbError(error, {
+          operation: "requesting discovery job cancellation",
+          migrationHint: "supabase/migrations/006_discovery_jobs.sql",
+        });
+      }
       return mapJob(data as JobRow);
     },
 
@@ -222,39 +374,17 @@ export function createSupabaseDiscoveryJobStore(): DiscoveryJobRepository {
         .eq("id", id)
         .select("*")
         .single();
-      if (error) throw new Error(tableMissingMessage(error));
+      if (error) {
+        throwDiscoveryDbError(error, {
+          operation: "marking discovery job started",
+          migrationHint: "supabase/migrations/006_discovery_jobs.sql",
+        });
+      }
       return mapJob(data as JobRow);
     },
 
     async updateJob(id, patch): Promise<DiscoveryJob> {
-      const row: Record<string, unknown> = {};
-      if (patch.status !== undefined) row.status = patch.status;
-      if (patch.progress !== undefined) row.progress = patch.progress;
-      if (patch.currentStage !== undefined) row.current_stage = patch.currentStage;
-      if (patch.effectiveSources !== undefined) {
-        row.effective_sources = patch.effectiveSources;
-      }
-      if (patch.failureCategory !== undefined) {
-        row.failure_category = patch.failureCategory;
-      }
-      if (patch.safeErrorMessage !== undefined) {
-        row.safe_error_message = patch.safeErrorMessage;
-      }
-      if (patch.agentRunId !== undefined) row.agent_run_id = patch.agentRunId;
-      if (patch.createdCount !== undefined) row.created_count = patch.createdCount;
-      if (patch.updatedCount !== undefined) row.updated_count = patch.updatedCount;
-      if (patch.acceptedCount !== undefined) row.accepted_count = patch.acceptedCount;
-      if (patch.rejectedCount !== undefined) {
-        row.rejected_count = patch.rejectedCount;
-      }
-      if (patch.needsReviewCount !== undefined) {
-        row.needs_review_count = patch.needsReviewCount;
-      }
-      if (patch.rawLeadsCount !== undefined) row.raw_leads_count = patch.rawLeadsCount;
-      if (patch.durationMs !== undefined) row.duration_ms = patch.durationMs;
-      if (patch.summary !== undefined) row.summary = patch.summary;
-      if (patch.completedAt !== undefined) row.completed_at = patch.completedAt;
-      if (patch.cancelledAt !== undefined) row.cancelled_at = patch.cancelledAt;
+      const row = jobPatchToRow(patch);
 
       const { data, error } = await supabase
         .from("discovery_jobs")
@@ -262,42 +392,63 @@ export function createSupabaseDiscoveryJobStore(): DiscoveryJobRepository {
         .eq("id", id)
         .select("*")
         .single();
-      if (error) throw new Error(tableMissingMessage(error));
+      if (error) {
+        throwDiscoveryDbError(error, {
+          operation: "updating discovery job",
+          migrationHint: "supabase/migrations/006_discovery_jobs.sql",
+        });
+      }
       return mapJob(data as JobRow);
     },
 
-    async appendEvent(jobId, partial): Promise<DiscoveryEvent> {
-      // Allocate sequence via max+1; unique index enforces safety under concurrency.
-      const { data: latest } = await supabase
-        .from("discovery_job_events")
-        .select("sequence")
-        .eq("job_id", jobId)
-        .order("sequence", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const sequence = partial.sequence ?? ((latest?.sequence as number | undefined) ?? 0) + 1;
-      const id = partial.id ?? randomUUID();
-      const createdAt = partial.timestamp ?? new Date().toISOString();
-
+    async transitionToTerminal(id, patch, event) {
+      const row = jobPatchToRow(patch);
       const { data, error } = await supabase
-        .from("discovery_job_events")
-        .insert({
-          id,
-          job_id: jobId,
-          sequence,
-          event_type: partial.type,
-          level: partial.level,
-          source: partial.source ?? null,
-          message: partial.message,
-          metadata: sanitizeEventMetadata(partial.metadata) ?? {},
-          created_at: createdAt,
-        })
+        .from("discovery_jobs")
+        .update(row)
+        .eq("id", id)
+        .in("status", ACTIVE_JOB_STATUSES)
         .select("*")
-        .single();
+        .maybeSingle();
+      if (error) {
+        throwDiscoveryDbError(error, {
+          operation: "transitioning discovery job to terminal state",
+          migrationHint: "supabase/migrations/006_discovery_jobs.sql",
+        });
+      }
+      if (!data) {
+        const current = await this.getJob(id);
+        return current ? { job: current, event: null, transitioned: false } : null;
+      }
+      const saved = await this.appendEvent(id, event);
+      return { job: mapJob(data as JobRow), event: saved, transitioned: true };
+    },
 
-      if (error) throw new Error(tableMissingMessage(error));
-      return mapEvent(data as EventRow);
+    async appendEvent(jobId, partial): Promise<DiscoveryEvent> {
+      const createdAt = partial.timestamp ?? new Date().toISOString();
+      let lastError: SupabaseDbError | null = null;
+
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const { data, error } = await supabase.rpc("append_discovery_job_event", {
+          p_job_id: jobId,
+          p_event_type: partial.type,
+          p_level: partial.level,
+          p_message: partial.message,
+          p_id: partial.id ?? randomUUID(),
+          p_source: partial.source ?? null,
+          p_metadata: sanitizeEventMetadata(partial.metadata) ?? {},
+          p_created_at: createdAt,
+        });
+        if (!error) return mapEvent(data as EventRow);
+        lastError = error;
+        if (!isUniqueConflict(error) || attempt === 3) break;
+        await sleep(15 * attempt);
+      }
+
+      throwDiscoveryDbError(lastError, {
+        operation: "appending discovery job event",
+        migrationHint: "supabase/migrations/008_atomic_discovery_events.sql",
+      });
     },
 
     async listEvents(jobId, options = {}): Promise<DiscoveryEvent[]> {
@@ -310,7 +461,12 @@ export function createSupabaseDiscoveryJobStore(): DiscoveryJobRepository {
         .gt("sequence", after)
         .order("sequence", { ascending: true })
         .limit(limit);
-      if (error) throw new Error(tableMissingMessage(error));
+      if (error) {
+        throwDiscoveryDbError(error, {
+          operation: "listing discovery job events",
+          migrationHint: "supabase/migrations/006_discovery_jobs.sql",
+        });
+      }
       return (data as EventRow[]).map(mapEvent);
     },
 
@@ -323,7 +479,12 @@ export function createSupabaseDiscoveryJobStore(): DiscoveryJobRepository {
         .eq("cancel_requested", false)
         .order("created_at", { ascending: true })
         .limit(5);
-      if (error) throw new Error(tableMissingMessage(error));
+      if (error) {
+        throwDiscoveryDbError(error, {
+          operation: "claiming queued discovery job",
+          migrationHint: "supabase/migrations/006_discovery_jobs.sql",
+        });
+      }
 
       for (const row of (candidates as JobRow[]) ?? []) {
         if (row.claim_expires_at && Date.parse(row.claim_expires_at) > now.getTime()) {
@@ -344,7 +505,12 @@ export function createSupabaseDiscoveryJobStore(): DiscoveryJobRepository {
           .eq("status", "queued")
           .select("*")
           .maybeSingle();
-        if (updateError) throw new Error(tableMissingMessage(updateError));
+        if (updateError) {
+          throwDiscoveryDbError(updateError, {
+            operation: "claiming queued discovery job",
+            migrationHint: "supabase/migrations/006_discovery_jobs.sql",
+          });
+        }
         if (data) {
           return { job: mapJob(data as JobRow), claimToken };
         }
@@ -362,7 +528,12 @@ export function createSupabaseDiscoveryJobStore(): DiscoveryJobRepository {
         .eq("claim_token", claimToken)
         .select("id")
         .maybeSingle();
-      if (error) throw new Error(tableMissingMessage(error));
+      if (error) {
+        throwDiscoveryDbError(error, {
+          operation: "heartbeating discovery job claim",
+          migrationHint: "supabase/migrations/006_discovery_jobs.sql",
+        });
+      }
       return Boolean(data);
     },
   };

@@ -131,12 +131,6 @@ export function createMemoryDiscoveryJobStore(): DiscoveryJobRepository {
         return { ...job };
       }
       job.cancelRequested = true;
-      if (job.status === "queued") {
-        job.status = "cancelled";
-        job.cancelledAt = nowIso();
-        job.completedAt = job.cancelledAt;
-        job.currentStage = "cancelled";
-      }
       globalState.jobs.set(id, job);
       return { ...job };
     },
@@ -157,6 +151,18 @@ export function createMemoryDiscoveryJobStore(): DiscoveryJobRepository {
       Object.assign(job, patch);
       globalState.jobs.set(id, job);
       return { ...job };
+    },
+
+    async transitionToTerminal(id, patch, event) {
+      const job = globalState.jobs.get(id);
+      if (!job) return null;
+      if (!ACTIVE_JOB_STATUSES.includes(job.status)) {
+        return { job: { ...job }, event: null, transitioned: false };
+      }
+      Object.assign(job, patch);
+      globalState.jobs.set(id, job);
+      const saved = await this.appendEvent(id, event);
+      return { job: { ...job }, event: saved, transitioned: true };
     },
 
     async appendEvent(jobId, partial): Promise<DiscoveryEvent> {

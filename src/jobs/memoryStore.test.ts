@@ -60,8 +60,105 @@ describe("discovery job store (memory)", () => {
     const store = createMemoryDiscoveryJobStore();
     setDiscoveryJobStoreForTests(store);
     const job = await store.createJob({ command: "find hackathons", dryRun: true });
-    const cancelled = await store.requestCancel(job.id);
-    assert.equal(cancelled?.status, "cancelled");
+    const requested = await store.requestCancel(job.id);
+    assert.equal(requested?.status, "queued");
+    assert.equal(requested?.cancelRequested, true);
+
+    const cancelled = await store.transitionToTerminal(job.id, {
+      status: "cancelled",
+      progress: 100,
+      currentStage: "cancelled",
+      cancelledAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+    }, {
+      type: "run_cancelled",
+      level: "warning",
+      message: "Cancelled while queued",
+    });
+
+    assert.equal(cancelled?.job.status, "cancelled");
+    assert.equal(cancelled?.transitioned, true);
+  });
+
+  it("only creates one run_failed event for duplicate terminal transitions", async () => {
+    const store = createMemoryDiscoveryJobStore();
+    setDiscoveryJobStoreForTests(store);
+    const job = await store.createJob({ command: "find hackathons", dryRun: true });
+
+    const attempts = await Promise.all([
+      store.transitionToTerminal(job.id, {
+        status: "failed",
+        progress: 100,
+        currentStage: "failed",
+        completedAt: new Date().toISOString(),
+        failureCategory: "execution_error",
+        safeErrorMessage: "boom",
+      }, {
+        type: "run_failed",
+        level: "error",
+        message: "boom",
+      }),
+      store.transitionToTerminal(job.id, {
+        status: "failed",
+        progress: 100,
+        currentStage: "failed",
+        completedAt: new Date().toISOString(),
+        failureCategory: "execution_error",
+        safeErrorMessage: "boom again",
+      }, {
+        type: "run_failed",
+        level: "error",
+        message: "boom again",
+      }),
+    ]);
+
+    assert.equal(attempts.filter((attempt) => attempt?.transitioned).length, 1);
+    const events = await store.listEvents(job.id);
+    assert.equal(events.filter((event) => event.type === "run_failed").length, 1);
+  });
+
+  it("completed, failed, and cancelled jobs reject duplicate terminal transitions", async () => {
+    for (const status of ["completed", "failed", "cancelled"] as const) {
+      resetMemoryDiscoveryJobStoreForTests();
+      const store = createMemoryDiscoveryJobStore();
+      setDiscoveryJobStoreForTests(store);
+      const job = await store.createJob({ command: `find ${status}`, dryRun: true });
+      const first = await store.transitionToTerminal(job.id, {
+        status,
+        progress: 100,
+        currentStage: status,
+        completedAt: new Date().toISOString(),
+        ...(status === "cancelled" ? { cancelledAt: new Date().toISOString() } : {}),
+      }, {
+        type:
+          status === "completed"
+            ? "run_completed"
+            : status === "cancelled"
+              ? "run_cancelled"
+              : "run_failed",
+        level: status === "completed" ? "success" : status === "cancelled" ? "warning" : "error",
+        message: status,
+      });
+      const second = await store.transitionToTerminal(job.id, {
+        status,
+        progress: 100,
+        currentStage: status,
+        completedAt: new Date().toISOString(),
+      }, {
+        type:
+          status === "completed"
+            ? "run_completed"
+            : status === "cancelled"
+              ? "run_cancelled"
+              : "run_failed",
+        level: status === "completed" ? "success" : status === "cancelled" ? "warning" : "error",
+        message: `${status} duplicate`,
+      });
+
+      assert.equal(first?.transitioned, true);
+      assert.equal(second?.transitioned, false);
+      assert.equal((await store.listEvents(job.id)).length, 1);
+    }
   });
 
   it("executes a dry-run job via shared service", async () => {

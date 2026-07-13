@@ -62,6 +62,15 @@ export type ExecuteDiscoveryJobOptions = {
   workerId?: string;
 };
 
+type PendingTerminalEvent = Omit<
+  DiscoveryEvent,
+  "id" | "runId" | "sequence" | "timestamp"
+> & {
+  id?: string;
+  sequence?: number;
+  timestamp?: string;
+};
+
 /**
  * Execute a queued discovery job via the shared discovery service.
  * Used by local in-process executor and the worker skeleton.
@@ -73,14 +82,24 @@ export async function executeDiscoveryJob(
   const config = readDiscoveryRuntimeConfig();
   const job = await store.getJob(options.jobId);
   if (!job) throw new Error(`Discovery job not found: ${options.jobId}`);
+  const pendingTerminalEvent: { current: PendingTerminalEvent | null } = {
+    current: null,
+  };
 
   if (job.status === "cancelled" || job.cancelRequested) {
-    return store.updateJob(job.id, {
+    const transitioned = await store.transitionToTerminal(job.id, {
       status: "cancelled",
+      progress: 100,
       cancelledAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
       currentStage: "cancelled",
+      safeErrorMessage: "Cancelled",
+    }, {
+      type: "run_cancelled",
+      level: "warning",
+      message: "Discovery run cancelled",
     });
+    return transitioned?.job ?? job;
   }
 
   await store.markStarted(job.id, { status: "planning", currentStage: "planning" });
@@ -104,12 +123,17 @@ export async function executeDiscoveryJob(
 
   const eventSink: DiscoveryEventSink = {
     async emit(event) {
+      const status = stageByEvent[event.type];
+      if (status && ["completed", "failed", "cancelled"].includes(status)) {
+        pendingTerminalEvent.current = event;
+        return;
+      }
       const saved = await store.appendEvent(job.id, event);
-      const status = stageByEvent[saved.type];
-      if (status && !["completed", "failed", "cancelled"].includes(status)) {
+      const nextStatus = stageByEvent[saved.type];
+      if (nextStatus && !["completed", "failed", "cancelled"].includes(nextStatus)) {
         await store.updateJob(job.id, {
-          status,
-          currentStage: status,
+          status: nextStatus,
+          currentStage: nextStatus,
           progress: progressFor(saved.type),
         });
       }
@@ -152,7 +176,14 @@ export async function executeDiscoveryJob(
     });
 
     if (result.cancelled) {
-      const updated = await store.updateJob(job.id, {
+      const terminal = pendingTerminalEvent.current?.type === "run_cancelled"
+        ? pendingTerminalEvent.current
+        : {
+            type: "run_cancelled" as const,
+            level: "warning" as const,
+            message: "Discovery run cancelled",
+          };
+      const transitioned = await store.transitionToTerminal(job.id, {
         status: "cancelled",
         progress: 100,
         currentStage: "cancelled",
@@ -161,13 +192,22 @@ export async function executeDiscoveryJob(
         effectiveSources: result.effectiveSources,
         durationMs: result.summary.durationMs,
         safeErrorMessage: "Cancelled",
-      });
+      }, terminal);
       await detachTerminalActiveJob();
-      return updated;
+      return transitioned?.job ?? (await store.getJob(job.id)) ?? job;
     }
 
     const summary = result.summary;
-    const updated = await store.updateJob(job.id, {
+    const terminal = pendingTerminalEvent.current?.type === "run_completed"
+      ? pendingTerminalEvent.current
+      : {
+          type: "run_completed" as const,
+          level: "success" as const,
+          message: summary.dryRun
+            ? `Would create ${summary.wouldCreate}, would update ${summary.wouldUpdate}`
+            : `${summary.created} created, ${summary.updated} updated`,
+        };
+    const transitioned = await store.transitionToTerminal(job.id, {
       status: "completed",
       progress: 100,
       currentStage: "completed",
@@ -187,27 +227,29 @@ export async function executeDiscoveryJob(
         sourceStats: summary.sourceStats,
         agent: summary.agent ?? null,
       },
-    });
+    }, terminal);
     await detachTerminalActiveJob();
-    return updated;
+    return transitioned?.job ?? (await store.getJob(job.id)) ?? job;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Discovery job failed";
-    await store.appendEvent(job.id, {
-      type: "run_failed",
-      level: "error",
-      message,
-    });
-    const updated = await store.updateJob(job.id, {
+    const terminal = pendingTerminalEvent.current?.type === "run_failed"
+      ? pendingTerminalEvent.current
+      : {
+          type: "run_failed" as const,
+          level: "error" as const,
+          message,
+        };
+    const transitioned = await store.transitionToTerminal(job.id, {
       status: "failed",
       progress: 100,
       currentStage: "failed",
       completedAt: new Date().toISOString(),
       failureCategory: "execution_error",
       safeErrorMessage: message.slice(0, 500),
-    });
+    }, terminal);
     await detachTerminalActiveJob();
-    return updated;
+    return transitioned?.job ?? (await store.getJob(job.id)) ?? job;
   } finally {
     clearTimeout(timeout);
     clearInterval(cancelPoll);

@@ -110,6 +110,35 @@ export type DiscoveryJobRepository = {
       >
     >,
   ) => Promise<DiscoveryJob>;
+  transitionToTerminal: (
+    id: string,
+    patch: Partial<
+      Pick<
+        DiscoveryJob,
+        | "status"
+        | "progress"
+        | "currentStage"
+        | "effectiveSources"
+        | "failureCategory"
+        | "safeErrorMessage"
+        | "createdCount"
+        | "updatedCount"
+        | "acceptedCount"
+        | "rejectedCount"
+        | "needsReviewCount"
+        | "rawLeadsCount"
+        | "durationMs"
+        | "summary"
+        | "completedAt"
+        | "cancelledAt"
+      >
+    >,
+    event: Omit<DiscoveryEvent, "id" | "runId" | "sequence" | "timestamp"> & {
+      id?: string;
+      sequence?: number;
+      timestamp?: string;
+    },
+  ) => Promise<{ job: DiscoveryJob; event: DiscoveryEvent | null; transitioned: boolean } | null>;
   appendEvent: (
     jobId: string,
     event: Omit<DiscoveryEvent, "id" | "runId" | "sequence" | "timestamp"> & {

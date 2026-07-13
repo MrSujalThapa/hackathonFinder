@@ -110,29 +110,34 @@ export async function enqueueDiscoveryJob(
         if (isDiscoveryJobCancelledWhileQueuedError(error)) {
           const latest = await store.getJob(job.id);
           if (latest && latest.status === "queued") {
-            await store.updateJob(job.id, {
+            await store.transitionToTerminal(job.id, {
               status: "cancelled",
+              progress: 100,
               currentStage: "cancelled",
               cancelledAt: new Date().toISOString(),
               completedAt: new Date().toISOString(),
               safeErrorMessage: "Cancelled while queued",
+            }, {
+              type: "run_cancelled",
+              level: "warning",
+              message: "Cancelled while queued",
             });
           }
           return;
         }
         if (isDiscoveryJobQueueFullError(error)) {
-          await store.appendEvent(job.id, {
-            type: "run_failed",
-            level: "error",
-            message: error instanceof Error ? error.message : "Job queue full",
-          });
-          await store.updateJob(job.id, {
+          await store.transitionToTerminal(job.id, {
             status: "failed",
+            progress: 100,
             currentStage: "failed",
             completedAt: new Date().toISOString(),
             failureCategory: "queue_full",
             safeErrorMessage:
               error instanceof Error ? error.message.slice(0, 500) : "Job queue full",
+          }, {
+            type: "run_failed",
+            level: "error",
+            message: error instanceof Error ? error.message : "Job queue full",
           });
           return;
         }

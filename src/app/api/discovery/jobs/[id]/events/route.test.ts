@@ -100,4 +100,51 @@ describe("GET /api/discovery/jobs/[id]/events", () => {
     assert.equal(reconnect.text.match(/job complete/g)?.length, 1);
     assert.equal((await store.getJob(job.id))?.status, "completed");
   });
+
+  it("does not append events during reconnect replay", async () => {
+    const store = createMemoryDiscoveryJobStore();
+    const job = await store.createJob({ command: "find ai hackathons" });
+    await store.appendEvent(job.id, {
+      type: "run_queued",
+      level: "info",
+      message: "first event",
+    });
+    await store.appendEvent(job.id, {
+      type: "source_progress",
+      level: "info",
+      message: "second event",
+    });
+    await store.transitionToTerminal(job.id, {
+      status: "completed",
+      progress: 100,
+      currentStage: "completed",
+      completedAt: new Date().toISOString(),
+    }, {
+      type: "run_completed",
+      level: "success",
+      message: "done",
+    });
+
+    let appendCalls = 0;
+    setDiscoveryJobStoreForTests({
+      ...store,
+      async appendEvent(jobId, event) {
+        appendCalls += 1;
+        return store.appendEvent(jobId, event);
+      },
+    });
+
+    const response = await getJobEvents(
+      await authedRequest(`${ORIGIN}/api/discovery/jobs/${job.id}/events?after=1`),
+      { params: Promise.resolve({ id: job.id }) },
+    );
+    assert.equal(response.status, 200);
+    const replay = await readUntil(response, (text) => text.includes("event: end"));
+    await replay.reader.cancel().catch(() => undefined);
+
+    assert.equal(appendCalls, 0);
+    assert.doesNotMatch(replay.text, /first event/);
+    assert.match(replay.text, /second event/);
+    assert.match(replay.text, /done/);
+  });
 });

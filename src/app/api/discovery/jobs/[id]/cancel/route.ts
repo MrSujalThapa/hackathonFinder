@@ -35,14 +35,25 @@ export async function POST(
         if (!job) {
           return fail("CANDIDATE_NOT_FOUND", "Discovery job not found", 404);
         }
+        let responseJob = job;
         // Release concurrency-gate waiters for jobs cancelled before start.
         getDiscoveryJobConcurrencyGate().cancelWaiting(job.id);
-        await store.appendEvent(job.id, {
-          type: "run_cancelled",
-          level: "warning",
-          message: "Cancel requested",
-        });
-        return ok({ job });
+        if (job.status === "queued") {
+          const transitioned = await store.transitionToTerminal(job.id, {
+            status: "cancelled",
+            progress: 100,
+            currentStage: "cancelled",
+            cancelledAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            safeErrorMessage: "Cancelled while queued",
+          }, {
+            type: "run_cancelled",
+            level: "warning",
+            message: "Cancelled while queued",
+          });
+          responseJob = transitioned?.job ?? job;
+        }
+        return ok({ job: responseJob });
       } catch (error) {
         return fail(
           "INTERNAL_ERROR",
