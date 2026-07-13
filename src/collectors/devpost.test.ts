@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
+  buildDevpostListingsUrl,
   buildDevpostSearchUrls,
   canonicalizeDevpostUrl,
   DEVPOST_OPEN_UPCOMING_URL,
@@ -98,7 +99,14 @@ describe("devpost url helpers", () => {
     const prefs = getDefaultDiscoveryPreferences("find AI hackathons in Canada Toronto remote");
     const urls = buildDevpostSearchUrls(prefs);
     assert.deepEqual(urls, [DEVPOST_OPEN_UPCOMING_URL]);
-    assert.match(urls[0]!, /status\[\]=upcoming&status\[\]=open$/);
+    assert.equal(urls[0], "https://devpost.com/hackathons?status[]=upcoming&status[]=open&page=1");
+  });
+
+  it("builds numbered pages without dropping open/upcoming filters", () => {
+    assert.equal(
+      buildDevpostListingsUrl(7),
+      "https://devpost.com/hackathons?status[]=upcoming&status[]=open&page=7",
+    );
   });
 
   it("formats failure categories for health classification", () => {

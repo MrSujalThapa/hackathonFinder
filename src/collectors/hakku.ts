@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
-import type { Page } from "playwright";
+import type { BrowserContext, Page } from "playwright";
 import type { RawLead } from "@/core/discovery/types";
 import type { Collector, CollectorInput, CollectorResult } from "@/collectors/types";
 import { emptyCollectorResult } from "@/collectors/types";
@@ -34,7 +34,9 @@ const HAKKU_MAX_SCROLLS = 30;
 const HAKKU_MAX_EVENTS = 100;
 const HAKKU_NO_GROWTH_LIMIT = 3;
 const HAKKU_SCROLL_WAIT_MS = 1_200;
-const HAKKU_DETAIL_LIMIT = 100;
+const HAKKU_DETAIL_LIMIT = 20;
+const HAKKU_DETAIL_CONCURRENCY = 2;
+const HAKKU_DETAIL_TIMEOUT_MS = 8_000;
 const CONTENT_SELECTOR = "main, h1, h2, h3, a, button, input[type='password'], form";
 
 const MONTH_RE =
@@ -747,8 +749,30 @@ async function collectExploreCards(
   return { cards: collected.items, diagnostics, stopReason };
 }
 
+async function mapLimit<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
+  return results;
+}
+
 async function enrichHakkuDetails(
-  page: Page,
+  context: BrowserContext,
   cards: HakkuCard[],
   maxDetails: number,
   logger?: (message: string) => void,
@@ -758,31 +782,46 @@ async function enrichHakkuDetails(
     .slice(0, Math.min(HAKKU_DETAIL_LIMIT, maxDetails));
   if (targets.length === 0) return { cards, opened: 0, parsed: 0, failures: 0 };
 
-  logger?.(`Opening ${targets.length} Hakku detail pages...`);
+  logger?.(`Opening up to ${targets.length} Hakku detail pages...`);
   const byDetailUrl = new Map(targets.map((card) => [card.hakkuDetailUrl, card]));
   let opened = 0;
   let parsed = 0;
   let failures = 0;
 
-  for (const card of targets) {
-    if (!card.hakkuDetailUrl) continue;
+  await mapLimit(targets, HAKKU_DETAIL_CONCURRENCY, async (card) => {
+    const detailUrl = card.hakkuDetailUrl;
+    if (!detailUrl) return;
+    let detailPage: Page | undefined;
     opened += 1;
-    await page
-      .goto(card.hakkuDetailUrl, { waitUntil: "domcontentloaded", timeout: 10_000 })
-      .catch(() => undefined);
-    await page
-      .locator(CONTENT_SELECTOR)
-      .first()
-      .waitFor({ state: "visible", timeout: 4_000 })
-      .catch(() => undefined);
-    const detail = extractHakkuDetailFromHtml(await page.content(), card.hakkuDetailUrl);
-    if (detail.title || detail.text || detail.externalEventUrl || detail.dateText) {
-      byDetailUrl.set(card.hakkuDetailUrl, mergeHakkuDetail(card, detail));
-      parsed += 1;
-    } else {
+    try {
+      detailPage = await context.newPage();
+      await detailPage
+        .goto(detailUrl, {
+          waitUntil: "domcontentloaded",
+          timeout: HAKKU_DETAIL_TIMEOUT_MS,
+        })
+        .catch(() => undefined);
+      await detailPage
+        .locator(CONTENT_SELECTOR)
+        .first()
+        .waitFor({ state: "visible", timeout: Math.min(4_000, HAKKU_DETAIL_TIMEOUT_MS) })
+        .catch(() => undefined);
+      const detail = extractHakkuDetailFromHtml(
+        await detailPage.content(),
+        detailUrl,
+      );
+      if (detail.title || detail.text || detail.externalEventUrl || detail.dateText) {
+        byDetailUrl.set(detailUrl, mergeHakkuDetail(card, detail));
+        parsed += 1;
+      } else {
+        failures += 1;
+      }
+    } catch {
       failures += 1;
+    } finally {
+      await detailPage?.close().catch(() => undefined);
     }
-  }
+  });
 
   return {
     cards: cards.map((card) =>
@@ -856,7 +895,7 @@ async function extractVisibleHakkuCards(options: {
 
   return withPersistentPlaywright(
     profileDir,
-    async ({ page }) => {
+    async ({ page, context }) => {
       let pagesInspected = 0;
       try {
         logger?.("Opening https://www.hakku.app/explore");
@@ -922,7 +961,7 @@ async function extractVisibleHakkuCards(options: {
 
         logger?.("Explore directory loaded");
         const collected = await collectExploreCards(page, timeoutMs, logger);
-        const enriched = await enrichHakkuDetails(page, collected.cards, maxResults, logger);
+        const enriched = await enrichHakkuDetails(context, collected.cards, maxResults, logger);
         const diagnostics = {
           ...collected.diagnostics,
           detailPagesOpened: enriched.opened,
@@ -995,6 +1034,26 @@ function applyHakkuMetrics(
   result.warnings.push(`details_opened=${extract.diagnostics.detailPagesOpened}`);
   result.warnings.push(`details_parsed=${extract.diagnostics.detailPagesParsed}`);
   result.warnings.push(`detail_failures=${extract.diagnostics.detailFailures}`);
+  result.diagnostics = {
+    discovered: extract.cards.length,
+    returned: accepted,
+    enriched: extract.diagnostics.detailPagesParsed,
+    partial: extract.diagnostics.detailFailures,
+    dropped: Math.max(0, extract.cards.length - accepted),
+    stopReason: extract.stopReason,
+    safeMessage:
+      accepted === 0 && extract.cards.length > 0
+        ? "Hakku discovered explore cards but returned no leads."
+        : undefined,
+  };
+  result.status =
+    extract.authStatus === "login_required"
+      ? "auth_required"
+      : result.errors.length > 0
+        ? "failed"
+        : extract.stopReason === "parser_failure" || extract.stopReason === "timeout"
+          ? "degraded"
+          : "completed";
 }
 
 export const hakkuCollector: Collector = {
@@ -1020,6 +1079,16 @@ export const hakkuCollector: Collector = {
           accepted: 0,
           authStatus: 0,
           mode: -1,
+        };
+        result.status = "auth_required";
+        result.diagnostics = {
+          discovered: 0,
+          returned: 0,
+          enriched: 0,
+          partial: 0,
+          dropped: 0,
+          stopReason: "profile_missing",
+          safeMessage: "Hakku browser profile is missing.",
         };
         writeHakkuSessionMeta("profile_missing");
         result.durationMs = Date.now() - startedAt;
@@ -1060,11 +1129,13 @@ export const hakkuCollector: Collector = {
 
       if (result.leads.length === 0 && extract.stopReason === "parser_failure") {
         input.logger?.("Explore loaded, but no event cards matched the parser");
+        result.status = "degraded";
         result.warnings.push(
           `parser failure: Explore page loaded and candidate controls were detected, but event cards could not be normalized. candidate_containers=${extract.diagnostics.candidateContainers} visit_site_buttons=${extract.diagnostics.visitSiteButtons} event_titles=${extract.diagnostics.eventTitleCount} date_rows=${extract.diagnostics.dateRowCount} clickable_cards=${extract.diagnostics.clickableCardCount}`,
         );
       } else if (result.leads.length === 0 && extract.stopReason === "no_cards") {
         input.logger?.("Explore loaded, but no event cards matched the parser");
+        result.status = "degraded";
         result.warnings.push("Explore loaded, but no event cards matched the parser.");
       }
     } catch (error) {
@@ -1085,6 +1156,18 @@ export const hakkuCollector: Collector = {
         accepted: 0,
         authStatus: -1,
         mode: -1,
+      };
+      result.status = result.errors.some((error) => /auth|login|sign[\s-]?in|session/i.test(error))
+        ? "auth_required"
+        : "failed";
+      result.diagnostics = {
+        discovered: 0,
+        returned: 0,
+        enriched: 0,
+        partial: 0,
+        dropped: 0,
+        stopReason: "error",
+        safeMessage: result.errors[0],
       };
     }
 

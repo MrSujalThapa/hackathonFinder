@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import type { CollectorResult } from "@/collectors/types";
+import { emptyCollectorResult } from "@/collectors/types";
 import {
   acquireSourceLock,
   collectWithSourceLocks,
@@ -102,13 +102,8 @@ describe("source locks", () => {
     const results = await collectWithSourceLocks(
       ["hakku", "mlh"],
       async (source) => {
-        const result: CollectorResult = {
-          source,
-          leads: [],
-          errors: [],
-          warnings: [],
-          durationMs: 1,
-        };
+        const result = emptyCollectorResult(source);
+        result.durationMs = 1;
         if (source === "mlh") {
           result.warnings.push("ok");
         }

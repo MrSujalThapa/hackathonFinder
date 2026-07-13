@@ -18,12 +18,18 @@ import { collectUntilStable } from "@/lib/browser/collectUntilStable";
 import { normalizeUrl, normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
 const DEVPOST_BASE = "https://devpost.com";
-export const DEVPOST_OPEN_UPCOMING_URL =
-  "https://devpost.com/hackathons?status[]=upcoming&status[]=open";
-const DEVPOST_MAX_SCROLLS = 30;
-const DEVPOST_MAX_CARDS = 100;
-const DEVPOST_NO_GROWTH_LIMIT = 3;
-const DEVPOST_SCROLL_WAIT_MS = 1_200;
+const DEVPOST_MAX_EVENTS = 100;
+const DEVPOST_MAX_PAGES = 20;
+const DEVPOST_PAGE_NO_GROWTH_LIMIT = 2;
+const DEVPOST_MAX_SCROLLS_PER_PAGE = 6;
+const DEVPOST_SCROLL_NO_GROWTH_LIMIT = 2;
+const DEVPOST_SCROLL_WAIT_MS = 800;
+const DEVPOST_PAGE_TIMEOUT_MS = 12_000;
+export function buildDevpostListingsUrl(page: number): string {
+  const pageNumber = Math.max(1, Math.floor(page));
+  return `${DEVPOST_BASE}/hackathons?status[]=upcoming&status[]=open&page=${pageNumber}`;
+}
+export const DEVPOST_OPEN_UPCOMING_URL = buildDevpostListingsUrl(1);
 
 export type DevpostFailureHint =
   | "network"
@@ -346,6 +352,7 @@ export type DevpostRenderedListing = {
 
 async function collectRenderedDevpostListing(
   url: string,
+  pageNumber: number,
   timeoutMs: number,
   logger?: (message: string) => void,
 ): Promise<DevpostRenderedListing> {
@@ -353,7 +360,7 @@ async function collectRenderedDevpostListing(
   const startedAt = Date.now();
 
   return withPlaywright(async ({ page }) => {
-    logger?.("Opening filtered listings...");
+    logger?.(`Opening filtered listings page ${pageNumber}...`);
     const response = await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: timeoutMs,
@@ -365,11 +372,23 @@ async function collectRenderedDevpostListing(
     }
 
     const finalUrl = page.url();
-    if (!finalUrl.includes("/hackathons") || !finalUrl.includes("status")) {
+    let redirected = !finalUrl.includes("/hackathons");
+    try {
+      const parsed = new URL(finalUrl);
+      const statuses = parsed.searchParams.getAll("status[]");
+      redirected =
+        redirected ||
+        !statuses.includes("upcoming") ||
+        !statuses.includes("open") ||
+        parsed.searchParams.get("page") !== String(pageNumber);
+    } catch {
+      redirected = true;
+    }
+    if (redirected) {
       warnings.push(describeDevpostFailure("redirected", finalUrl));
     }
 
-    await page.waitForLoadState("networkidle", { timeout: Math.min(timeoutMs, 12_000) }).catch(() => {
+    await page.waitForLoadState("networkidle", { timeout: Math.min(timeoutMs, DEVPOST_PAGE_TIMEOUT_MS) }).catch(() => {
       warnings.push(describeDevpostFailure("lazy_loading_timeout", "network idle not reached"));
     });
 
@@ -400,8 +419,8 @@ async function collectRenderedDevpostListing(
       });
 
     const initialCardCount = await uniqueCardCount().catch(() => 0);
-    logger?.("Initial listing batch loaded");
-    logger?.(`${initialCardCount} visible cards`);
+    logger?.(`Page ${pageNumber}: initial listing batch loaded`);
+    logger?.(`Page ${pageNumber}: ${initialCardCount} event cards found`);
 
     const collected = await collectUntilStable<string>({
       collectItems: async () =>
@@ -415,14 +434,14 @@ async function collectRenderedDevpostListing(
       waitForIdle: async () => {
         await page.waitForLoadState("networkidle", { timeout: DEVPOST_SCROLL_WAIT_MS }).catch(() => undefined);
       },
-      maxItems: DEVPOST_MAX_CARDS,
-      maxScrolls: DEVPOST_MAX_SCROLLS,
-      noGrowthLimit: DEVPOST_NO_GROWTH_LIMIT,
+      maxItems: DEVPOST_MAX_EVENTS,
+      maxScrolls: DEVPOST_MAX_SCROLLS_PER_PAGE,
+      noGrowthLimit: DEVPOST_SCROLL_NO_GROWTH_LIMIT,
       timeoutMs: Math.max(1_000, timeoutMs - (Date.now() - startedAt)),
       waitMs: DEVPOST_SCROLL_WAIT_MS,
       logger,
-      loadingMessage: "Loading more listings...",
-      countMessage: (count) => `${count} unique cards`,
+      loadingMessage: `Page ${pageNumber}: loading more listings...`,
+      countMessage: (count) => `Page ${pageNumber}: ${count} event cards found`,
     });
 
     let stopReason: DevpostLazyLoadStopReason =
@@ -443,10 +462,10 @@ async function collectRenderedDevpostListing(
       warnings.push(describeDevpostFailure("lazy_loading_timeout"));
     }
     if (stopReason === "no_additional_cards") {
-      logger?.(`No more cards found after ${collected.noGrowthAttempts} attempts`);
+      logger?.(`Page ${pageNumber}: no more cards found after ${collected.noGrowthAttempts} attempts`);
     }
 
-    logger?.("Lazy loading complete");
+    logger?.(`Page ${pageNumber}: lazy loading complete`);
 
     return {
       html: await page.content(),
@@ -463,11 +482,6 @@ async function collectRenderedDevpostListing(
   }, { timeoutMs });
 }
 
-function countDevpostTiles(html: string): number {
-  const $ = cheerio.load(html);
-  return $("a.tile-anchor, a.block-wrapper-link, a.challenge-listing").length;
-}
-
 function hasDevpostChallengePage(html: string): boolean {
   return /captcha|cloudflare|verify you are human|access denied|blocked/i.test(html);
 }
@@ -480,51 +494,124 @@ export const devpostCollector: Collector = {
     const result = emptyCollectorResult("devpost", startedAt);
     const searchUrls = buildDevpostSearchUrls(input.preferences);
     const seen = new Set<string>();
+    const maxAccepted = Math.min(input.maxResults, DEVPOST_MAX_EVENTS);
+    let pagesFetched = 0;
+    let initialCardCount = 0;
+    let finalCardCount = 0;
+    let scrollAttempts = 0;
+    let noGrowthAttempts = 0;
+    let pageNoGrowthAttempts = 0;
+    let duplicateUrls = 0;
+    let parserFailures = 0;
+    let stopReason: DevpostLazyLoadStopReason | "maximum_pages_reached" = "no_additional_cards";
 
     result.warnings.push(
       "Devpost uses Playwright for public open/upcoming hackathon listings because static HTML may omit challenge tiles.",
     );
 
     try {
-      const searchUrl = searchUrls[0] ?? DEVPOST_OPEN_UPCOMING_URL;
-      const rendered = await collectRenderedDevpostListing(
-        searchUrl,
-        input.timeoutMs,
-        input.logger,
-      );
-      result.warnings.push(...rendered.warnings);
+      void searchUrls;
+      for (let pageNumber = 1; pageNumber <= DEVPOST_MAX_PAGES; pageNumber += 1) {
+        if (result.leads.length >= maxAccepted) {
+          stopReason = "maximum_cards_reached";
+          break;
+        }
+        if (Date.now() - startedAt > input.timeoutMs) {
+          stopReason = "timeout";
+          result.warnings.push(describeDevpostFailure("lazy_loading_timeout"));
+          break;
+        }
 
-      if (rendered.finalCardCount === 0 && hasDevpostChallengePage(rendered.html)) {
-        result.errors.push(describeDevpostFailure("anti_bot"));
+        const remaining = Math.max(1_000, input.timeoutMs - (Date.now() - startedAt));
+        const rendered = await collectRenderedDevpostListing(
+          buildDevpostListingsUrl(pageNumber),
+          pageNumber,
+          Math.min(remaining, DEVPOST_PAGE_TIMEOUT_MS),
+          input.logger,
+        );
+        pagesFetched += 1;
+        initialCardCount += rendered.initialCardCount;
+        finalCardCount += rendered.finalCardCount;
+        scrollAttempts += rendered.scrollAttempts;
+        noGrowthAttempts += rendered.noGrowthAttempts;
+        stopReason = rendered.stopReason;
+        result.warnings.push(...rendered.warnings);
+
+        if (rendered.finalCardCount === 0 && hasDevpostChallengePage(rendered.html)) {
+          result.errors.push(describeDevpostFailure("anti_bot"));
+          break;
+        }
+
+        const before = result.leads.length;
+        const pageLeads = parseDevpostHtml(rendered.html, maxAccepted);
+        if (rendered.finalCardCount > 0 && pageLeads.length === 0) {
+          parserFailures += 1;
+          result.warnings.push(
+            describeDevpostFailure(
+              "selector_parser_failure",
+              `page ${pageNumber}: Filtered listing page loaded, but no event cards matched the parser. The Devpost page structure may have changed.`,
+            ),
+          );
+          input.logger?.(
+            "Filtered listing page loaded, but no event cards matched the parser. The Devpost page structure may have changed.",
+          );
+        }
+
+        for (const lead of pageLeads) {
+          const key = lead.url ? normalizeUrlForDedupe(lead.url) : lead.id;
+          if (seen.has(key)) {
+            duplicateUrls += 1;
+            continue;
+          }
+          seen.add(key);
+          result.leads.push(lead);
+          if (result.leads.length >= maxAccepted) break;
+        }
+
+        const added = result.leads.length - before;
+        input.logger?.(`Page ${pageNumber}: ${added} new native Devpost leads accepted`);
+        if (added === 0) {
+          pageNoGrowthAttempts += 1;
+        } else {
+          pageNoGrowthAttempts = 0;
+        }
+
+        if (rendered.emptyStateFound || rendered.stopReason === "end_marker_reached") {
+          stopReason = rendered.emptyStateFound ? "no_additional_cards" : rendered.stopReason;
+          break;
+        }
+        if (pageNoGrowthAttempts >= DEVPOST_PAGE_NO_GROWTH_LIMIT) {
+          stopReason = "no_additional_cards";
+          break;
+        }
       }
 
-      const pageLeads = parseDevpostHtml(rendered.html, input.maxResults);
-      for (const lead of pageLeads) {
-        const key = lead.url ? normalizeUrlForDedupe(lead.url) : lead.id;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        result.leads.push(lead);
-        if (result.leads.length >= input.maxResults) break;
+      if (pagesFetched >= DEVPOST_MAX_PAGES && result.leads.length < maxAccepted) {
+        stopReason = "maximum_pages_reached";
       }
 
       result.metrics = {
-        pagesFetched: 1,
-        playwrightPages: 1,
-        initialCardCount: rendered.initialCardCount,
-        finalCardCount: rendered.finalCardCount,
-        scrollAttempts: rendered.scrollAttempts,
-        noGrowthAttempts: rendered.noGrowthAttempts,
+        pagesFetched,
+        playwrightPages: pagesFetched,
+        initialCardCount,
+        finalCardCount,
+        scrollAttempts,
+        noGrowthAttempts,
+        pageNoGrowthAttempts,
+        duplicateUrls,
+        parserFailures,
         leadsEmitted: result.leads.length,
-        searchUrls: 1,
+        searchUrls: pagesFetched,
       };
-      result.warnings.push(`stop_reason=${rendered.stopReason}`);
-      result.warnings.push(`unique_cards=${rendered.finalCardCount}`);
-      result.warnings.push(`scrolls=${rendered.scrollAttempts}`);
-      result.warnings.push(`no_growth_attempts=${rendered.noGrowthAttempts}`);
+      result.warnings.push(`stop_reason=${stopReason}`);
+      result.warnings.push(`unique_cards=${finalCardCount}`);
+      result.warnings.push(`scrolls=${scrollAttempts}`);
+      result.warnings.push(`no_growth_attempts=${noGrowthAttempts}`);
+      result.warnings.push(`page_no_growth_attempts=${pageNoGrowthAttempts}`);
+      result.warnings.push(`duplicates=${duplicateUrls}`);
 
       if (result.leads.length === 0 && result.errors.length === 0) {
-        const visibleCards = countDevpostTiles(rendered.html);
-        if (visibleCards > 0) {
+        if (finalCardCount > 0 || parserFailures > 0) {
           result.warnings.push(
             describeDevpostFailure(
               "selector_parser_failure",
@@ -534,8 +621,6 @@ export const devpostCollector: Collector = {
           input.logger?.(
             "Filtered listing page loaded, but no event cards matched the parser. The Devpost page structure may have changed.",
           );
-        } else if (rendered.emptyStateFound) {
-          result.warnings.push(describeDevpostFailure("no_current_events"));
         } else {
           result.warnings.push(describeDevpostFailure("zero_matching_results"));
         }
@@ -555,6 +640,24 @@ export const devpostCollector: Collector = {
       }
     }
 
+    result.status =
+      result.errors.length > 0
+        ? "failed"
+        : result.warnings.some((warning) => /parser failure|parser|timeout|redirected|missing/i.test(warning))
+          ? "degraded"
+          : "completed";
+    result.diagnostics = {
+      discovered: finalCardCount,
+      returned: result.leads.length,
+      enriched: 0,
+      partial: parserFailures,
+      dropped: Math.max(0, finalCardCount - result.leads.length),
+      stopReason,
+      safeMessage:
+        result.leads.length === 0 && finalCardCount > 0
+          ? "Devpost listings rendered, but the event-card parser returned no leads."
+          : undefined,
+    };
     result.durationMs = Date.now() - startedAt;
     return result;
   },

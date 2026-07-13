@@ -9,9 +9,23 @@ export type CollectorInput = {
   logger?: (message: string) => void;
 };
 
+export type CollectorStatus = "completed" | "degraded" | "failed" | "auth_required";
+
+export type CollectorDiagnostics = {
+  discovered: number;
+  returned: number;
+  enriched: number;
+  partial: number;
+  dropped: number;
+  stopReason?: string;
+  safeMessage?: string;
+};
+
 export type CollectorResult = {
   source: SourceName;
   leads: RawLead[];
+  status: CollectorStatus;
+  diagnostics: CollectorDiagnostics;
   errors: string[];
   warnings: string[];
   durationMs: number;
@@ -33,6 +47,14 @@ export function emptyCollectorResult(source: SourceName, startedAt = Date.now())
   return {
     source,
     leads: [],
+    status: "completed",
+    diagnostics: {
+      discovered: 0,
+      returned: 0,
+      enriched: 0,
+      partial: 0,
+      dropped: 0,
+    },
     errors: [],
     warnings: [],
     durationMs: Date.now() - startedAt,

@@ -34,8 +34,9 @@ const LUMA_MAX_EVENTS = 100;
 const LUMA_MAX_SCROLLS = 30;
 const LUMA_NO_GROWTH_LIMIT = 3;
 const LUMA_SCROLL_WAIT_MS = 1_200;
-const LUMA_DETAIL_LIMIT = 100;
+const LUMA_DETAIL_LIMIT = 30;
 const DETAIL_PAGE_CONCURRENCY = 3;
+const LUMA_DETAIL_TIMEOUT_MS = 8_000;
 
 const HACKATHON_HINT =
   /\b(hackathon|buildathon|codefest|hack\s*day|hack\s*night|coding\s*competition|builder\s*competition|48[\s-]?hour\s*build|24[\s-]?hour\s*hack)\b/i;
@@ -752,7 +753,10 @@ async function enrichEventPages(
     }
 
     try {
-      const remaining = Math.max(1_500, timeoutMs - (Date.now() - startedAt));
+      const remaining = Math.min(
+        LUMA_DETAIL_TIMEOUT_MS,
+        Math.max(1_500, timeoutMs - (Date.now() - startedAt)),
+      );
       opened += 1;
       const page = await fetchLumaPage(lead.url, remaining);
       warnings.push(...page.warnings);
@@ -878,7 +882,9 @@ export const lumaCollector: Collector = {
       let detailPagesOpened = 0;
       let detailFailures = 0;
       if (provisionalLeads.length > 0) {
-        input.logger?.(`Opening event details 1/${provisionalLeads.length}`);
+        input.logger?.(
+          `Opening up to ${Math.min(provisionalLeads.length, LUMA_DETAIL_LIMIT)} Luma detail pages...`,
+        );
         const enriched = await enrichEventPages(provisionalLeads, budgetMs, startedAt);
         result.leads = enriched.leads.slice(0, input.maxResults);
         result.warnings.push(...enriched.warnings);
@@ -917,6 +923,24 @@ export const lumaCollector: Collector = {
       result.warnings.push(`no_growth_attempts=${noGrowthAttempts}`);
       result.warnings.push(`details_opened=${detailPagesOpened}`);
       result.warnings.push(`detail_failures=${detailFailures}`);
+      result.status =
+        result.errors.length > 0
+          ? "failed"
+          : result.leads.length === 0 && byUrl.size > 0
+            ? "degraded"
+            : "completed";
+      result.diagnostics = {
+        discovered: byUrl.size,
+        returned: result.leads.length,
+        enriched: Math.max(0, detailPagesOpened - detailFailures),
+        partial: detailFailures,
+        dropped: Math.max(0, byUrl.size - result.leads.length),
+        stopReason: stopReasons.join(","),
+        safeMessage:
+          result.leads.length === 0 && byUrl.size > 0
+            ? "Luma discovered public event URLs but returned no leads."
+            : undefined,
+      };
 
       if (result.leads.length === 0) {
         const hadParserIssue = result.warnings.some((w) =>

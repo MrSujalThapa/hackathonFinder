@@ -42,14 +42,13 @@ import {
   createEventEmitter,
   type DiscoveryEventSink,
 } from "@/discovery/events";
+import { aggregateCollectorResults } from "@/discovery/collectorAggregation";
 
 const SUPABASE_ENV_MESSAGE =
   "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in .env.local, or run with --dry-run.";
 
 const MOCK_WRITE_REFUSED_MESSAGE =
   'Refusing to upsert mock-sourced candidates into the live database while USE_MOCK_CANDIDATES=false. Re-run with --dry-run, set USE_MOCK_CANDIDATES=true for local fixtures, or pass --allow-mock-writes to override.';
-
-const DEFAULT_TOTAL_TIMEOUT_MS = 45_000;
 
 export type DiscoveryPipelineOptions = {
   allowMockWrites?: boolean;
@@ -185,8 +184,9 @@ export async function executeDiscoveryPipeline(
   const summary = emptySummary(preferences.rawCommand, preferences, dryRun);
   const sourceStats = initSourceStats(preferences.sources);
   const allowMockWrites = options.allowMockWrites === true;
+  const runtimeConfig = readDiscoveryRuntimeConfig();
   const sourceTimeoutMs = options.sourceTimeoutMs ?? DEFAULT_COLLECTOR_TIMEOUT_MS;
-  const totalTimeoutMs = options.totalTimeoutMs ?? DEFAULT_TOTAL_TIMEOUT_MS;
+  const totalTimeoutMs = options.totalTimeoutMs ?? runtimeConfig.jobTimeoutMs;
   const effectiveSourceTimeout = Math.min(sourceTimeoutMs, totalTimeoutMs);
   const now = options.now ?? new Date();
   summary.verbose = options.verbose === true;
@@ -262,8 +262,7 @@ export async function executeDiscoveryPipeline(
       await emitter.emit("source_started", `Starting…`, { source });
     }
 
-    const runtimeConfig = readDiscoveryRuntimeConfig();
-  const collectorInput = {
+    const collectorInput = {
       preferences,
       maxResults: preferences.maxResults,
       timeoutMs: effectiveSourceTimeout,
@@ -318,25 +317,33 @@ export async function executeDiscoveryPipeline(
     ]).then(async (result) => {
       if (result) return result;
       summary.warnings.push(
-        `Total collector budget ${totalTimeoutMs}ms reached; waiting briefly for in-flight collectors.`,
+        `Total collector budget ${totalTimeoutMs}ms reached; waiting for bounded in-flight collectors to return explicit outcomes.`,
       );
-      return Promise.race([
-        collectorPromise,
-        new Promise<Awaited<typeof collectorPromise>>((resolve) => {
-          setTimeout(() => resolve([]), 2_000);
-        }),
-      ]);
+      return collectorPromise;
     });
 
     assertNotCancelled(options.cancellationSignal);
 
-    if (timedOut && collectorResults.length === 0) {
-      summary.warnings.push(
-        "Collectors returned no results before the total timeout grace period ended.",
-      );
-    }
+    const aggregation = aggregateCollectorResults(collectorResults);
+    collectorResults.splice(0, collectorResults.length, ...aggregation.results);
+    summary.warnings.push(...aggregation.warnings);
 
-    let leads = collectorResults.flatMap((result) => result.leads);
+    await emitter.emit(
+      "source_progress",
+      `Collector returns: ${aggregation.sourceReturns
+        .map((item) => `${item.source}=${item.returned}/${item.discovered}`)
+        .join(", ")}`,
+      {
+        source: "collection",
+        metadata: {
+          sourceReturns: aggregation.sourceReturns,
+          rawLeads: aggregation.leads.length,
+          timedOut,
+        },
+      },
+    );
+
+    let leads = aggregation.leads;
     summary.rawLeads = leads.length;
 
     for (const result of collectorResults) {
@@ -353,10 +360,14 @@ export async function executeDiscoveryPipeline(
         ...result.errors.map((error) => `[${result.source}] ${error}`),
       );
 
-      const authRequired = result.errors.some((error) =>
-        /auth|login|sign[\s-]?in|session/i.test(error),
-      );
+      const authRequired =
+        result.status === "auth_required" ||
+        result.errors.some((error) =>
+          /auth|login|sign[\s-]?in|session/i.test(error),
+        );
       const degraded =
+        result.status === "degraded" ||
+        result.status === "failed" ||
         result.errors.length > 0 ||
         result.warnings.some((warning) =>
           /degraded|timeout|rate|parser|ui may have changed|zero matching|no matching/i.test(
@@ -380,7 +391,7 @@ export async function executeDiscoveryPipeline(
           },
         );
       } else if (degraded && result.leads.length === 0) {
-        stats.outcome = result.errors.length > 0 ? "failed" : "degraded";
+        stats.outcome = result.status === "failed" ? "failed" : "degraded";
         const message =
           result.errors[0] ??
           result.warnings.find((warning) =>
