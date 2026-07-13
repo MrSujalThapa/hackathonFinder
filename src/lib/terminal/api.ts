@@ -38,6 +38,9 @@ import type {
   ListDiscoveryJobsResult,
   ListSourceHealthResult,
   SourceHealth,
+  SourceCommandAction,
+  TerminalEventLevel,
+  TerminalSourceName,
 } from "@/lib/terminal/types";
 import { normalizeJobEvent } from "@/lib/terminal/formatEvent";
 
@@ -144,6 +147,31 @@ export async function fetchSourceHealth(): Promise<SourceHealth[]> {
   const response = await fetch("/api/sources", { cache: "no-store" });
   const data = await parseEnvelope<ListSourceHealthResult>(response);
   return data.sources ?? [];
+}
+
+export type TerminalSourceCommandLine = {
+  level: TerminalEventLevel;
+  text: string;
+};
+
+export type TerminalSourceCommandResult = {
+  lines: TerminalSourceCommandLine[];
+  confirmationRequired?: boolean;
+  expiresAt?: string;
+};
+
+export async function runTerminalSourceCommand(input: {
+  action: SourceCommandAction | "confirm_disconnect";
+  source: TerminalSourceName;
+  sessionId: string;
+}): Promise<TerminalSourceCommandResult> {
+  const response = await fetch("/api/terminal/source", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  return parseEnvelope<TerminalSourceCommandResult>(response);
 }
 
 export type StreamJobEventsHandlers = {

@@ -18,6 +18,7 @@ import {
   fetchSourceHealth,
   getDiscoveryJob,
   listDiscoveryJobs,
+  runTerminalSourceCommand,
   streamJobEvents,
 } from "@/lib/terminal/api";
 import {
@@ -48,6 +49,24 @@ function makeLine(
   partial: Omit<TerminalLine, "id"> & { id?: string },
 ): TerminalLine {
   return { id: partial.id ?? nextLineId(), ...partial };
+}
+
+function sourceCommandLine(line: {
+  level: "info" | "success" | "warning" | "error";
+  text: string;
+}): TerminalLine {
+  return makeLine({
+    kind:
+      line.level === "success"
+        ? "success"
+        : line.level === "warning"
+          ? "warning"
+          : line.level === "error"
+            ? "error"
+            : "system",
+    level: line.level,
+    text: line.text,
+  });
 }
 
 export function DiscoveryTerminal() {
@@ -768,24 +787,62 @@ export function DiscoveryTerminal() {
       return;
     }
     if (parsed.kind === "source") {
-      appendLines(sessionId, [
-        makeLine({
-          kind: "system",
-          text: `[source] ${parsed.action} ${parsed.source} — use Settings source health for now; dedicated connect/disconnect flows land next.`,
-        }),
-      ]);
-      if (parsed.action === "status" || parsed.action === "check") {
-        await runSources(sessionId);
+      if (parsed.action === "enable" || parsed.action === "disable") {
+        appendLines(sessionId, [
+          makeLine({
+            kind: "system",
+            text: `[source] ${parsed.action} ${parsed.source} - use Settings to change enabled sources.`,
+          }),
+        ]);
+        return;
+      }
+
+      try {
+        const result = await runTerminalSourceCommand({
+          action: parsed.action,
+          source: parsed.source,
+          sessionId,
+        });
+        appendLines(sessionId, result.lines.map(sourceCommandLine));
+        if (parsed.action === "status" || parsed.action === "check") {
+          void runSources(sessionId);
+        }
+      } catch (error) {
+        const message =
+          error instanceof DiscoveryApiError
+            ? error.message
+            : "Source command failed.";
+        appendLines(sessionId, [
+          makeLine({
+            kind: "error",
+            level: "error",
+            text: `[source] ${message}`,
+          }),
+        ]);
       }
       return;
     }
     if (parsed.kind === "confirm") {
-      appendLines(sessionId, [
-        makeLine({
-          kind: "system",
-          text: `[confirm] ${parsed.action} ${parsed.source} — confirmation flows land with source connect/disconnect.`,
-        }),
-      ]);
+      try {
+        const result = await runTerminalSourceCommand({
+          action: "confirm_disconnect",
+          source: parsed.source,
+          sessionId,
+        });
+        appendLines(sessionId, result.lines.map(sourceCommandLine));
+      } catch (error) {
+        const message =
+          error instanceof DiscoveryApiError
+            ? error.message
+            : "Confirmation failed.";
+        appendLines(sessionId, [
+          makeLine({
+            kind: "error",
+            level: "error",
+            text: `[confirm] ${message}`,
+          }),
+        ]);
+      }
       return;
     }
     if (
