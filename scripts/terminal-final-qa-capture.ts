@@ -53,11 +53,6 @@ function record(
   console.log(result, id, actual);
 }
 
-async function settle(page: Page) {
-  await page.waitForLoadState("domcontentloaded").catch(() => undefined);
-  await page.waitForTimeout(500);
-}
-
 async function login(page: Page) {
   if (!PASSWORD) throw new Error("Set SMOKE_OWNER_PASSWORD");
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -111,10 +106,6 @@ async function outputText(page: Page): Promise<string> {
   return page.evaluate(
     () => document.querySelector('[role="log"]')?.textContent?.replace(/\s+/g, " ").trim() ?? "",
   );
-}
-
-async function bodyText(page: Page): Promise<string> {
-  return page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim());
 }
 
 async function terminalMeta(page: Page): Promise<SessionMeta> {
