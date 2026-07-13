@@ -1,27 +1,139 @@
-import type { ParsedTerminalCommand } from "@/lib/terminal/types";
+import type {
+  ParsedTerminalCommand,
+  SourceCommandAction,
+  TerminalHelpTopic,
+  TerminalSourceName,
+} from "@/lib/terminal/types";
+import { TERMINAL_SOURCE_NAMES } from "@/lib/terminal/types";
 
 const SHELL_BINARIES =
-  /^(?:rm|curl|wget|powershell|pwsh|bash|sh|zsh|cmd|npm|npx|node|yarn|pnpm|bun|deno|ssh|sudo|chmod|chown|kill|del|dir|ls|cat|echo|export|unset|env|python|python3|pip|git|docker|kubectl|brew|choco|scoop|apt|yum|pacman|Invoke-WebRequest|iwr|iex)\b/i;
+  /^(?:rm|curl|wget|powershell|pwsh|bash|sh|zsh|cmd(?:\.exe)?|npm|npx|node|yarn|pnpm|bun|deno|ssh|sudo|chmod|chown|kill|del|dir|ls|cat|echo|export|unset|env|python|python3|pip|git|docker|kubectl|brew|choco|scoop|apt|yum|pacman|Invoke-WebRequest|iwr|iex)\b/i;
 
 const SHELL_OPERATORS = /(?:&&|\|\||[;|`]|>>?|<<?|\b2>&1\b)/;
 
-const URL_AS_COMMAND =
-  /^(?:https?:\/\/|www\.)/i;
+const ENV_EXPANSION = /(?:\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|%[A-Za-z_][A-Za-z0-9_]*%)/;
+
+const COMMAND_SUBSTITUTION = /\$\([^)]*\)|`[^`]+`/;
+
+const URL_AS_COMMAND = /^(?:https?:\/\/|www\.)/i;
 
 const PATH_AS_COMMAND = /^(?:~\/|\.\.?\/|[A-Za-z]:\\)/;
 
-const ALLOWED_SLASH = new Set([
+const SOURCE_ACTIONS = new Set<SourceCommandAction>([
+  "status",
+  "check",
+  "connect",
+  "disconnect",
+  "enable",
+  "disable",
+]);
+
+const SLASH_COMMANDS = [
   "find",
   "sources",
   "status",
   "history",
+  "jobs",
   "cancel",
   "clear",
   "help",
+  "new",
+  "terminals",
+  "switch",
+  "rename",
+  "close",
+  "source",
+  "confirm",
+] as const;
+
+const ALLOWED_SLASH = new Set<string>(SLASH_COMMANDS);
+
+const BARE_UTILITY = new Set([
+  "help",
+  "clear",
+  "status",
+  "history",
+  "jobs",
+  "cancel",
+  "sources",
+  "terminals",
 ]);
 
-const REJECTION_MESSAGE =
-  "This console only accepts discovery commands — not shell or system commands. Try /help.";
+const HELP_TOPIC_ALIASES: Record<string, TerminalHelpTopic> = {
+  general: "general",
+  find: "find",
+  source: "source",
+  sources: "source",
+  terminal: "terminals",
+  terminals: "terminals",
+  session: "terminals",
+  sessions: "terminals",
+};
+
+export const REJECTION_MESSAGE = [
+  "This is a controlled discovery terminal, not a system shell.",
+  "Try:",
+  "  /find <request>",
+  "  /source connect hakku",
+  "  /help",
+].join("\n");
+
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const matrix: number[][] = Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => 0),
+  );
+  for (let i = 0; i < rows; i++) matrix[i]![0] = i;
+  for (let j = 0; j < cols; j++) matrix[0]![j] = j;
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i]![j] = Math.min(
+        matrix[i - 1]![j]! + 1,
+        matrix[i]![j - 1]! + 1,
+        matrix[i - 1]![j - 1]! + cost,
+      );
+    }
+  }
+  return matrix[a.length]![b.length]!;
+}
+
+function suggestFrom(
+  input: string,
+  candidates: readonly string[],
+  maxDistance = 2,
+): string | undefined {
+  const needle = input.toLowerCase();
+  let best: string | undefined;
+  let bestDistance = maxDistance + 1;
+  for (const candidate of candidates) {
+    const d = levenshtein(needle, candidate.toLowerCase());
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = candidate;
+    }
+  }
+  return bestDistance <= maxDistance ? best : undefined;
+}
+
+export function suggestSlashCommand(name: string): string | undefined {
+  const suggestion = suggestFrom(name, SLASH_COMMANDS);
+  return suggestion ? `/${suggestion}` : undefined;
+}
+
+export function suggestSourceName(name: string): string | undefined {
+  return suggestFrom(name, TERMINAL_SOURCE_NAMES);
+}
+
+export function isTerminalSourceName(value: string): value is TerminalSourceName {
+  return (TERMINAL_SOURCE_NAMES as readonly string[]).includes(
+    value.toLowerCase(),
+  );
+}
 
 function looksLikeShell(input: string): string | null {
   const trimmed = input.trim();
@@ -29,6 +141,14 @@ function looksLikeShell(input: string): string | null {
 
   if (SHELL_OPERATORS.test(trimmed)) {
     return "command chaining or redirection";
+  }
+
+  if (COMMAND_SUBSTITUTION.test(trimmed)) {
+    return "command substitution";
+  }
+
+  if (ENV_EXPANSION.test(trimmed)) {
+    return "environment variable expansion";
   }
 
   if (URL_AS_COMMAND.test(trimmed)) {
@@ -39,15 +159,37 @@ function looksLikeShell(input: string): string | null {
     return "filesystem paths as commands";
   }
 
-  // Strip a leading slash only for binary detection of `/rm` style, not `/find`.
   const withoutSlash = trimmed.startsWith("/")
     ? trimmed.slice(1).trim()
     : trimmed;
 
-  const firstToken = withoutSlash.split(/\s+/)[0] ?? "";
-  const slashName = firstToken.toLowerCase();
+  const firstToken = (withoutSlash.split(/\s+/)[0] ?? "").toLowerCase();
 
-  if (trimmed.startsWith("/") && ALLOWED_SLASH.has(slashName)) {
+  if (trimmed.startsWith("/") && ALLOWED_SLASH.has(firstToken)) {
+    return null;
+  }
+
+  // Domain alias: `source status hakku` — not the shell builtin alone.
+  if (firstToken === "source") {
+    const parts = withoutSlash.split(/\s+/);
+    if (parts.length >= 2 && SOURCE_ACTIONS.has(parts[1]!.toLowerCase() as SourceCommandAction)) {
+      return null;
+    }
+  }
+
+  // Domain aliases that collide with shell verbs.
+  if (
+    firstToken === "find" ||
+    firstToken === "search" ||
+    firstToken === "check" ||
+    firstToken === "new" ||
+    firstToken === "list" ||
+    firstToken === "switch" ||
+    firstToken === "rename" ||
+    firstToken === "close" ||
+    firstToken === "confirm" ||
+    BARE_UTILITY.has(firstToken)
+  ) {
     return null;
   }
 
@@ -62,6 +204,90 @@ function looksLikeShell(input: string): string | null {
   return null;
 }
 
+function reject(
+  reason: string,
+  message: string,
+  raw: string,
+  suggestion?: string,
+): ParsedTerminalCommand {
+  return {
+    kind: "rejected",
+    reason,
+    message,
+    ...(suggestion ? { suggestion } : {}),
+    raw,
+  };
+}
+
+function resolveSource(
+  token: string | undefined,
+  raw: string,
+  usage: string,
+): TerminalSourceName | ParsedTerminalCommand {
+  if (!token) {
+    return reject("missing_source", usage, raw);
+  }
+  const lower = token.toLowerCase();
+  if (isTerminalSourceName(lower)) {
+    return lower;
+  }
+  const suggestion = suggestSourceName(lower);
+  const message = suggestion
+    ? `Unknown source "${token}".\nDid you mean "${suggestion}"?`
+    : `Unknown source "${token}". Allowed: ${TERMINAL_SOURCE_NAMES.join(", ")}`;
+  return reject("unknown_source", message, raw, suggestion);
+}
+
+function parseSourceCommand(
+  actionToken: string | undefined,
+  sourceToken: string | undefined,
+  raw: string,
+): ParsedTerminalCommand {
+  if (!actionToken) {
+    return reject(
+      "missing_source_action",
+      "Usage: /source <status|check|connect|disconnect|enable|disable> <source>",
+      raw,
+    );
+  }
+  const action = actionToken.toLowerCase();
+  if (!SOURCE_ACTIONS.has(action as SourceCommandAction)) {
+    const suggestion = suggestFrom(action, [...SOURCE_ACTIONS]);
+    const message = suggestion
+      ? `Unknown source action "${actionToken}".\nDid you mean "${suggestion}"?`
+      : "Usage: /source <status|check|connect|disconnect|enable|disable> <source>";
+    return reject("unknown_source_action", message, raw, suggestion);
+  }
+  const source = resolveSource(
+    sourceToken,
+    raw,
+    `Usage: /source ${action} <source>`,
+  );
+  if (typeof source !== "string") return source;
+  return {
+    kind: "source",
+    action: action as SourceCommandAction,
+    source,
+    raw,
+  };
+}
+
+function parseHelpTopic(rest: string): TerminalHelpTopic | ParsedTerminalCommand {
+  const topicToken = rest.trim().split(/\s+/)[0]?.toLowerCase();
+  if (!topicToken) return "general";
+  const mapped = HELP_TOPIC_ALIASES[topicToken];
+  if (mapped) return mapped;
+  const suggestion = suggestFrom(topicToken, Object.keys(HELP_TOPIC_ALIASES));
+  return reject(
+    "unknown_help_topic",
+    suggestion
+      ? `Unknown help topic "${topicToken}".\nDid you mean "${suggestion}"?\nTry /help, /help find, /help source, or /help terminals.`
+      : `Unknown help topic "${topicToken}". Try /help, /help find, /help source, or /help terminals.`,
+    rest,
+    suggestion,
+  );
+}
+
 function parseSlash(
   name: string,
   rest: string,
@@ -71,12 +297,11 @@ function parseSlash(
     case "find": {
       const request = rest.trim();
       if (!request) {
-        return {
-          kind: "rejected",
-          reason: "missing_request",
-          message: "Usage: /find <discovery request>",
+        return reject(
+          "missing_request",
+          "Usage: /find <discovery request>",
           raw,
-        };
+        );
       }
       return { kind: "find", request, raw };
     }
@@ -86,20 +311,176 @@ function parseSlash(
       return { kind: "status", raw };
     case "history":
       return { kind: "history", raw };
-    case "cancel":
-      return { kind: "cancel", raw };
+    case "jobs":
+      return { kind: "jobs", raw };
+    case "cancel": {
+      const jobId = rest.trim().split(/\s+/)[0] || undefined;
+      return { kind: "cancel", ...(jobId ? { jobId } : {}), raw };
+    }
     case "clear":
       return { kind: "clear", raw };
-    case "help":
-      return { kind: "help", raw };
-    default:
-      return {
-        kind: "rejected",
-        reason: "unknown_command",
-        message: `Unknown command /${name}. Try /help.`,
+    case "help": {
+      const topicOrReject = parseHelpTopic(rest);
+      if (typeof topicOrReject !== "string") {
+        // parseHelpTopic used rest as raw — rebuild with full raw
+        return {
+          ...topicOrReject,
+          raw,
+        };
+      }
+      return { kind: "help", topic: topicOrReject, raw };
+    }
+    case "new":
+      return { kind: "new", raw };
+    case "terminals":
+      return { kind: "terminals", raw };
+    case "switch": {
+      const target = rest.trim();
+      if (!target) {
+        return reject("missing_target", "Usage: /switch <id|name>", raw);
+      }
+      return { kind: "switch", target, raw };
+    }
+    case "rename": {
+      const nameArg = rest.trim();
+      if (!nameArg) {
+        return reject("missing_name", "Usage: /rename <name>", raw);
+      }
+      return { kind: "rename", name: nameArg, raw };
+    }
+    case "close": {
+      const target = rest.trim() || undefined;
+      return { kind: "close", ...(target ? { target } : {}), raw };
+    }
+    case "source": {
+      const parts = rest.trim().split(/\s+/).filter(Boolean);
+      return parseSourceCommand(parts[0], parts[1], raw);
+    }
+    case "confirm": {
+      const parts = rest.trim().split(/\s+/).filter(Boolean);
+      const action = parts[0]?.toLowerCase();
+      if (action !== "disconnect") {
+        return reject(
+          "unknown_confirm_action",
+          "Usage: /confirm disconnect <source>",
+          raw,
+        );
+      }
+      const source = resolveSource(
+        parts[1],
         raw,
-      };
+        "Usage: /confirm disconnect <source>",
+      );
+      if (typeof source !== "string") return source;
+      return { kind: "confirm", action: "disconnect", source, raw };
+    }
+    default: {
+      const suggestion = suggestSlashCommand(name);
+      const message = suggestion
+        ? `Unknown command "/${name}".\nDid you mean "${suggestion}"?`
+        : `Unknown command /${name}. Try /help.`;
+      return reject("unknown_command", message, raw, suggestion);
+    }
   }
+}
+
+function parseAlias(trimmed: string, raw: string): ParsedTerminalCommand | null {
+  const lower = trimmed.toLowerCase();
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  const first = tokens[0]?.toLowerCase() ?? "";
+
+  // Bare utilities: help / clear / status / …
+  if (tokens.length === 1 && BARE_UTILITY.has(first)) {
+    return parseSlash(first, "", raw);
+  }
+
+  // help <topic>
+  if (first === "help" && tokens.length >= 2) {
+    return parseSlash("help", tokens.slice(1).join(" "), raw);
+  }
+
+  // source <action> <name>
+  if (first === "source") {
+    return parseSourceCommand(tokens[1], tokens[2], raw);
+  }
+
+  // check source <name>  |  check <name>
+  if (first === "check") {
+    if (tokens[1]?.toLowerCase() === "source") {
+      return parseSourceCommand("check", tokens[2], raw);
+    }
+    if (tokens[1] && isTerminalSourceName(tokens[1].toLowerCase())) {
+      return parseSourceCommand("check", tokens[1], raw);
+    }
+  }
+
+  // confirm disconnect <source>
+  if (first === "confirm") {
+    return parseSlash("confirm", tokens.slice(1).join(" "), raw);
+  }
+
+  // new terminal
+  if (first === "new" && (tokens.length === 1 || tokens[1]?.toLowerCase() === "terminal")) {
+    return { kind: "new", raw };
+  }
+
+  // list terminals
+  if (
+    (first === "list" && tokens[1]?.toLowerCase() === "terminals") ||
+    lower === "list terminals"
+  ) {
+    return { kind: "terminals", raw };
+  }
+
+  // switch terminal <target>  |  switch <target>
+  if (first === "switch") {
+    const target =
+      tokens[1]?.toLowerCase() === "terminal"
+        ? tokens.slice(2).join(" ").trim()
+        : tokens.slice(1).join(" ").trim();
+    if (!target) {
+      return reject("missing_target", "Usage: /switch <id|name>", raw);
+    }
+    return { kind: "switch", target, raw };
+  }
+
+  // rename terminal <name>  |  rename <name>
+  if (first === "rename") {
+    const name =
+      tokens[1]?.toLowerCase() === "terminal"
+        ? tokens.slice(2).join(" ").trim()
+        : tokens.slice(1).join(" ").trim();
+    if (!name) {
+      return reject("missing_name", "Usage: /rename <name>", raw);
+    }
+    return { kind: "rename", name, raw };
+  }
+
+  // close terminal [target]
+  if (first === "close") {
+    if (tokens[1]?.toLowerCase() === "terminal") {
+      const target = tokens.slice(2).join(" ").trim() || undefined;
+      return { kind: "close", ...(target ? { target } : {}), raw };
+    }
+    if (tokens.length === 1) {
+      return { kind: "close", raw };
+    }
+  }
+
+  // find|search <request>
+  if (first === "find" || first === "search") {
+    const request = tokens.slice(1).join(" ").trim();
+    if (!request) {
+      return reject(
+        "missing_request",
+        "Usage: /find <discovery request>",
+        raw,
+      );
+    }
+    return { kind: "find", request, raw };
+  }
+
+  return null;
 }
 
 /**
@@ -115,12 +496,7 @@ export function parseTerminalCommand(input: string): ParsedTerminalCommand {
 
   const shellReason = looksLikeShell(trimmed);
   if (shellReason) {
-    return {
-      kind: "rejected",
-      reason: shellReason,
-      message: REJECTION_MESSAGE,
-      raw,
-    };
+    return reject(shellReason, REJECTION_MESSAGE, raw);
   }
 
   if (trimmed.startsWith("/")) {
@@ -129,24 +505,20 @@ export function parseTerminalCommand(input: string): ParsedTerminalCommand {
     const name = (space < 0 ? body : body.slice(0, space)).toLowerCase();
     const rest = space < 0 ? "" : body.slice(space + 1);
     if (!name) {
-      return {
-        kind: "rejected",
-        reason: "empty_slash",
-        message: "Unknown command. Try /help.",
-        raw,
-      };
+      return reject("empty_slash", "Unknown command. Try /help.", raw);
     }
     if (!ALLOWED_SLASH.has(name)) {
-      // Unknown slash — still reject shell-looking first tokens already handled.
-      return {
-        kind: "rejected",
-        reason: "unknown_command",
-        message: `Unknown command /${name}. Try /help.`,
-        raw,
-      };
+      const suggestion = suggestSlashCommand(name);
+      const message = suggestion
+        ? `Unknown command "/${name}".\nDid you mean "${suggestion}"?`
+        : `Unknown command /${name}. Try /help.`;
+      return reject("unknown_command", message, raw, suggestion);
     }
     return parseSlash(name, rest, raw);
   }
+
+  const aliased = parseAlias(trimmed, raw);
+  if (aliased) return aliased;
 
   // Natural language discovery request.
   return { kind: "find", request: trimmed, raw };
@@ -154,11 +526,7 @@ export function parseTerminalCommand(input: string): ParsedTerminalCommand {
 
 export function isActiveJobStatus(status: string | null | undefined): boolean {
   if (!status) return false;
-  return ![
-    "completed",
-    "failed",
-    "cancelled",
-  ].includes(status);
+  return !["completed", "failed", "cancelled"].includes(status);
 }
 
-export { REJECTION_MESSAGE, ALLOWED_SLASH };
+export { ALLOWED_SLASH, SLASH_COMMANDS, SOURCE_ACTIONS };

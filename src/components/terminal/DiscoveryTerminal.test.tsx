@@ -41,7 +41,7 @@ describe("terminal UI components", () => {
       }),
     );
 
-    assert.ok(screen.getByText(/\$ find AI hackathons/));
+    assert.ok(screen.getByText(/hackfinder> find AI hackathons/));
     assert.ok(screen.getByText(/Authentication required/));
     assert.ok(screen.getByLabelText("Discovery console output"));
     cleanup();

@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { BlueprintPanel } from "@/components/blueprint/BlueprintPanel";
-import { TechnicalLabel } from "@/components/blueprint/TechnicalLabel";
+import { MacTerminalChrome } from "@/components/terminal/MacTerminalChrome";
 import { TerminalInput } from "@/components/terminal/TerminalInput";
 import { TerminalOutput } from "@/components/terminal/TerminalOutput";
 import { TerminalRunActions } from "@/components/terminal/TerminalRunActions";
@@ -23,7 +22,7 @@ import {
   formatStatusLine,
   jobEventToTerminalLine,
 } from "@/lib/terminal/formatEvent";
-import { TERMINAL_HELP_LINES } from "@/lib/terminal/help";
+import { formatHelpText } from "@/lib/terminal/help";
 import {
   isActiveJobStatus,
   parseTerminalCommand,
@@ -187,17 +186,6 @@ export function DiscoveryTerminal() {
   const startFind = useCallback(
     async (request: string, rawDisplay: string) => {
       if (submitting) return;
-      if (activeJob && isActiveJobStatus(activeJob.status)) {
-        appendLines([
-          makeLine({
-            kind: "warning",
-            level: "warning",
-            text: "A discovery run is already active. Use /cancel first, or wait for it to finish.",
-          }),
-        ]);
-        setInput(rawDisplay);
-        return;
-      }
 
       setSubmitting(true);
       setShowRunActions(false);
@@ -210,10 +198,14 @@ export function DiscoveryTerminal() {
         lastSequenceRef.current = 0;
         setActiveJob(job);
         activeJobIdRef.current = job.id;
+        const queued =
+          typeof job.progress === "number" && job.status === "queued";
         appendLines([
           makeLine({
             kind: "system",
-            text: `[queued] Job ${job.id.slice(0, 8)}…`,
+            text: queued
+              ? `[queued] Job ${job.id.slice(0, 8)}… waiting for execution slot`
+              : `[queued] Job ${job.id.slice(0, 8)}…`,
           }),
         ]);
         if (job.effectiveSources?.length) {
@@ -240,7 +232,7 @@ export function DiscoveryTerminal() {
         setSubmitting(false);
       }
     },
-    [activeJob, appendLines, attachStream, submitting],
+    [appendLines, attachStream, submitting],
   );
 
   const runSources = useCallback(async () => {
@@ -427,7 +419,9 @@ export function DiscoveryTerminal() {
         makeLine({
           kind: "warning",
           level: "warning",
-          text: parsed.message,
+          text: parsed.suggestion
+            ? `${parsed.message}\nDid you mean “${parsed.suggestion}”?`
+            : parsed.message,
         }),
       ]);
       return;
@@ -438,7 +432,7 @@ export function DiscoveryTerminal() {
         makeLine({ kind: "prompt", text: raw.trim() || "/help" }),
         makeLine({
           kind: "help",
-          text: TERMINAL_HELP_LINES.join("\n"),
+          text: formatHelpText(parsed.topic),
         }),
       ]);
       setInput("");
@@ -446,7 +440,12 @@ export function DiscoveryTerminal() {
     }
 
     if (parsed.kind === "clear") {
-      setLines([]);
+      setLines([
+        makeLine({
+          kind: "system",
+          text: "[clear] Scrollback cleared. Persisted jobs remain — use /history or /jobs.",
+        }),
+      ]);
       setShowRunActions(false);
       setInput("");
       return;
@@ -472,8 +471,69 @@ export function DiscoveryTerminal() {
       await runHistory();
       return;
     }
+    if (parsed.kind === "jobs") {
+      try {
+        const jobs = await listDiscoveryJobs();
+        if (jobs.length === 0) {
+          appendLines([
+            makeLine({ kind: "system", text: "[jobs] No discovery jobs yet." }),
+          ]);
+        } else {
+          appendLines([
+            makeLine({
+              kind: "system",
+              text: "ID        STATUS      COMMAND",
+            }),
+            ...jobs.slice(0, 20).map((job) =>
+              makeLine({
+                kind: "system",
+                text: `${job.id.slice(0, 8).padEnd(10)}${job.status.padEnd(12)}${job.command.slice(0, 60)}`,
+              }),
+            ),
+          ]);
+        }
+      } catch (error) {
+        const message =
+          error instanceof DiscoveryApiError
+            ? error.message
+            : "Could not list jobs.";
+        appendLines([
+          makeLine({ kind: "error", level: "error", text: `[jobs] ${message}` }),
+        ]);
+      }
+      return;
+    }
     if (parsed.kind === "cancel") {
       await runCancel();
+      return;
+    }
+    if (parsed.kind === "source") {
+      appendLines([
+        makeLine({
+          kind: "system",
+          text: `[source] ${parsed.action} ${parsed.source} — use Settings source health for now; dedicated connect/disconnect flows land next.`,
+        }),
+      ]);
+      if (parsed.action === "status" || parsed.action === "check") {
+        await runSources();
+      }
+      return;
+    }
+    if (
+      parsed.kind === "new" ||
+      parsed.kind === "terminals" ||
+      parsed.kind === "switch" ||
+      parsed.kind === "rename" ||
+      parsed.kind === "close" ||
+      parsed.kind === "confirm"
+    ) {
+      appendLines([
+        makeLine({
+          kind: "system",
+          text: `[session] “${parsed.kind}” accepted. Multi-terminal tabs are wiring onto durable sessions (migration 007) — not fully interactive yet.`,
+        }),
+      ]);
+      return;
     }
   }, [
     appendLines,
@@ -574,42 +634,20 @@ export function DiscoveryTerminal() {
   useEffect(() => () => stopStream(), [stopStream]);
 
   const live = Boolean(activeJob && isActiveJobStatus(activeJob.status));
+  const windowStatus = activeJob
+    ? `${activeJob.status} · ${activeJob.id.slice(0, 8)}`
+    : "idle";
 
   return (
-    <div className="mx-auto flex w-full max-w-[90rem] flex-1 flex-col gap-3 lg:gap-4">
-      <header className="flex flex-wrap items-end justify-between gap-2">
-        <div className="min-w-0">
-          <TechnicalLabel>Ops · Discovery</TechnicalLabel>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Terminal
-          </h1>
-          <p className="mt-1 max-w-xl text-sm text-muted">
-            Controlled discovery console — not a system shell.
-          </p>
-        </div>
-        {live ? (
-          <span className="border border-[color-mix(in_oklab,var(--accent-warn)_50%,transparent)] px-2 py-1 font-mono text-[11px] uppercase tracking-[0.08em] text-[color-mix(in_oklab,var(--accent-warn)_90%,white)]">
-            Running
-          </span>
-        ) : null}
-      </header>
+    <div className="mac-terminal-page mx-auto flex w-full max-w-[96rem] flex-1 flex-col gap-3 lg:gap-4">
+      <h1 className="sr-only">Discovery terminal</h1>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row lg:items-stretch">
-        <BlueprintPanel
-          className="flex min-h-[min(70dvh,40rem)] flex-1 flex-col overflow-hidden p-0 lg:min-h-[min(78dvh,48rem)]"
-          corners
+        <MacTerminalChrome
+          className="flex min-h-[min(82dvh,52rem)] flex-1 flex-col lg:min-h-[min(88dvh,58rem)]"
+          title="hackfinder — console — 120×40"
+          status={live ? `running · ${windowStatus}` : windowStatus}
         >
-          <div className="hidden items-center justify-between border-b border-[color-mix(in_oklab,var(--ink-line)_65%,transparent)] bg-surface/80 px-3 py-2 sm:flex">
-            <TechnicalLabel className="mb-0">
-              discovery · operator console
-            </TechnicalLabel>
-            <span className="font-mono text-[11px] text-muted">
-              {activeJob
-                ? `${activeJob.status} · ${activeJob.id.slice(0, 8)}`
-                : "idle"}
-            </span>
-          </div>
-
           <TerminalOutput lines={lines} live={live} />
           <TerminalRunActions
             visible={showRunActions}
@@ -625,7 +663,7 @@ export function DiscoveryTerminal() {
             disabled={false}
             busy={submitting}
           />
-        </BlueprintPanel>
+        </MacTerminalChrome>
 
         <div className="lg:flex lg:flex-col lg:gap-3">
           <TerminalSourceRail

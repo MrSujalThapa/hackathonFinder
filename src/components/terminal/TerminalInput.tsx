@@ -32,16 +32,13 @@ export function TerminalInput({
   }, [value]);
 
   return (
-    <div className="border-t border-[color-mix(in_oklab,var(--ink-line)_70%,transparent)] bg-inset/80 px-3 py-3 sm:px-4">
+    <div className="mac-terminal__prompt-bar">
       <label id={labelId} className="sr-only">
         Discovery command
       </label>
-      <div className="flex items-end gap-2">
-        <span
-          className="mb-2.5 shrink-0 font-mono text-sm text-[color-mix(in_oklab,var(--accent-save)_90%,white)]"
-          aria-hidden
-        >
-          $
+      <div className="mac-terminal__prompt-row">
+        <span className="mac-terminal__prompt" aria-hidden>
+          hackfinder&gt;
         </span>
         <textarea
           ref={textareaRef}
@@ -56,7 +53,7 @@ export function TerminalInput({
           autoCorrect="off"
           autoComplete="off"
           placeholder="find upcoming AI hackathons in Toronto…"
-          className="hf-focus min-h-[44px] max-h-36 w-full resize-none bg-transparent py-2.5 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted/70 disabled:opacity-50"
+          className="mac-terminal__input hf-focus"
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -87,17 +84,15 @@ export function TerminalInput({
         />
         <button
           type="button"
-          className="hf-focus hf-touch mb-0.5 min-h-[44px] min-w-[44px] shrink-0 border border-border px-3 font-mono text-xs uppercase tracking-[0.08em] text-muted transition-colors hover:border-[color-mix(in_oklab,var(--accent-save)_45%,transparent)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+          className="mac-terminal__run hf-focus hf-touch"
           disabled={disabled || busy || !value.trim()}
           onClick={() => onSubmit()}
           aria-label={busy ? "Starting run" : "Run command"}
         >
-          {busy ? "…" : "Run"}
+          {busy ? "…" : "↵"}
         </button>
       </div>
-      <p className="mt-1.5 font-mono text-[11px] text-muted/80">
-        Enter run · Shift+Enter newline · /help
-      </p>
+      <p className="mac-terminal__hint">Enter run · Shift+Enter newline · /help</p>
     </div>
   );
 }

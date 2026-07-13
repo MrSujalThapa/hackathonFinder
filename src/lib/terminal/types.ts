@@ -116,15 +116,69 @@ export type TerminalLine = {
   jobId?: string;
 };
 
+/** Domain sources accepted by `/source …` commands. */
+export const TERMINAL_SOURCE_NAMES = [
+  "mlh",
+  "web",
+  "hacklist",
+  "devpost",
+  "luma",
+  "hakku",
+] as const;
+
+export type TerminalSourceName = (typeof TERMINAL_SOURCE_NAMES)[number];
+
+export type SourceCommandAction =
+  | "status"
+  | "check"
+  | "connect"
+  | "disconnect"
+  | "enable"
+  | "disable";
+
+export type TerminalHelpTopic =
+  | "general"
+  | "find"
+  | "source"
+  | "terminals";
+
+/**
+ * Typed internal commands produced by the terminal parser.
+ * Never shell-executable — UI/runtime maps these to domain APIs only.
+ */
 export type ParsedTerminalCommand =
   | { kind: "find"; request: string; raw: string }
   | { kind: "sources"; raw: string }
   | { kind: "status"; raw: string }
   | { kind: "history"; raw: string }
-  | { kind: "cancel"; raw: string }
+  | { kind: "jobs"; raw: string }
+  | { kind: "cancel"; jobId?: string; raw: string }
   | { kind: "clear"; raw: string }
-  | { kind: "help"; raw: string }
-  | { kind: "rejected"; reason: string; message: string; raw: string }
+  | { kind: "help"; topic: TerminalHelpTopic; raw: string }
+  | { kind: "new"; raw: string }
+  | { kind: "terminals"; raw: string }
+  | { kind: "switch"; target: string; raw: string }
+  | { kind: "rename"; name: string; raw: string }
+  | { kind: "close"; target?: string; raw: string }
+  | {
+      kind: "source";
+      action: SourceCommandAction;
+      source: TerminalSourceName;
+      raw: string;
+    }
+  | {
+      kind: "confirm";
+      action: "disconnect";
+      source: TerminalSourceName;
+      raw: string;
+    }
+  | {
+      kind: "rejected";
+      reason: string;
+      message: string;
+      suggestion?: string;
+      raw: string;
+    }
   | { kind: "empty"; raw: string };
 
 export type CreateDiscoveryJobInput = {

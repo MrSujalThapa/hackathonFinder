@@ -8,32 +8,28 @@ type TerminalOutputProps = {
   live?: boolean;
 };
 
+const PROMPT = "hackfinder>";
+
 function lineClass(line: TerminalLine): string {
   switch (line.kind) {
     case "prompt":
-      return "text-[color-mix(in_oklab,var(--accent-save)_88%,white)]";
+      return "mac-terminal__line--prompt";
     case "success":
-      return "text-[color-mix(in_oklab,var(--accent-approve)_92%,white)]";
+      return "mac-terminal__line--success";
     case "warning":
-      return "text-[color-mix(in_oklab,var(--accent-warn)_92%,white)]";
+      return "mac-terminal__line--warning";
     case "error":
-      return "text-[color-mix(in_oklab,var(--accent-danger)_92%,white)]";
+      return "mac-terminal__line--error";
     case "help":
     case "system":
-      return "text-muted";
+      return "mac-terminal__line--muted";
     case "summary":
-      return "text-foreground/90";
+      return "mac-terminal__line--summary";
     default:
-      if (line.level === "success") {
-        return "text-[color-mix(in_oklab,var(--accent-approve)_92%,white)]";
-      }
-      if (line.level === "warning") {
-        return "text-[color-mix(in_oklab,var(--accent-warn)_92%,white)]";
-      }
-      if (line.level === "error") {
-        return "text-[color-mix(in_oklab,var(--accent-danger)_92%,white)]";
-      }
-      return "text-foreground/85";
+      if (line.level === "success") return "mac-terminal__line--success";
+      if (line.level === "warning") return "mac-terminal__line--warning";
+      if (line.level === "error") return "mac-terminal__line--error";
+      return "mac-terminal__line--default";
   }
 }
 
@@ -46,7 +42,8 @@ export function TerminalOutput({ lines, live = false }: TerminalOutputProps) {
     if (!scroller) return;
     const nearBottom =
       scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
-    if (nearBottom || live) {
+    // Stick to bottom only when the user is already near it (or first paint).
+    if (nearBottom) {
       bottomRef.current?.scrollIntoView({ block: "end" });
     }
   }, [lines, live]);
@@ -54,7 +51,7 @@ export function TerminalOutput({ lines, live = false }: TerminalOutputProps) {
   return (
     <div
       ref={scrollerRef}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4"
+      className="mac-terminal__scrollback"
       role="log"
       aria-live="polite"
       aria-relevant="additions"
@@ -62,30 +59,22 @@ export function TerminalOutput({ lines, live = false }: TerminalOutputProps) {
       tabIndex={0}
     >
       {lines.length === 0 ? (
-        <p className="font-mono text-sm text-muted">
+        <p className="mac-terminal__line mac-terminal__line--muted">
           Ready. Type a discovery request or /help.
         </p>
       ) : (
-        <ul className="space-y-1.5">
+        <ul className="mac-terminal__lines">
           {lines.map((line) => (
             <li key={line.id}>
-              <pre
-                className={[
-                  "whitespace-pre-wrap break-words font-mono text-sm leading-relaxed",
-                  lineClass(line),
-                ].join(" ")}
-              >
-                {line.kind === "prompt" ? `$ ${line.text}` : line.text}
+              <pre className={["mac-terminal__line", lineClass(line)].join(" ")}>
+                {line.kind === "prompt" ? `${PROMPT} ${line.text}` : line.text}
               </pre>
             </li>
           ))}
         </ul>
       )}
       {live ? (
-        <span
-          className="mt-2 inline-block h-4 w-2 animate-pulse bg-[color-mix(in_oklab,var(--accent-save)_80%,transparent)]"
-          aria-hidden
-        />
+        <span className="mac-terminal__cursor" aria-hidden />
       ) : null}
       <div ref={bottomRef} />
     </div>
