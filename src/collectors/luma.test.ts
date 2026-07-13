@@ -25,10 +25,10 @@ describe("parseLumaHtml", () => {
     assert.ok(leads.some((lead) => (lead.title ?? "").includes("Waterloo Student Codefest")));
   });
 
-  it("excludes ordinary meetups", () => {
+  it("keeps ordinary meetups for broad human review", () => {
     const html = fs.readFileSync(fixturePath, "utf8");
     const leads = parseLumaHtml(html, 20);
-    assert.ok(!leads.some((lead) => /coffee meetup/i.test(lead.title ?? "")));
+    assert.ok(leads.some((lead) => /coffee meetup/i.test(lead.title ?? "")));
   });
 
   it("excludes old events", () => {
@@ -88,7 +88,6 @@ describe("parseLumaHtml", () => {
     const leads = parseLumaHtml(html, 20, "https://luma.com/discover?q=hackathon");
     assert.ok(leads.some((lead) => /Toronto AI Hackathon/i.test(lead.title ?? "")));
     assert.ok(!leads.some((lead) => lead.title === "Toronto"));
-    assert.ok(!leads.some((lead) => /coffee meetup/i.test(lead.title ?? "")));
     assert.ok(leads.every((lead) => lead.metadata?.provenance === "luma_public"));
   });
 
@@ -100,6 +99,13 @@ describe("parseLumaHtml", () => {
     assert.equal(leads[0]?.metadata?.organizer, "GDG Toronto");
     assert.equal(leads[0]?.metadata?.registration, "open");
     assert.match(String(leads[0]?.metadata?.location ?? ""), /Toronto/i);
+  });
+
+  it("preserves Luma discovery feed provenance", () => {
+    const html = fs.readFileSync(eventPath, "utf8");
+    const leads = parseLumaHtml(html, 5, "https://luma.com/6xx74n4b", "luma_ai");
+    assert.equal(leads[0]?.metadata?.discoveryMode, "luma_ai");
+    assert.deepEqual(leads[0]?.metadata?.discoveredFrom, ["luma_ai"]);
   });
 });
 

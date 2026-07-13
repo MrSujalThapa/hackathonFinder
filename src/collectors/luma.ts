@@ -15,7 +15,8 @@
  * - See docs/discovery/LUMA_MODES.md for whether auth materially helps.
  */
 import * as cheerio from "cheerio";
-import type { DiscoveryPreferences, RawLead } from "@/core/discovery/types";
+import type { Page } from "playwright";
+import type { RawLead } from "@/core/discovery/types";
 import type { Collector, CollectorInput, CollectorResult } from "@/collectors/types";
 import { emptyCollectorResult } from "@/collectors/types";
 import { fetchHtml, FetchHtmlError } from "@/lib/http/fetchHtml";
@@ -24,12 +25,17 @@ import {
   isPlaywrightBrowserMissingError,
   withPlaywright,
 } from "@/lib/browser/playwright";
+import { collectUntilStable } from "@/lib/browser/collectUntilStable";
 import { normalizeUrl, normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
 const LUMA_BASE = "https://luma.com";
 const LUMA_LEGACY_BASE = "https://lu.ma";
-const MAX_DISCOVERY_PAGES = 6;
-const MAX_EVENT_ENRICH = 4;
+const LUMA_MAX_EVENTS = 100;
+const LUMA_MAX_SCROLLS = 30;
+const LUMA_NO_GROWTH_LIMIT = 3;
+const LUMA_SCROLL_WAIT_MS = 1_200;
+const LUMA_DETAIL_LIMIT = 100;
+const DETAIL_PAGE_CONCURRENCY = 3;
 
 const HACKATHON_HINT =
   /\b(hackathon|buildathon|codefest|hack\s*day|hack\s*night|coding\s*competition|builder\s*competition|48[\s-]?hour\s*build|24[\s-]?hour\s*hack)\b/i;
@@ -38,6 +44,7 @@ const MEETUP_HINT =
   /\b(meetup|coffee|networking|happy\s*hour|casual\s*hang|fireside|panel\s*discussion|book\s*club|walkie|potluck|drink\s*&\s*draw)\b/i;
 
 export type LumaDiscoveryMode = "public" | "authenticated";
+export type LumaDiscoveryFeed = "luma_toronto" | "luma_tech" | "luma_ai";
 
 export type LumaFailureHint =
   | "network"
@@ -63,6 +70,24 @@ type ParsedLumaEvent = {
   registration?: string;
   externalLinks: string[];
   pageKind?: "event" | "calendar" | "discover" | "profile" | "unknown";
+  discoveryMode?: LumaDiscoveryFeed | "luma_public";
+  discoveredFrom?: string[];
+};
+
+type LumaFeedConfig = {
+  mode: LumaDiscoveryFeed;
+  label: string;
+  url: string;
+};
+
+type LumaFeedCollection = {
+  feed: LumaFeedConfig;
+  urls: string[];
+  uniqueCount: number;
+  scrollAttempts: number;
+  noGrowthAttempts: number;
+  stopReason: string;
+  warnings: string[];
 };
 
 export function describeLumaFailure(hint: LumaFailureHint, detail?: string): string {
@@ -177,43 +202,12 @@ function isUpcoming(startAt?: string, endAt?: string, now = new Date()): boolean
   return end.getTime() >= now.getTime() - 6 * 60 * 60 * 1000;
 }
 
-function buildDiscoveryUrls(preferences: DiscoveryPreferences): string[] {
-  const urls: string[] = [];
-
-  // Prefer city hubs — they embed individual events in __NEXT_DATA__.
-  const cityMap: Record<string, string> = {
-    toronto: `${LUMA_BASE}/toronto`,
-    waterloo: `${LUMA_BASE}/waterloo`,
-    montreal: `${LUMA_BASE}/montreal`,
-    "san francisco": `${LUMA_BASE}/sf`,
-    sf: `${LUMA_BASE}/sf`,
-    nyc: `${LUMA_BASE}/nyc`,
-    "new york": `${LUMA_BASE}/nyc`,
-  };
-
-  for (const location of preferences.locations.slice(0, 4)) {
-    const key = location.trim().toLowerCase();
-    if (cityMap[key]) urls.push(cityMap[key]);
-    else if (!/remote|online|canada/i.test(key)) {
-      urls.push(`${LUMA_BASE}/${slugify(location)}`);
-    }
-  }
-
-  // Default Canadian hubs when locations are empty or Canada-only.
-  if (urls.length === 0 || preferences.locations.some((l) => /canada/i.test(l))) {
-    urls.push(`${LUMA_BASE}/toronto`, `${LUMA_BASE}/waterloo`);
-  }
-
-  // Discover search is noisy (often places, not events) but may still embed featured events.
-  urls.push(`${LUMA_BASE}/discover?q=${encodeURIComponent("hackathon")}`);
-  for (const theme of preferences.themes.slice(0, 2)) {
-    urls.push(`${LUMA_BASE}/discover?q=${encodeURIComponent(`${theme} hackathon`)}`);
-  }
-  if (preferences.includeRemote) {
-    urls.push(`${LUMA_BASE}/discover?q=${encodeURIComponent("online hackathon")}`);
-  }
-
-  return [...new Set(urls)].slice(0, MAX_DISCOVERY_PAGES);
+function buildDiscoveryFeeds(): LumaFeedConfig[] {
+  return [
+    { mode: "luma_toronto", label: "Toronto", url: `${LUMA_BASE}/toronto` },
+    { mode: "luma_tech", label: "Tech", url: `${LUMA_BASE}/tech` },
+    { mode: "luma_ai", label: "AI", url: `${LUMA_BASE}/ai` },
+  ];
 }
 
 function extractNextData($: cheerio.CheerioAPI): unknown | undefined {
@@ -426,7 +420,12 @@ function extractEventCards($: cheerio.CheerioAPI, baseUrl: string): ParsedLumaEv
   return cards;
 }
 
-export function parseLumaHtml(html: string, maxResults: number, baseUrl = LUMA_BASE): RawLead[] {
+export function parseLumaHtml(
+  html: string,
+  maxResults: number,
+  baseUrl = LUMA_BASE,
+  discoveryMode: LumaDiscoveryFeed | "luma_public" = "luma_public",
+): RawLead[] {
   const $ = cheerio.load(html);
   const pageKind = classifyLumaPageUrl(baseUrl);
 
@@ -468,7 +467,6 @@ export function parseLumaHtml(html: string, maxResults: number, baseUrl = LUMA_B
   for (const card of cards) {
     if (card.pageKind && card.pageKind !== "event" && card.pageKind !== "unknown") continue;
     if (isRejectedLumaLeadUrl(card.url)) continue;
-    if (!isLikelyHackathon(card.title, card.description ?? "")) continue;
     if (!isUpcoming(card.dateText ?? card.startDate, card.endDate)) continue;
 
     const dedupeKey = card.url
@@ -495,7 +493,7 @@ export function parseLumaHtml(html: string, maxResults: number, baseUrl = LUMA_B
       url: eventUrl,
       text: [card.organizer, card.dateText, card.location, card.description, card.registration]
         .filter(Boolean)
-        .join(" — "),
+        .join(" - "),
       links,
       postedAt: new Date().toISOString(),
       metadata: {
@@ -511,6 +509,8 @@ export function parseLumaHtml(html: string, maxResults: number, baseUrl = LUMA_B
         attribution: "luma",
         provenance: "luma_public",
         lumaMode: "public",
+        discoveryMode: card.discoveryMode ?? discoveryMode,
+        discoveredFrom: card.discoveredFrom ?? [card.discoveryMode ?? discoveryMode],
         sourceIds: {
           luma: card.apiId ?? (eventUrl ? slugify(new URL(eventUrl).pathname) : slugify(card.title)),
         },
@@ -578,40 +578,200 @@ async function fetchLumaPage(
   }
 }
 
+function isLikelyLumaEventUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url, LUMA_BASE);
+    const host = parsed.hostname.toLowerCase();
+    if (!host.includes("luma.com") && !host.includes("lu.ma")) return false;
+    const path = parsed.pathname.replace(/\/+$/, "");
+    if (!/^\/[a-z0-9][a-z0-9_-]{4,}$/i.test(path)) return false;
+    if (
+      /^\/(about|ai|calendar|calendars|discover|explore|home|login|pricing|search|signin|tech|toronto|u|user)$/i.test(
+        path,
+      )
+    ) {
+      return false;
+    }
+    if (parsed.searchParams.get("k") === "c") return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function collectLumaEventUrlsFromPage(
+  page: Page,
+  discoveryMode: LumaDiscoveryFeed,
+): Promise<string[]> {
+  const urls = await page.evaluate(() => {
+    const anchors = [
+      ...document.querySelectorAll<HTMLAnchorElement>("a.event-link[href], a.content-link[href]"),
+      ...document.querySelectorAll<HTMLAnchorElement>("a[href^='/'], a[href*='luma.com/']"),
+    ];
+    return anchors
+      .map((anchor) => anchor.href)
+      .filter(Boolean)
+      .filter((href) => {
+        try {
+          const parsed = new URL(href);
+          const path = parsed.pathname.replace(/\/+$/, "");
+          if (parsed.searchParams.get("k") === "c") return false;
+          if (!/^\/[a-z0-9][a-z0-9_-]{4,}$/i.test(path)) return false;
+          return !/^\/(about|ai|calendar|calendars|discover|explore|home|login|pricing|search|signin|tech|toronto|u|user)$/i.test(
+            path,
+          );
+        } catch {
+          return false;
+        }
+      });
+  });
+  const domUrls = uniqueUrls(urls, LUMA_BASE).filter(isLikelyLumaEventUrl);
+  if (domUrls.length > 0) return domUrls;
+
+  const html = await page.content().catch(() => "");
+  if (!html) return [];
+  return parseLumaHtml(html, LUMA_MAX_EVENTS, page.url(), discoveryMode)
+    .map((lead) => lead.url)
+    .filter((url): url is string => Boolean(url))
+    .filter(isLikelyLumaEventUrl);
+}
+
+async function collectRenderedLumaFeed(
+  feed: LumaFeedConfig,
+  timeoutMs: number,
+  logger?: (message: string) => void,
+): Promise<LumaFeedCollection> {
+  const warnings: string[] = [];
+  logger?.(`Opening ${feed.label} discovery page...`);
+
+  try {
+    return await withPlaywright(
+      async ({ page }) => {
+        await page.goto(feed.url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+        await page
+          .locator("a.event-link[href], a.content-link[href]")
+          .first()
+          .waitFor({ state: "attached", timeout: Math.min(timeoutMs, 8_000) })
+          .catch(() => {
+            warnings.push(`${feed.label} event cards did not fully render within timeout.`);
+          });
+        await page.waitForTimeout(500);
+
+        const collected = await collectUntilStable<string>({
+          collectItems: () => collectLumaEventUrlsFromPage(page, feed.mode),
+          getKey: (url) => normalizeUrlForDedupe(url),
+          scroll: async () => {
+            await page.mouse.wheel(0, 2_400);
+          },
+          waitForIdle: async () => {
+            await page
+              .waitForLoadState("networkidle", { timeout: LUMA_SCROLL_WAIT_MS })
+              .catch(() => undefined);
+          },
+          maxItems: LUMA_MAX_EVENTS,
+          maxScrolls: LUMA_MAX_SCROLLS,
+          noGrowthLimit: LUMA_NO_GROWTH_LIMIT,
+          timeoutMs,
+          waitMs: LUMA_SCROLL_WAIT_MS,
+          logger,
+          loadingMessage: "Loading more events...",
+          countMessage: (count) =>
+            count === 1 ? "1 unique event found" : `${count} unique events found`,
+        });
+
+        if (collected.noGrowthAttempts >= LUMA_NO_GROWTH_LIMIT) {
+          logger?.(`No additional events after ${LUMA_NO_GROWTH_LIMIT} attempts`);
+        }
+        logger?.("Lazy loading complete");
+
+        return {
+          feed,
+          urls: collected.items,
+          uniqueCount: collected.uniqueCount,
+          scrollAttempts: collected.scrollAttempts,
+          noGrowthAttempts: collected.noGrowthAttempts,
+          stopReason: collected.stopReason,
+          warnings,
+        };
+      },
+      { timeoutMs },
+    );
+  } catch (error) {
+    if (isPlaywrightBrowserMissingError(error)) {
+      warnings.push(describeLumaFailure("browser_missing"));
+    } else {
+      warnings.push(error instanceof Error ? error.message : `${feed.label} render failed`);
+    }
+    return {
+      feed,
+      urls: [],
+      uniqueCount: 0,
+      scrollAttempts: 0,
+      noGrowthAttempts: 0,
+      stopReason: "page_failed",
+      warnings,
+    };
+  }
+}
+
+async function mapLimit<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
+  return results;
+}
+
 async function enrichEventPages(
   leads: RawLead[],
   timeoutMs: number,
   startedAt: number,
-): Promise<{ leads: RawLead[]; warnings: string[] }> {
+): Promise<{ leads: RawLead[]; warnings: string[]; opened: number; failures: number }> {
   const warnings: string[] = [];
-  const enriched: RawLead[] = [];
+  let opened = 0;
+  let failures = 0;
 
-  for (const lead of leads) {
-    if (enriched.length >= leads.length) break;
-    if (!lead.url || Date.now() - startedAt > timeoutMs) {
-      enriched.push(lead);
-      continue;
-    }
-    if (enriched.filter((l) => l.metadata?.enriched).length >= MAX_EVENT_ENRICH) {
-      enriched.push(lead);
-      continue;
+  const enriched = await mapLimit(leads, DETAIL_PAGE_CONCURRENCY, async (lead, index) => {
+    if (!lead.url || Date.now() - startedAt > timeoutMs || index >= LUMA_DETAIL_LIMIT) {
+      return lead;
     }
 
     try {
       const remaining = Math.max(1_500, timeoutMs - (Date.now() - startedAt));
+      opened += 1;
       const page = await fetchLumaPage(lead.url, remaining);
       warnings.push(...page.warnings);
       if (!page.html) {
-        enriched.push(lead);
-        continue;
+        failures += 1;
+        return lead;
       }
-      const detailLeads = parseLumaHtml(page.html, 1, page.finalUrl || lead.url);
+      const detailLeads = parseLumaHtml(
+        page.html,
+        1,
+        page.finalUrl || lead.url,
+        (lead.metadata?.discoveryMode as LumaDiscoveryFeed | undefined) ?? "luma_public",
+      );
       const detail = detailLeads[0];
       if (!detail) {
-        enriched.push(lead);
-        continue;
+        failures += 1;
+        return lead;
       }
-      enriched.push({
+      return {
         ...lead,
         title: detail.title || lead.title,
         text: detail.text || lead.text,
@@ -619,16 +779,18 @@ async function enrichEventPages(
         metadata: {
           ...lead.metadata,
           ...detail.metadata,
+          discoveredFrom: lead.metadata?.discoveredFrom ?? detail.metadata?.discoveredFrom,
           enriched: true,
         },
-      });
+      };
     } catch (error) {
       warnings.push(error instanceof Error ? error.message : "Luma enrich failed");
-      enriched.push(lead);
+      failures += 1;
+      return lead;
     }
-  }
+  });
 
-  return { leads: enriched, warnings };
+  return { leads: enriched, warnings, opened, failures };
 }
 
 export const lumaCollector: Collector = {
@@ -638,10 +800,14 @@ export const lumaCollector: Collector = {
     const startedAt = Date.now();
     const result = emptyCollectorResult("luma", startedAt);
     const mode = resolveLumaDiscoveryMode();
-    const discoveryUrls = buildDiscoveryUrls(input.preferences);
-    const seen = new Set<string>();
+    const feeds = buildDiscoveryFeeds();
+    const byUrl = new Map<string, { url: string; feeds: Set<LumaDiscoveryFeed> }>();
     const budgetMs = input.timeoutMs;
     let pagesFetched = 0;
+    let scrollAttempts = 0;
+    let noGrowthAttempts = 0;
+    let uniqueCards = 0;
+    const stopReasons: string[] = [];
 
     result.warnings.push(`luma_mode=${mode}`);
 
@@ -654,46 +820,103 @@ export const lumaCollector: Collector = {
     input.logger?.("Starting public discovery...");
 
     try {
-      for (const url of discoveryUrls) {
+      for (const feed of feeds) {
         if (Date.now() - startedAt > budgetMs) {
           result.warnings.push("Luma collector stopped early after timeout budget.");
           break;
         }
-        if (result.leads.length >= input.maxResults) break;
-
         const remaining = Math.max(1_000, budgetMs - (Date.now() - startedAt));
-        const page = await fetchLumaPage(url, remaining);
-        result.warnings.push(...page.warnings);
-        pagesFetched += page.html ? 1 : 0;
-        if (!page.html) continue;
+        const feedResult = await collectRenderedLumaFeed(feed, remaining, input.logger);
+        pagesFetched += 1;
+        result.warnings.push(...feedResult.warnings);
+        scrollAttempts += feedResult.scrollAttempts;
+        noGrowthAttempts += feedResult.noGrowthAttempts;
+        uniqueCards += feedResult.uniqueCount;
+        stopReasons.push(`${feed.mode}:${feedResult.stopReason}`);
+        result.warnings.push(`stop_reason_${feed.mode}=${feedResult.stopReason}`);
+        result.warnings.push(`unique_cards_${feed.mode}=${feedResult.uniqueCount}`);
+        result.warnings.push(`scrolls_${feed.mode}=${feedResult.scrollAttempts}`);
+        result.warnings.push(`no_growth_${feed.mode}=${feedResult.noGrowthAttempts}`);
 
-        const pageLeads = parseLumaHtml(
-          page.html,
-          input.maxResults - result.leads.length,
-          page.finalUrl || url,
-        );
-
-        for (const lead of pageLeads) {
-          const key = lead.url ? normalizeUrlForDedupe(lead.url) : lead.id;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          result.leads.push(lead);
-          if (result.leads.length >= input.maxResults) break;
+        for (const url of feedResult.urls) {
+          const key = normalizeUrlForDedupe(url);
+          const existing = byUrl.get(key);
+          if (existing) {
+            existing.feeds.add(feed.mode);
+          } else {
+            byUrl.set(key, { url, feeds: new Set([feed.mode]) });
+          }
         }
       }
 
-      if (result.leads.length > 0) {
-        const enriched = await enrichEventPages(result.leads, budgetMs, startedAt);
+      const provisionalLeads = [...byUrl.values()]
+        .slice(0, Math.min(input.maxResults, LUMA_MAX_EVENTS))
+        .map(({ url, feeds }) => {
+          const discoveredFrom = [...feeds];
+          const primaryFeed = discoveredFrom[0] ?? "luma_public";
+          return {
+            id: `luma-${slugify(new URL(url).pathname)}`,
+            source: "luma" as const,
+            title: "Luma event",
+            url,
+            text: `Luma public event - discovered from ${discoveredFrom.join(", ")}`,
+            links: [url],
+            postedAt: new Date().toISOString(),
+            metadata: {
+              officialUrl: url,
+              applyUrl: url,
+              attribution: "luma",
+              provenance: "luma_public",
+              lumaMode: "public",
+              discoveryMode: primaryFeed,
+              discoveredFrom,
+              sourceIds: { luma: slugify(new URL(url).pathname) },
+            },
+          } satisfies RawLead;
+        });
+
+      let detailPagesOpened = 0;
+      let detailFailures = 0;
+      if (provisionalLeads.length > 0) {
+        input.logger?.(`Opening event details 1/${provisionalLeads.length}`);
+        const enriched = await enrichEventPages(provisionalLeads, budgetMs, startedAt);
         result.leads = enriched.leads.slice(0, input.maxResults);
         result.warnings.push(...enriched.warnings);
+        detailPagesOpened = enriched.opened;
+        detailFailures = enriched.failures;
+      }
+
+      for (const lead of result.leads) {
+        const url = lead.url;
+        if (!url) continue;
+        const entry = byUrl.get(normalizeUrlForDedupe(url));
+        if (!entry) continue;
+        const discoveredFrom = [...entry.feeds];
+        lead.metadata = {
+          ...lead.metadata,
+          discoveryMode: discoveredFrom[0] ?? lead.metadata?.discoveryMode,
+          discoveredFrom,
+        };
       }
 
       result.metrics = {
         pagesFetched,
         leadsEmitted: result.leads.length,
-        discoveryUrls: discoveryUrls.length,
+        discoveryUrls: feeds.length,
+        uniqueCards: byUrl.size,
+        feedCardsSeen: uniqueCards,
+        scrollAttempts,
+        noGrowthAttempts,
+        detailPagesOpened,
+        detailFailures,
         mode: mode === "authenticated" ? 1 : 0,
       };
+      result.warnings.push(`stop_reasons=${stopReasons.join(",")}`);
+      result.warnings.push(`unique_cards=${byUrl.size}`);
+      result.warnings.push(`scrolls=${scrollAttempts}`);
+      result.warnings.push(`no_growth_attempts=${noGrowthAttempts}`);
+      result.warnings.push(`details_opened=${detailPagesOpened}`);
+      result.warnings.push(`detail_failures=${detailFailures}`);
 
       if (result.leads.length === 0) {
         const hadParserIssue = result.warnings.some((w) =>
