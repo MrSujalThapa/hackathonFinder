@@ -24,6 +24,7 @@ async function main(): Promise<void> {
     await runAgent(options.command, options.dryRun, {
       sources: options.sources,
       maxResults: options.maxResults,
+      reviewPolicy: options.reviewPolicy,
       allowMockWrites: options.allowMockWrites,
       sourceTimeoutMs: options.sourceTimeoutMs,
       totalTimeoutMs: options.totalTimeoutMs,

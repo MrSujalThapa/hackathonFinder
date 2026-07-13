@@ -1,4 +1,5 @@
 export type DiscoveryMode = "online" | "in-person" | "hybrid" | "unknown";
+export type ReviewPolicy = "broad" | "balanced" | "strict";
 
 export type SourceName =
   | "hacklist"
@@ -67,6 +68,7 @@ export type DiscoveryPreferences = {
   includeRemote: boolean;
   includeInPerson: boolean;
   maxResults: number;
+  reviewPolicy?: ReviewPolicy;
 };
 
 export type ScoringResult = {
@@ -90,6 +92,24 @@ export type RejectedCandidate = {
   source: SourceName;
   stage: "verification" | "scoring";
   reason: string;
+};
+
+export type ReviewDisposition = {
+  eventValidity: "valid" | "invalid" | "uncertain";
+  eventType:
+    | "hackathon"
+    | "tech_event"
+    | "ai_event"
+    | "builder_event"
+    | "startup_event"
+    | "competition"
+    | "meetup"
+    | "unknown";
+  hackathonLikelihood: "high" | "medium" | "low";
+  metadataCompleteness: "high" | "medium" | "low";
+  sourceConfidence: "high" | "medium" | "low";
+  disposition: "NEW" | "NEEDS_REVIEW" | "REJECTED";
+  reasons: string[];
 };
 
 export type AcceptedCandidate = {
@@ -215,6 +235,9 @@ export type AgentRunObservability = {
 export type SourceRunStats = {
   source: SourceName;
   leadsFound: number;
+  queueReady: number;
+  needsReview: number;
+  invalidRejected: number;
   accepted: number;
   rejected: number;
   errors: string[];

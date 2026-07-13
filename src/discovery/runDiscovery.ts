@@ -7,6 +7,7 @@ import { runLoop } from "@/agent/runtime/runLoop";
 import type {
   AgentRunSummary,
   DiscoveryPreferences,
+  ReviewPolicy,
   SourceName,
   SourceRunStats,
 } from "@/core/discovery/types";
@@ -52,6 +53,7 @@ export type RunDiscoveryInput = {
   enabledSources?: SourceName[];
   availability?: Partial<Record<SourceName, SourceAvailability>>;
   maxResults?: number;
+  reviewPolicy?: ReviewPolicy;
   showAgentPlan?: boolean;
   showAgentTrace?: boolean;
   runId?: string;
@@ -103,6 +105,9 @@ function attachSkippedSourceStats(
     .map((item) => ({
       source: item.source,
       leadsFound: 0,
+      queueReady: 0,
+      needsReview: 0,
+      invalidRejected: 0,
       accepted: 0,
       rejected: 0,
       errors: [],
@@ -151,6 +156,7 @@ export async function runDiscovery(
   const withCli = applyCliOptions(parsed, {
     sources: input.sources,
     maxResults: input.maxResults,
+    reviewPolicy: input.reviewPolicy,
   });
 
   const requestedSources: SourceName[] | undefined =

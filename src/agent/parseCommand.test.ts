@@ -8,6 +8,8 @@ describe("parseCommand", () => {
     assert.ok(prefs.locations.includes("Toronto"));
     assert.ok(prefs.themes.includes("AI"));
     assert.deepEqual(prefs.sources, ["hacklist", "mlh", "luma", "web"]);
+    assert.equal(prefs.maxResults, 100);
+    assert.equal(prefs.reviewPolicy, "broad");
     assert.ok(prefs.dateFrom);
     assert.ok(prefs.dateTo);
   });

@@ -31,11 +31,12 @@ describe("runDiscovery", () => {
     assert.equal(summary.extracted, 8);
     assert.equal(summary.uniqueLeads, 7);
     assert.equal(summary.crossSourceMerges, 1);
-    assert.ok(summary.accepted >= 3);
-    assert.ok(summary.rejected >= 3);
-    assert.equal(summary.wouldCreate, 4);
+    assert.equal(summary.accepted, 6);
+    assert.equal(summary.needsReview, 3);
+    assert.equal(summary.rejected, 1);
+    assert.equal(summary.wouldCreate, 6);
     assert.equal(summary.wouldUpdate, 0);
-    assert.equal(summary.stored, 4);
+    assert.equal(summary.stored, 6);
     assert.equal(summary.created, 0);
     assert.equal(summary.dryRun, true);
     assert.ok(summary.sourceStats.some((stats) => stats.source === "mock"));

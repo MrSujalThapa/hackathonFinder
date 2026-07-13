@@ -67,7 +67,7 @@ describe("eligibility vs ranking", () => {
     assert.equal(scored.rejected, false);
   });
 
-  it("rejects unrelated in-person events outside requested geography", () => {
+  it("keeps unrelated in-person events outside requested geography for broad review", () => {
     const tokyo = event({
       name: "Tokyo Robotics Fair",
       city: "Tokyo",
@@ -76,8 +76,54 @@ describe("eligibility vs ranking", () => {
       themes: ["robotics"],
     });
     const scored = scoreHackathonEvent(tokyo, basePreferences, { now: NOW });
+    assert.equal(scored.rejected, false);
+    assert.ok(scored.redFlags.some((flag) => /geography/i.test(flag)));
+  });
+
+  it("still rejects explicit geography violations in strict review", () => {
+    const tokyo = event({
+      name: "Tokyo Robotics Fair",
+      city: "Tokyo",
+      country: "Japan",
+      mode: "in-person",
+      themes: ["robotics"],
+    });
+    const scored = scoreHackathonEvent(
+      tokyo,
+      { ...basePreferences, reviewPolicy: "strict" },
+      { now: NOW },
+    );
     assert.equal(scored.rejected, true);
     assert.match(scored.rejectionReason ?? "", /location|geography/i);
+  });
+
+  it("does not reject low relevance alone in broad review", () => {
+    const lowRelevance = event({
+      name: "Founders Demo Night",
+      source: "luma",
+      themes: ["startup"],
+      description: "A founder demo and builder networking event.",
+      prize: undefined,
+      eligibility: undefined,
+    });
+    const scored = scoreHackathonEvent(lowRelevance, basePreferences, { now: NOW });
+    assert.equal(scored.rejected, false);
+  });
+
+  it("keeps incomplete metadata for broad review", () => {
+    const incomplete = event({
+      name: "Toronto Builder Meetup",
+      source: "hakku",
+      applyUrl: undefined,
+      officialUrl: undefined,
+      deadline: undefined,
+      startDate: undefined,
+      prize: undefined,
+      eligibility: undefined,
+    });
+    const scored = scoreHackathonEvent(incomplete, basePreferences, { now: NOW });
+    assert.equal(scored.rejected, false);
+    assert.ok(scored.redFlags.some((flag) => /official|apply/i.test(flag)));
   });
 
   it("rejects closed registration even if the event starts later", () => {

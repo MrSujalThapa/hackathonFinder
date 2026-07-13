@@ -99,6 +99,7 @@ export function evaluateEligibility(
 ): EligibilityResult {
   const now = options.now ?? new Date();
   const reasons: string[] = [];
+  const broad = preferences.reviewPolicy !== "strict";
 
   if (isDeadlineClosed(event.deadline, now)) {
     return {
@@ -128,6 +129,13 @@ export function evaluateEligibility(
   }
 
   if (!hasUsefulUrl(event)) {
+    if (broad) {
+      return {
+        eligible: true,
+        needsReview: true,
+        reasons: ["No official/apply URL"],
+      };
+    }
     return {
       eligible: false,
       needsReview: false,
@@ -139,6 +147,13 @@ export function evaluateEligibility(
   const remoteOk = isRemoteEvent(event) && preferences.includeRemote;
   const locationOk = matchesPreferredLocation(event, preferences);
   if (!remoteOk && !locationOk) {
+    if (broad) {
+      return {
+        eligible: true,
+        needsReview: true,
+        reasons: ["Outside requested geography"],
+      };
+    }
     return {
       eligible: false,
       needsReview: false,
@@ -148,6 +163,13 @@ export function evaluateEligibility(
   }
 
   if (!inRequestedDateRange(event, preferences)) {
+    if (broad) {
+      return {
+        eligible: true,
+        needsReview: true,
+        reasons: ["Outside requested date range"],
+      };
+    }
     return {
       eligible: false,
       needsReview: false,
@@ -243,6 +265,9 @@ export function scoreHackathonEvent(
   }
 
   const ranked = rankPreferences(event, preferences);
+  if (eligibility.needsReview) {
+    ranked.redFlags.push(...eligibility.reasons);
+  }
   return {
     score: ranked.score,
     whyMatch: ranked.whyMatch,

@@ -213,6 +213,30 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   console.log(`- duration: ${summary.durationMs}ms`);
   console.log("");
 
+  console.log("Collection:");
+  console.log(`- raw leads: ${summary.rawLeads}`);
+  console.log(`- duplicate merges: ${summary.crossSourceMerges}`);
+  console.log(`- unique events: ${summary.uniqueLeads}`);
+  console.log("");
+
+  console.log("Review:");
+  console.log(`- ready for queue: ${summary.accepted - summary.needsReview}`);
+  console.log(`- needs human review: ${summary.needsReview}`);
+  console.log(`- invalid rejected: ${summary.rejected}`);
+  console.log("");
+
+  console.log("Persistence:");
+  if (summary.dryRun) {
+    console.log(`- would create: ${summary.wouldCreate}`);
+    console.log(`- would update: ${summary.wouldUpdate}`);
+    console.log(`- queue-visible: ${summary.wouldCreate + summary.wouldUpdate}`);
+  } else {
+    console.log(`- created: ${summary.created}`);
+    console.log(`- updated: ${summary.updated}`);
+    console.log(`- queue-visible: ${summary.created + summary.updated}`);
+  }
+  console.log("");
+
   console.log("Quality filters:");
   console.log(`- individual events: ${summary.quality.individualEvents}`);
   console.log(`- directories filtered: ${summary.quality.directoriesFiltered}`);
@@ -245,17 +269,22 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   if (summary.sourceStats.length > 0) {
     console.log("Sources:");
     for (const stats of summary.sourceStats) {
-      const suffix =
+      const outcome =
         stats.outcome === "degraded"
-          ? " - degraded"
+          ? "degraded"
           : stats.outcome === "failed"
-            ? " - failed"
+            ? "failed"
             : stats.outcome === "auth_required"
-              ? " - auth required"
+              ? "auth required"
               : stats.outcome === "skipped"
-                ? " - skipped"
+                ? "skipped"
                 : "";
-      console.log(`- ${stats.source}: ${stats.leadsFound} leads${suffix}`);
+      console.log(`- ${stats.source}:`);
+      console.log(`  discovered: ${stats.leadsFound}`);
+      console.log(`  queue-ready: ${stats.queueReady}`);
+      console.log(`  needs review: ${stats.needsReview}`);
+      console.log(`  invalid rejected: ${stats.invalidRejected}`);
+      if (outcome) console.log(`  outcome: ${outcome}`);
       for (const warning of stats.warnings) {
         console.log(`  warning: ${warning}`);
       }

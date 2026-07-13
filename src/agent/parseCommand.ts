@@ -1,4 +1,9 @@
-import type { DiscoveryMode, DiscoveryPreferences, SourceName } from "@/core/discovery/types";
+import type {
+  DiscoveryMode,
+  DiscoveryPreferences,
+  ReviewPolicy,
+  SourceName,
+} from "@/core/discovery/types";
 import { REAL_DEFAULT_SOURCES } from "@/collectors/types";
 
 const DEFAULT_LOCATIONS = [
@@ -54,6 +59,8 @@ const SOURCE_ALIASES: Record<string, SourceName> = {
   mock: "mock",
   twitter: "x",
 };
+
+const REVIEW_POLICIES = new Set<ReviewPolicy>(["broad", "balanced", "strict"]);
 
 function normalizeCommand(rawCommand: string): string {
   let command = rawCommand.trim();
@@ -150,6 +157,19 @@ function extractModes(command: string): DiscoveryMode[] {
   return [...modes];
 }
 
+function extractReviewPolicy(command: string): ReviewPolicy {
+  const flag = command.match(/--review-policy=(broad|balanced|strict)\b/i);
+  if (flag && REVIEW_POLICIES.has(flag[1]!.toLowerCase() as ReviewPolicy)) {
+    return flag[1]!.toLowerCase() as ReviewPolicy;
+  }
+  if (/\bbroad review\b|\bhigh recall\b|\bprefer false positives\b/i.test(command)) {
+    return "broad";
+  }
+  if (/\bstrict review\b|\bstrict mode\b/i.test(command)) return "strict";
+  if (/\bbalanced review\b|\bbalanced mode\b/i.test(command)) return "balanced";
+  return "broad";
+}
+
 export function getDefaultDiscoveryPreferences(rawCommand: string): DiscoveryPreferences {
   return {
     rawCommand,
@@ -159,18 +179,20 @@ export function getDefaultDiscoveryPreferences(rawCommand: string): DiscoveryPre
     sources: [...REAL_DEFAULT_SOURCES],
     includeRemote: true,
     includeInPerson: true,
-    maxResults: 25,
+    maxResults: 100,
+    reviewPolicy: "broad",
   };
 }
 
 export function applyCliOptions(
   preferences: DiscoveryPreferences,
-  options: { sources?: SourceName[]; maxResults?: number },
+  options: { sources?: SourceName[]; maxResults?: number; reviewPolicy?: ReviewPolicy },
 ): DiscoveryPreferences {
   return {
     ...preferences,
     sources: options.sources && options.sources.length > 0 ? options.sources : preferences.sources,
     maxResults: options.maxResults ?? preferences.maxResults,
+    reviewPolicy: options.reviewPolicy ?? preferences.reviewPolicy,
   };
 }
 
@@ -183,6 +205,7 @@ export function parseCommand(rawCommand: string): DiscoveryPreferences {
   const sources = extractSources(normalized);
   const modes = extractModes(normalized);
   const dateRange = extractIsoDateRange(normalized);
+  const reviewPolicy = extractReviewPolicy(normalized);
 
   const includeRemote =
     /\b(remote|online)\b/i.test(normalized) || defaults.includeRemote;
@@ -198,6 +221,7 @@ export function parseCommand(rawCommand: string): DiscoveryPreferences {
     includeRemote,
     includeInPerson,
     maxResults: defaults.maxResults,
+    reviewPolicy,
     dateFrom: dateRange.from,
     dateTo: dateRange.to,
   };

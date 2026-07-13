@@ -74,6 +74,9 @@ function initSourceStats(sources: SourceName[]): Map<SourceName, SourceRunStats>
     stats.set(source, {
       source,
       leadsFound: 0,
+      queueReady: 0,
+      needsReview: 0,
+      invalidRejected: 0,
       accepted: 0,
       rejected: 0,
       errors: [],
@@ -128,6 +131,27 @@ function reviewOnlyScore(reasons: string[], redFlags: string[]): ScoringResult {
     redFlags: [...new Set([...reasons, ...redFlags])],
     rejected: false,
   };
+}
+
+function isBroadReview(preferences: DiscoveryPreferences): boolean {
+  return preferences.reviewPolicy !== "strict";
+}
+
+function isHardInvalidVerificationReason(reason: string): boolean {
+  return /deadline has passed|registration closed|event already ended|stale title year|title year is in the past/i.test(
+    reason,
+  );
+}
+
+function broadNeedsReviewReasons(
+  event: { deadline?: string; startDate?: string; applyUrl?: string; officialUrl?: string },
+  score: ScoringResult,
+): string[] {
+  const reasons = [...score.redFlags];
+  if (!event.deadline && !event.startDate) reasons.push("Date or deadline unclear");
+  if (!event.applyUrl) reasons.push("Application URL missing or unclear");
+  if (!event.officialUrl) reasons.push("Official URL missing or unclear");
+  return [...new Set(reasons)];
 }
 
 function assertNotCancelled(signal?: AbortSignal): void {
@@ -454,10 +478,20 @@ export async function executeDiscoveryPipeline(
     const accepted: AcceptedCandidate[] = [];
     const rejected: RejectedCandidate[] = [];
 
-    const bump = (source: SourceName, field: "accepted" | "rejected") => {
+    const markQueued = (source: SourceName, status: "NEW" | "NEEDS_REVIEW") => {
       const stats = sourceStats.get(source);
-      if (stats) stats[field] += 1;
+      if (!stats) return;
+      stats.accepted += 1;
+      stats.queueReady += 1;
+      if (status === "NEEDS_REVIEW") stats.needsReview += 1;
     };
+    const markInvalidRejected = (source: SourceName) => {
+      const stats = sourceStats.get(source);
+      if (!stats) return;
+      stats.rejected += 1;
+      stats.invalidRejected += 1;
+    };
+    const broadReview = isBroadReview(preferences);
 
     for (const event of merged.events) {
       assertNotCancelled(options.cancellationSignal);
@@ -472,7 +506,7 @@ export async function executeDiscoveryPipeline(
             stage: "verification",
             reason: `Directory/category page — ${classified.reasons[0] ?? "not an individual event"}`,
           });
-          bump(event.source, "rejected");
+          markInvalidRejected(event.source);
           continue;
         }
 
@@ -484,7 +518,7 @@ export async function executeDiscoveryPipeline(
             stage: "verification",
             reason: `Article/listicle — ${classified.reasons[0] ?? "not an individual event"}`,
           });
-          bump(event.source, "rejected");
+          markInvalidRejected(event.source);
           continue;
         }
 
@@ -499,7 +533,7 @@ export async function executeDiscoveryPipeline(
             stage: "verification",
             reason: `${classified.classification} — ${classified.reasons[0] ?? "filtered"}`,
           });
-          bump(event.source, "rejected");
+          markInvalidRejected(event.source);
           continue;
         }
 
@@ -507,15 +541,18 @@ export async function executeDiscoveryPipeline(
           summary.quality.uncertainNeedsReview += 1;
           const verification = verifyHackathonEvent(event, { now });
           if (verification.status === "rejected") {
-            summary.quality.historicalOrExpiredFiltered += 1;
-            rejected.push({
-              name: event.name,
-              source: event.source,
-              stage: "verification",
-              reason: verification.reasons[0] ?? "Failed verification",
-            });
-            bump(event.source, "rejected");
-            continue;
+            const reason = verification.reasons[0] ?? "Failed verification";
+            if (!broadReview || isHardInvalidVerificationReason(reason)) {
+              summary.quality.historicalOrExpiredFiltered += 1;
+              rejected.push({
+                name: event.name,
+                source: event.source,
+                stage: "verification",
+                reason,
+              });
+              markInvalidRejected(event.source);
+              continue;
+            }
           }
 
           accepted.push({
@@ -529,7 +566,7 @@ export async function executeDiscoveryPipeline(
             hasOfficialUrl: Boolean(event.officialUrl),
             hasApplyUrl: Boolean(event.applyUrl),
           });
-          bump(event.source, "accepted");
+          markQueued(event.source, "NEEDS_REVIEW");
           continue;
         }
 
@@ -540,7 +577,7 @@ export async function executeDiscoveryPipeline(
             stage: "verification",
             reason: `Unsupported classification ${classified.classification}`,
           });
-          bump(event.source, "rejected");
+          markInvalidRejected(event.source);
           continue;
         }
 
@@ -548,38 +585,55 @@ export async function executeDiscoveryPipeline(
 
         const verification = verifyHackathonEvent(event, { now });
         if (verification.status === "rejected") {
-          if (/deadline|ended|stale title/i.test(verification.reasons.join(" "))) {
+          const reasonText = verification.reasons.join(" ");
+          if (/deadline|ended|stale title/i.test(reasonText)) {
             summary.quality.historicalOrExpiredFiltered += 1;
           }
-          rejected.push({
-            name: event.name,
-            source: event.source,
-            stage: "verification",
-            reason: verification.reasons[0] ?? "Failed verification",
-          });
-          bump(event.source, "rejected");
-          continue;
+          if (!broadReview || isHardInvalidVerificationReason(reasonText)) {
+            rejected.push({
+              name: event.name,
+              source: event.source,
+              stage: "verification",
+              reason: verification.reasons[0] ?? "Failed verification",
+            });
+            markInvalidRejected(event.source);
+            continue;
+          }
         }
 
         const score = scoreHackathonEvent(event, preferences, { now });
         if (score.rejected) {
-          rejected.push({
-            name: event.name,
-            source: event.source,
-            stage: "scoring",
-            reason: score.rejectionReason ?? "Rejected by eligibility/scoring",
-          });
-          bump(event.source, "rejected");
-          continue;
+          const reason = score.rejectionReason ?? "Rejected by eligibility/scoring";
+          if (!broadReview || isHardInvalidVerificationReason(reason)) {
+            rejected.push({
+              name: event.name,
+              source: event.source,
+              stage: "scoring",
+              reason,
+            });
+            markInvalidRejected(event.source);
+            continue;
+          }
         }
 
         if (!event.deadline) summary.quality.missingDeadlines += 1;
         if (!event.applyUrl) summary.quality.missingApplyLinks += 1;
 
-        const status = verification.status === "needs_review" ? "NEEDS_REVIEW" : "NEW";
+        const reviewReasons = broadReview ? broadNeedsReviewReasons(event, score) : [];
+        const status =
+          verification.status === "needs_review" || reviewReasons.length > 0
+            ? "NEEDS_REVIEW"
+            : "NEW";
+        const finalScore =
+          status === "NEEDS_REVIEW" && reviewReasons.length > 0
+            ? {
+                ...score,
+                redFlags: [...new Set([...score.redFlags, ...reviewReasons])],
+              }
+            : score;
         accepted.push({
           event,
-          score,
+          score: finalScore,
           fingerprint: "",
           status,
           classification: classified.classification,
@@ -588,7 +642,7 @@ export async function executeDiscoveryPipeline(
           hasOfficialUrl: Boolean(event.officialUrl),
           hasApplyUrl: Boolean(event.applyUrl),
         });
-        bump(event.source, "accepted");
+        markQueued(event.source, status);
       } catch (error) {
         summary.errors.push(
           `${event.name}: ${error instanceof Error ? error.message : "processing failed"}`,

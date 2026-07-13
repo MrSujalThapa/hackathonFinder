@@ -1,5 +1,5 @@
 import { printAgentSummary } from "@/agent/summary";
-import type { SourceName } from "@/core/discovery/types";
+import type { ReviewPolicy, SourceName } from "@/core/discovery/types";
 import {
   createStdoutEventSink,
   runDiscovery,
@@ -9,6 +9,7 @@ import {
 export type RunAgentOptions = {
   sources?: SourceName[];
   maxResults?: number;
+  reviewPolicy?: ReviewPolicy;
   allowMockWrites?: boolean;
   sourceTimeoutMs?: number;
   totalTimeoutMs?: number;
@@ -45,6 +46,7 @@ export async function runAgent(
     mode,
     sources: cliOptions.sources,
     maxResults: cliOptions.maxResults,
+    reviewPolicy: cliOptions.reviewPolicy,
     allowMockWrites: cliOptions.allowMockWrites,
     sourceTimeoutMs: cliOptions.sourceTimeoutMs,
     totalTimeoutMs: cliOptions.totalTimeoutMs,

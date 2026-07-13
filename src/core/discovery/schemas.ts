@@ -7,6 +7,8 @@ export const discoveryModeSchema = z.enum([
   "unknown",
 ]);
 
+export const reviewPolicySchema = z.enum(["broad", "balanced", "strict"]);
+
 export const sourceNameSchema = z.enum([
   "hacklist",
   "hakku",
@@ -76,6 +78,7 @@ export const discoveryPreferencesSchema = z.object({
   includeRemote: z.boolean(),
   includeInPerson: z.boolean(),
   maxResults: z.number().int().positive(),
+  reviewPolicy: reviewPolicySchema.optional(),
 });
 
 export const scoringResultSchema = z.object({
