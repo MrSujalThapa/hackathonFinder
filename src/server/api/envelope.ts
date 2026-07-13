@@ -14,6 +14,25 @@ export const candidateStatusSchema = z.enum([
 
 export const listCandidatesQuerySchema = z.object({
   status: candidateStatusSchema.optional(),
+  statuses: z
+    .string()
+    .optional()
+    .transform((value, ctx) => {
+      if (!value?.trim()) return undefined;
+      const parsed: CandidateStatus[] = [];
+      for (const raw of value.split(",")) {
+        const status = candidateStatusSchema.safeParse(raw.trim());
+        if (!status.success) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Invalid candidate status: ${raw}`,
+          });
+          return z.NEVER;
+        }
+        parsed.push(status.data);
+      }
+      return [...new Set(parsed)];
+    }),
   limit: z.coerce.number().int().min(1).max(50).optional().default(20),
   cursor: z.string().min(1).optional(),
   offset: z.coerce.number().int().min(0).optional(),

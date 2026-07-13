@@ -22,6 +22,7 @@ export async function GET(request: Request): Promise<Response> {
     const repo = getCandidateRepository();
     const result = await repo.listCandidates({
       status: parsed.data.status,
+      statuses: parsed.data.statuses,
       limit: parsed.data.limit,
       cursor: parsed.data.cursor,
       offset: parsed.data.offset,

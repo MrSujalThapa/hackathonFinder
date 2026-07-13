@@ -127,9 +127,18 @@ export function QueueReview() {
         {visibleCurrent ? (
           <>
             <CandidateProgress
-              current={Math.max(1, queue.total - filtered.length + 1)}
+              current={Math.max(1, queue.position)}
               total={queue.total}
             />
+            {queue.loadingMore ? (
+              <p
+                className="mb-3 text-center text-xs text-muted"
+                role="status"
+                aria-live="polite"
+              >
+                Loading more candidates...
+              </p>
+            ) : null}
             {queue.syncMessage ? (
               <p
                 className="mb-3 text-center text-xs text-sky-100/90"

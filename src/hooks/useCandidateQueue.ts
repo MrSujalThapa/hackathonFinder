@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/candidates";
 import {
   applyStatusChange,
+  getCounts,
   getQueue,
   insertIntoQueue,
   replaceQueue,
@@ -38,7 +39,12 @@ type QueueState = {
   syncMessage: string | null;
   busy: boolean;
   outgoingId: string | null;
+  loadingMore: boolean;
 };
+
+const QUEUE_BATCH_SIZE = 30;
+const QUEUE_REFILL_THRESHOLD = 8;
+const QUEUE_STATUSES = ["NEW", "NEEDS_REVIEW"] as const;
 
 export function messageForSheetSync(
   sheetSync: SheetSyncResult | null | undefined,
@@ -87,14 +93,23 @@ export function useCandidateQueue() {
     syncMessage: null,
     busy: false,
     outgoingId: null,
+    loadingMore: false,
   });
   const seenRef = useRef<Set<string>>(new Set());
   const pendingRef = useRef<Set<string>>(new Set());
   const candidatesRef = useRef<CandidateCard[]>([]);
+  const cursorRef = useRef<string | null>(null);
+  const exhaustedRef = useRef(false);
+  const loadingMoreRef = useRef(false);
+  const totalRef = useRef(0);
 
   useEffect(() => {
     candidatesRef.current = state.candidates;
   }, [state.candidates]);
+
+  useEffect(() => {
+    totalRef.current = state.total;
+  }, [state.total]);
 
   const syncLocalFromStore = useCallback(() => {
     const pending = pendingRef.current;
@@ -102,46 +117,109 @@ export function useCandidateQueue() {
     setState((prev) => ({
       ...prev,
       candidates: storeQueue,
-      total: storeQueue.length,
+      total: getCounts().queue,
     }));
   }, []);
+
+  const mergeFetchedCandidates = useCallback(
+    (incoming: CandidateCard[], total: number | null | undefined) => {
+      const seen = seenRef.current;
+      const pending = pendingRef.current;
+      const byId = new Map(candidatesRef.current.map((card) => [card.id, card]));
+      for (const candidate of incoming) {
+        if (seen.has(candidate.id) || pending.has(candidate.id)) continue;
+        if (!byId.has(candidate.id)) byId.set(candidate.id, candidate);
+      }
+      const next = [...byId.values()].sort(
+        (a, b) =>
+          b.score - a.score ||
+          b.foundAt.localeCompare(a.foundAt) ||
+          b.id.localeCompare(a.id),
+      );
+      const authoritativeTotal = total ?? totalRef.current;
+      candidatesRef.current = next;
+      totalRef.current = authoritativeTotal;
+      replaceQueue(next, authoritativeTotal);
+      setState((prev) => ({
+        ...prev,
+        candidates: next,
+        total: authoritativeTotal,
+        loading: false,
+        loadingMore: false,
+        error: null,
+      }));
+    },
+    [],
+  );
+
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current || exhaustedRef.current) return;
+    loadingMoreRef.current = true;
+    setState((prev) => ({ ...prev, loadingMore: true }));
+    try {
+      const page = await timedAsync("queue.fetch_more", () =>
+        fetchCandidates({
+          statuses: [...QUEUE_STATUSES],
+          limit: QUEUE_BATCH_SIZE,
+          sort: "score",
+          cursor: cursorRef.current ?? undefined,
+        }),
+      );
+      cursorRef.current = page.nextCursor;
+      exhaustedRef.current = !page.nextCursor;
+      mergeFetchedCandidates(page.candidates, page.total);
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        loadingMore: false,
+        error:
+          error instanceof CandidatesApiError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : "Failed to load more queue candidates",
+      }));
+    } finally {
+      loadingMoreRef.current = false;
+    }
+  }, [mergeFetchedCandidates]);
 
   const load = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
     try {
-      const filtered = await timedAsync("queue.initial_fetch", async () => {
-        const [newBatch, reviewBatch] = await Promise.all([
-          fetchCandidates({ status: "NEW", limit: 15, sort: "score" }),
-          fetchCandidates({ status: "NEEDS_REVIEW", limit: 15, sort: "score" }),
-        ]);
-        const merged = [...newBatch.candidates, ...reviewBatch.candidates]
-          .filter(
-            (candidate, index, all) =>
-              all.findIndex((item) => item.id === candidate.id) === index,
-          )
-          .sort(
-            (a, b) =>
-              b.score - a.score ||
-              b.foundAt.localeCompare(a.foundAt) ||
-              a.id.localeCompare(b.id),
-          );
-        const seen = seenRef.current;
-        return merged.filter((candidate) => !seen.has(candidate.id));
+      cursorRef.current = null;
+      exhaustedRef.current = false;
+      loadingMoreRef.current = false;
+      const firstPage = await timedAsync("queue.initial_fetch", async () => {
+        return fetchCandidates({
+          statuses: [...QUEUE_STATUSES],
+          limit: QUEUE_BATCH_SIZE,
+          sort: "score",
+        });
       });
-      replaceQueue(filtered);
+      cursorRef.current = firstPage.nextCursor;
+      exhaustedRef.current = !firstPage.nextCursor;
+      const seen = seenRef.current;
+      const filtered = firstPage.candidates.filter((candidate) => !seen.has(candidate.id));
+      const total = firstPage.total ?? filtered.length;
+      candidatesRef.current = filtered;
+      totalRef.current = total;
+      replaceQueue(filtered, total);
       setState({
         candidates: filtered,
-        total: filtered.length,
+        total,
         loading: false,
         error: null,
         syncMessage: null,
         busy: false,
         outgoingId: null,
+        loadingMore: false,
       });
     } catch (error) {
       setState((prev) => ({
         ...prev,
         loading: false,
+        loadingMore: false,
         busy: false,
         outgoingId: null,
         error:
@@ -184,10 +262,22 @@ export function useCandidateQueue() {
       setState((prev) => ({
         ...prev,
         candidates: next,
-        total: next.length,
+        total: getCounts().queue,
       }));
     });
   }, []);
+
+  useEffect(() => {
+    if (
+      !state.loading &&
+      !state.loadingMore &&
+      state.candidates.length > 0 &&
+      state.candidates.length <= QUEUE_REFILL_THRESHOLD &&
+      state.candidates.length < state.total
+    ) {
+      void loadMore();
+    }
+  }, [loadMore, state.candidates.length, state.loading, state.loadingMore, state.total]);
 
   const decide = useCallback(
     async (action: QueueDecision, candidateId?: string) => {
@@ -198,6 +288,7 @@ export function useCandidateQueue() {
       if (pendingRef.current.has(current.id)) return { ok: false as const };
 
       const previousStatus = current.status;
+      const previousTotal = totalRef.current;
       const newStatus = statusForDecision(action);
       const optimisticCard: CandidateCard = {
         ...current,
@@ -218,6 +309,8 @@ export function useCandidateQueue() {
       });
 
       const remaining = previousLocal.filter((item) => item.id !== current.id);
+      candidatesRef.current = remaining;
+      totalRef.current = Math.max(0, previousTotal - 1);
       setState((prev) => ({
         ...prev,
         candidates: remaining,
@@ -226,6 +319,9 @@ export function useCandidateQueue() {
         outgoingId: null,
         error: null,
       }));
+      if (remaining.length <= QUEUE_REFILL_THRESHOLD) {
+        void loadMore();
+      }
 
       try {
         const { candidate: updated } = await timedAsync(
@@ -293,10 +389,12 @@ export function useCandidateQueue() {
           previousStatus,
           card: optimisticCard,
         });
+        candidatesRef.current = previousLocal;
+        totalRef.current = previousTotal;
         setState((prev) => ({
           ...prev,
           candidates: previousLocal,
-          total: previousLocal.length,
+          total: previousTotal,
           busy: false,
           outgoingId: null,
           error:
@@ -307,7 +405,7 @@ export function useCandidateQueue() {
         return { ok: false as const };
       }
     },
-    [],
+    [loadMore],
   );
 
   const clearError = useCallback(() => {
@@ -324,9 +422,7 @@ export function useCandidateQueue() {
     ...state,
     current: state.candidates[0] ?? null,
     upcoming: state.candidates[1] ?? null,
-    position: state.candidates.length
-      ? state.total - state.candidates.length + 1
-      : 0,
+    position: state.candidates.length ? 1 : 0,
     refresh: load,
     decide,
     clearError,

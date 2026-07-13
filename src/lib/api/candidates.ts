@@ -38,6 +38,7 @@ export type ListCandidatesResponse = {
 
 export async function fetchCandidates(params: {
   status?: string;
+  statuses?: string[];
   limit?: number;
   source?: string;
   q?: string;
@@ -47,6 +48,7 @@ export async function fetchCandidates(params: {
   return timedAsync("client.list_fetch", async () => {
     const search = new URLSearchParams();
     if (params.status) search.set("status", params.status);
+    if (params.statuses?.length) search.set("statuses", params.statuses.join(","));
     if (params.limit != null) search.set("limit", String(params.limit));
     if (params.source) search.set("source", params.source);
     if (params.q) search.set("q", params.q);

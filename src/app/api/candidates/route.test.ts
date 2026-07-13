@@ -109,6 +109,10 @@ function createMockRepo(
       if (params.status) {
         candidates = candidates.filter((c) => c.status === params.status);
       }
+      if (params.statuses?.length) {
+        const statuses = new Set(params.statuses);
+        candidates = candidates.filter((c) => statuses.has(c.status));
+      }
       if (params.source) {
         candidates = candidates.filter((c) => c.source === params.source);
       }
@@ -217,6 +221,32 @@ describe("GET /api/candidates", () => {
     assert.equal(body.error, null);
     assert.equal(body.data.candidates.length, 1);
     assert.equal(body.data.candidates[0].name, "HackTO AI Challenge");
+  });
+
+  it("returns combined pending queue total across NEW and NEEDS_REVIEW", async () => {
+    const store = new Map<string, CandidateDetail>();
+    for (let index = 0; index < 196; index += 1) {
+      const id = `${String(index).padStart(8, "0")}-1111-4111-8111-111111111111`;
+      store.set(
+        id,
+        baseDetail({
+          id,
+          status: index < 22 ? "NEW" : "NEEDS_REVIEW",
+          name: `Candidate ${index}`,
+          score: 196 - index,
+        }),
+      );
+    }
+    setCandidateRepositoryForTests(createMockRepo(store));
+
+    const response = await listCandidates(
+      new Request("http://localhost/api/candidates?statuses=NEW,NEEDS_REVIEW&limit=30"),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.error, null);
+    assert.equal(body.data.candidates.length, 30);
+    assert.equal(body.data.total, 196);
   });
 
   it("returns 400 for invalid status", async () => {

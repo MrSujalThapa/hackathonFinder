@@ -79,6 +79,7 @@ export type CandidateDetail = CandidateCard & {
 
 export type ListCandidatesParams = {
   status?: CandidateStatus;
+  statuses?: CandidateStatus[];
   limit?: number;
   cursor?: string;
   offset?: number;

@@ -20,16 +20,25 @@ import {
   mergeCandidateRows,
 } from "@/server/candidates/mappers";
 
-function decodeCursor(cursor: string): { foundAt: string; id: string } {
-  const [foundAt, id] = Buffer.from(cursor, "base64url").toString("utf8").split("|");
+function decodeCursor(cursor: string): { score?: number; foundAt: string; id: string } {
+  const parts = Buffer.from(cursor, "base64url").toString("utf8").split("|");
+  if (parts.length === 3) {
+    const [scoreRaw, foundAt, id] = parts;
+    const score = Number(scoreRaw);
+    if (!Number.isFinite(score) || !foundAt || !id) {
+      throw new Error("Invalid cursor.");
+    }
+    return { score, foundAt, id };
+  }
+  const [foundAt, id] = parts;
   if (!foundAt || !id) {
     throw new Error("Invalid cursor.");
   }
   return { foundAt, id };
 }
 
-function encodeCursor(foundAt: string, id: string): string {
-  return Buffer.from(`${foundAt}|${id}`, "utf8").toString("base64url");
+function encodeCursor(row: { score: number; found_at: string; id: string }): string {
+  return Buffer.from(`${row.score}|${row.found_at}|${row.id}`, "utf8").toString("base64url");
 }
 
 /** Columns required for CandidateCard mapping — avoids pulling description/fingerprint blobs. */
@@ -94,6 +103,10 @@ export async function listCandidates(
     query = query.eq("status", params.status);
   }
 
+  if (params.statuses && params.statuses.length > 0) {
+    query = query.in("status", params.statuses);
+  }
+
   if (params.source) {
     query = query.eq("source", params.source);
   }
@@ -105,10 +118,16 @@ export async function listCandidates(
   if (params.offset != null && params.offset > 0) {
     query = query.range(params.offset, params.offset + limit);
   } else if (params.cursor) {
-    const { foundAt, id } = decodeCursor(params.cursor);
-    query = query.or(
-      `found_at.lt.${foundAt},and(found_at.eq.${foundAt},id.lt.${id})`,
-    );
+    const { score, foundAt, id } = decodeCursor(params.cursor);
+    if (sort === "score" && typeof score === "number") {
+      query = query.or(
+        `score.lt.${score},and(score.eq.${score},found_at.lt.${foundAt}),and(score.eq.${score},found_at.eq.${foundAt},id.lt.${id})`,
+      );
+    } else {
+      query = query.or(
+        `found_at.lt.${foundAt},and(found_at.eq.${foundAt},id.lt.${id})`,
+      );
+    }
   }
 
   const { data, error, count } = await query;
@@ -127,7 +146,7 @@ export async function listCandidates(
   return {
     candidates,
     nextCursor:
-      hasMore && last ? encodeCursor(last.found_at, last.id) : undefined,
+      hasMore && last ? encodeCursor(last) : undefined,
     total: count ?? undefined,
   };
 }

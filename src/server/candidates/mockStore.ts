@@ -286,6 +286,10 @@ export function createMockCandidateRepository(): CandidateRepository {
       if (params.status) {
         records = records.filter((item) => item.status === params.status);
       }
+      if (params.statuses && params.statuses.length > 0) {
+        const statuses = new Set(params.statuses);
+        records = records.filter((item) => statuses.has(item.status));
+      }
       if (params.source) {
         records = records.filter((item) => item.source === params.source);
       }
