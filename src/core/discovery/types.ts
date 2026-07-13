@@ -183,6 +183,7 @@ export type AgentRunSummary = {
   }>;
   rejectedCandidates: RejectedCandidate[];
   sourceStats: SourceRunStats[];
+  sourceAccounting: SourceAccounting;
   agent?: AgentRunObservability;
   warnings: string[];
   errors: string[];
@@ -219,4 +220,20 @@ export type SourceRunStats = {
   errors: string[];
   warnings: string[];
   durationMs: number;
+  outcome: SourceOutcome;
+};
+
+export type SourceOutcome =
+  | "executed"
+  | "skipped"
+  | "failed"
+  | "auth_required"
+  | "degraded";
+
+export type SourceAccounting = {
+  executedSources: SourceName[];
+  skippedSources: SourceName[];
+  failedSources: SourceName[];
+  degradedSources: SourceName[];
+  authRequiredSources: SourceName[];
 };

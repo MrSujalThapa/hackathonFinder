@@ -4,6 +4,7 @@ import {
   selectDiscoverySources,
   DISCOVERY_DEFAULT_SOURCES,
 } from "@/discovery/selectSources";
+import { reconcileSourcePlan } from "@/discovery/sourcePlan";
 import {
   createEventEmitter,
   formatDiscoveryEventForCli,
@@ -13,6 +14,22 @@ import { runDiscovery } from "@/discovery/runDiscovery";
 import { setHakkuStatusProviderForTests } from "@/discovery/hakkuStatus";
 
 describe("selectDiscoverySources", () => {
+  it("can produce all six effective sources when Hakku is connected and enabled", () => {
+    const result = selectDiscoverySources({
+      enabledSources: ["mlh", "web", "hacklist", "devpost", "luma", "hakku"],
+      hakkuConnected: true,
+    });
+    assert.deepEqual(result.effectiveSources, [
+      "mlh",
+      "web",
+      "hacklist",
+      "devpost",
+      "luma",
+      "hakku",
+    ]);
+    assert.ok(!result.effectiveSources.includes("x"));
+  });
+
   it("uses enabled defaults without X", () => {
     const result = selectDiscoverySources({
       hakkuConnected: false,
@@ -45,6 +62,24 @@ describe("selectDiscoverySources", () => {
       hakkuConnected: true,
     });
     assert.ok(result.effectiveSources.includes("hakku"));
+  });
+
+  it("runs explicit Luma only when requested", () => {
+    const result = selectDiscoverySources({
+      requestedSources: ["luma"],
+      enabledSources: ["mlh", "web", "hacklist", "devpost", "luma", "hakku"],
+      hakkuConnected: true,
+    });
+    assert.deepEqual(result.effectiveSources, ["luma"]);
+  });
+
+  it("runs explicit Hakku only when requested and connected", () => {
+    const result = selectDiscoverySources({
+      requestedSources: ["hakku"],
+      enabledSources: ["mlh", "web", "hacklist", "devpost", "luma", "hakku"],
+      hakkuConnected: true,
+    });
+    assert.deepEqual(result.effectiveSources, ["hakku"]);
   });
 
   it("keeps Luma public in defaults when enabled", () => {
@@ -122,6 +157,42 @@ describe("selectDiscoverySources", () => {
   });
 });
 
+describe("reconcileSourcePlan", () => {
+  it("restores healthy Luma and Hakku omitted by planner output", () => {
+    const result = reconcileSourcePlan({
+      effectiveSources: ["mlh", "web", "hacklist", "devpost", "luma", "hakku"],
+      plannerSources: ["mlh", "web", "hacklist", "devpost"],
+      availabilityBySource: {
+        luma: { source: "luma", enabled: true, health: "healthy" },
+        hakku: { source: "hakku", enabled: true, health: "healthy" },
+      },
+    });
+
+    assert.deepEqual(result.sources, ["mlh", "web", "hacklist", "devpost", "luma", "hakku"]);
+    assert.equal(new Set(result.items.map((item) => item.source)).size, 6);
+    assert.ok(result.items.every((item) => item.state === "execute"));
+    assert.ok(result.warnings.some((warning) => /omitted effective source luma/i.test(warning)));
+    assert.ok(result.warnings.some((warning) => /omitted effective source hakku/i.test(warning)));
+  });
+
+  it("does not let the planner silently drop a healthy source with enabled false", () => {
+    const result = reconcileSourcePlan({
+      effectiveSources: ["luma"],
+      plannerSources: ["luma"],
+      plannerIntents: [
+        { source: "luma", enabled: false, reason: "Planner did not prioritize it." },
+      ],
+      availabilityBySource: {
+        luma: { source: "luma", enabled: true, health: "healthy" },
+      },
+    });
+
+    assert.deepEqual(result.sources, ["luma"]);
+    assert.equal(result.items[0]?.state, "execute");
+    assert.ok(result.warnings.some((warning) => /tried to skip healthy/i.test(warning)));
+  });
+});
+
 describe("discovery events", () => {
   it("sanitizes secret metadata keys", () => {
     const clean = sanitizeEventMetadata({
@@ -181,6 +252,7 @@ describe("runDiscovery shared service", () => {
     });
     assert.equal(result.cancelled, false);
     assert.ok(result.summary.accepted >= 1);
+    assert.ok(result.summary.sourceAccounting.executedSources.includes("mock"));
     assert.ok(events.includes("run_started"));
     assert.ok(events.includes("run_completed"));
     setHakkuStatusProviderForTests(null);

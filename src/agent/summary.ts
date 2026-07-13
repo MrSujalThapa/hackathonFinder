@@ -243,11 +243,19 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   }
 
   if (summary.sourceStats.length > 0) {
-    console.log("Source stats:");
+    console.log("Sources:");
     for (const stats of summary.sourceStats) {
-      console.log(
-        `- ${stats.source}: leads ${stats.leadsFound}, accepted ${stats.accepted}, rejected ${stats.rejected}, duration ${stats.durationMs}ms`,
-      );
+      const suffix =
+        stats.outcome === "degraded"
+          ? " - degraded"
+          : stats.outcome === "failed"
+            ? " - failed"
+            : stats.outcome === "auth_required"
+              ? " - auth required"
+              : stats.outcome === "skipped"
+                ? " - skipped"
+                : "";
+      console.log(`- ${stats.source}: ${stats.leadsFound} leads${suffix}`);
       for (const warning of stats.warnings) {
         console.log(`  warning: ${warning}`);
       }
@@ -255,6 +263,21 @@ export function printAgentSummary(summary: AgentRunSummary): void {
         console.log(`  error: ${error}`);
       }
     }
+    console.log(
+      `- executed sources: ${summary.sourceAccounting.executedSources.join(", ") || "(none)"}`,
+    );
+    console.log(
+      `- skipped sources: ${summary.sourceAccounting.skippedSources.join(", ") || "(none)"}`,
+    );
+    console.log(
+      `- failed sources: ${summary.sourceAccounting.failedSources.join(", ") || "(none)"}`,
+    );
+    console.log(
+      `- degraded sources: ${summary.sourceAccounting.degradedSources.join(", ") || "(none)"}`,
+    );
+    console.log(
+      `- auth-required sources: ${summary.sourceAccounting.authRequiredSources.join(", ") || "(none)"}`,
+    );
     console.log("");
   }
 
@@ -339,6 +362,13 @@ export function emptySummary(
     acceptedCandidates: [],
     rejectedCandidates: [],
     sourceStats: [],
+    sourceAccounting: {
+      executedSources: [],
+      skippedSources: [],
+      failedSources: [],
+      degradedSources: [],
+      authRequiredSources: [],
+    },
     warnings: [],
     errors: [],
   };

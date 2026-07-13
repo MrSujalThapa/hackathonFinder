@@ -284,8 +284,8 @@ export async function collectWithSourceLocks(
             await emitter.emit(
               "source_progress",
               source === "hakku"
-                ? "Waiting for Hakku profile lock…"
-                : "Waiting for public source slot…",
+                ? "Waiting for authenticated browser slot..."
+                : "Waiting for public source slot...",
               {
                 source,
                 level: "info",
@@ -297,7 +297,7 @@ export async function collectWithSourceLocks(
             await emitter.emit(
               "source_progress",
               source === "hakku"
-                ? "Hakku profile lock acquired"
+                ? "Browser slot acquired"
                 : "Public source slot acquired",
               {
                 source,

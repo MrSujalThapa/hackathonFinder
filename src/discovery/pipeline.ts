@@ -79,9 +79,32 @@ function initSourceStats(sources: SourceName[]): Map<SourceName, SourceRunStats>
       errors: [],
       warnings: [],
       durationMs: 0,
+      outcome: "executed",
     });
   }
   return stats;
+}
+
+function sourceAccountingFromStats(
+  stats: SourceRunStats[],
+): AgentRunSummary["sourceAccounting"] {
+  return {
+    executedSources: stats
+      .filter((item) => item.outcome === "executed")
+      .map((item) => item.source),
+    skippedSources: stats
+      .filter((item) => item.outcome === "skipped")
+      .map((item) => item.source),
+    failedSources: stats
+      .filter((item) => item.outcome === "failed")
+      .map((item) => item.source),
+    degradedSources: stats
+      .filter((item) => item.outcome === "degraded")
+      .map((item) => item.source),
+    authRequiredSources: stats
+      .filter((item) => item.outcome === "auth_required")
+      .map((item) => item.source),
+  };
 }
 
 function assertMockWritesAllowed(
@@ -178,6 +201,7 @@ export async function executeDiscoveryPipeline(
     summary.warnings.push("Dry-run plan only; collectors were not executed.");
     summary.durationMs = Date.now() - startedAt;
     summary.sourceStats = [...sourceStats.values()];
+    summary.sourceAccounting = sourceAccountingFromStats(summary.sourceStats);
     await emitter.emit("run_completed", "Dry-run plan only; collectors were not executed.", {
       metadata: { dryRunPlan: true },
     });
@@ -215,7 +239,7 @@ export async function executeDiscoveryPipeline(
     }
 
     const runtimeConfig = readDiscoveryRuntimeConfig();
-    const collectorInput = {
+  const collectorInput = {
       preferences,
       maxResults: preferences.maxResults,
       timeoutMs: effectiveSourceTimeout,
@@ -233,7 +257,12 @@ export async function executeDiscoveryPipeline(
         }
         const startedAt = Date.now();
         try {
-          return await collector.collect(collectorInput);
+          return await collector.collect({
+            ...collectorInput,
+            logger: (message) => {
+              void emitter.emit("source_progress", message, { source });
+            },
+          });
         } catch (error) {
           const failed = emptyCollectorResult(source, startedAt);
           failed.errors.push(
@@ -305,12 +334,21 @@ export async function executeDiscoveryPipeline(
       );
       const degraded =
         result.errors.length > 0 ||
-        result.warnings.some((warning) => /degraded|timeout|rate/i.test(warning));
+        result.warnings.some((warning) =>
+          /degraded|timeout|rate|parser|ui may have changed|zero matching|no matching/i.test(
+            warning,
+          ),
+        );
 
       if (authRequired) {
+        stats.outcome = "auth_required";
+        const message =
+          result.errors.find((error) => /auth|login|sign[\s-]?in|session/i.test(error)) ??
+          result.errors[0] ??
+          "Authentication required";
         await emitter.emit(
           "source_auth_required",
-          result.errors[0] ?? "Authentication required",
+          message,
           {
             source: result.source,
             level: "warning",
@@ -318,9 +356,19 @@ export async function executeDiscoveryPipeline(
           },
         );
       } else if (degraded && result.leads.length === 0) {
+        stats.outcome = result.errors.length > 0 ? "failed" : "degraded";
+        const message =
+          result.errors[0] ??
+          result.warnings.find((warning) =>
+            /parser|ui may have changed|zero matching|no matching|timeout|rate|degraded/i.test(
+              warning,
+            ),
+          ) ??
+          result.warnings[0] ??
+          "Source degraded";
         await emitter.emit(
           "source_degraded",
-          result.errors[0] ?? result.warnings[0] ?? "Source degraded",
+          message,
           {
             source: result.source,
             level: "warning",
@@ -328,6 +376,7 @@ export async function executeDiscoveryPipeline(
           },
         );
       } else {
+        stats.outcome = degraded ? "degraded" : "executed";
         await emitter.emit(
           "source_completed",
           `${result.leads.length} leads found`,
@@ -619,6 +668,7 @@ export async function executeDiscoveryPipeline(
 
     summary.acceptedCandidates = buildAcceptedSummary(accepted);
     summary.sourceStats = [...sourceStats.values()];
+    summary.sourceAccounting = sourceAccountingFromStats(summary.sourceStats);
     summary.durationMs = Date.now() - startedAt;
 
     if (agentRunId) {
@@ -648,6 +698,12 @@ export async function executeDiscoveryPipeline(
           updated,
           durationMs: summary.durationMs,
           dryRun,
+          sourceAccounting: summary.sourceAccounting,
+          sourceStats: summary.sourceStats.map((stats) => ({
+            source: stats.source,
+            leadsFound: stats.leadsFound,
+            outcome: stats.outcome,
+          })),
         },
       },
     );
@@ -656,6 +712,7 @@ export async function executeDiscoveryPipeline(
   } catch (error) {
     summary.errors.push(error instanceof Error ? error.message : "Discovery run failed");
     summary.sourceStats = [...sourceStats.values()];
+    summary.sourceAccounting = sourceAccountingFromStats(summary.sourceStats);
     summary.durationMs = Date.now() - startedAt;
 
     if (isDiscoveryCancelledError(error)) {

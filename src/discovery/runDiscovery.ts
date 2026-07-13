@@ -8,6 +8,7 @@ import type {
   AgentRunSummary,
   DiscoveryPreferences,
   SourceName,
+  SourceRunStats,
 } from "@/core/discovery/types";
 import { readLlmConfig } from "@/lib/llm/config";
 import {
@@ -24,6 +25,7 @@ import {
   selectDiscoverySources,
   type SourceAvailability,
 } from "@/discovery/selectSources";
+import { reconcileSourcePlan } from "@/discovery/sourcePlan";
 import { emptyQualityStats } from "@/agent/summary";
 import { getEnabledSources } from "@/lib/sources/settingsStore";
 
@@ -91,6 +93,47 @@ function shouldUseAgentMode(
   return { useAgent: false };
 }
 
+function attachSkippedSourceStats(
+  summary: AgentRunSummary,
+  skipped: Array<{ source: SourceName; reason: string }>,
+): void {
+  const existing = new Set(summary.sourceStats.map((stats) => stats.source));
+  const skippedStats: SourceRunStats[] = skipped
+    .filter((item) => !existing.has(item.source))
+    .map((item) => ({
+      source: item.source,
+      leadsFound: 0,
+      accepted: 0,
+      rejected: 0,
+      errors: [],
+      warnings: [item.reason],
+      durationMs: 0,
+      outcome: /auth|connect|session|login|disconnected/i.test(item.reason)
+        ? "auth_required"
+        : "skipped",
+    }));
+
+  if (skippedStats.length === 0) return;
+  summary.sourceStats = [...summary.sourceStats, ...skippedStats];
+  summary.sourceAccounting = {
+    executedSources: summary.sourceStats
+      .filter((item) => item.outcome === "executed")
+      .map((item) => item.source),
+    skippedSources: summary.sourceStats
+      .filter((item) => item.outcome === "skipped")
+      .map((item) => item.source),
+    failedSources: summary.sourceStats
+      .filter((item) => item.outcome === "failed")
+      .map((item) => item.source),
+    degradedSources: summary.sourceStats
+      .filter((item) => item.outcome === "degraded")
+      .map((item) => item.source),
+    authRequiredSources: summary.sourceStats
+      .filter((item) => item.outcome === "auth_required")
+      .map((item) => item.source),
+  };
+}
+
 /**
  * Shared discovery application service used by CLI and web job runners.
  * Owns interpret → plan → collect → extract → verify → classify → dedupe → persist → summary.
@@ -156,6 +199,14 @@ export async function runDiscovery(
     },
   });
 
+  for (const skipped of selection.skipped) {
+    await emitter.emit("source_degraded", `Skipped - ${skipped.reason}`, {
+      source: skipped.source,
+      level: "warning",
+      metadata: { outcome: "skipped", reason: skipped.reason },
+    });
+  }
+
   const warnings: string[] = [...selection.warnings];
   const agentMode = shouldUseAgentMode(dryRun, mode);
   if (agentMode.warning) warnings.push(agentMode.warning);
@@ -195,24 +246,22 @@ export async function runDiscovery(
           : null;
 
       if (plannerResult) {
-        const plannedSelection = selectDiscoverySources({
-          requestedSources: plannerResult.preferences.sources,
-          enabledSources: enabledFromSettings,
-          availability: input.availability,
-          hakkuConnected: hakku.connected,
-          allowMock:
-            input.allowMockWrites === true ||
-            dryRun ||
-            plannerResult.preferences.sources.includes("mock"),
+        const reconciledPlan = reconcileSourcePlan({
+          effectiveSources: selection.effectiveSources,
+          plannerSources: plannerResult.plan.selectedSources,
+          plannerIntents: plannerResult.plan.sourceIntents.map((intent) => ({
+            source: intent.source,
+            enabled: intent.enabled,
+            query: intent.query ?? undefined,
+            reason: intent.reason,
+          })),
+          availabilityBySource: selection.availabilityBySource,
         });
         effectivePreferences = {
           ...plannerResult.preferences,
-          sources:
-            plannedSelection.effectiveSources.length > 0
-              ? plannedSelection.effectiveSources
-              : plannerResult.preferences.sources.filter((source) => source !== "x"),
+          sources: reconciledPlan.sources,
         };
-        warnings.push(...plannedSelection.warnings);
+        warnings.push(...reconciledPlan.warnings);
         agentLlmCalls = plannerResult.llmCalls;
         planningCalls = plannerResult.planningCalls;
         plannerLatencyMs = plannerResult.latencyMs;
@@ -248,6 +297,15 @@ export async function runDiscovery(
           toolCalls: deterministicPlan.toolCalls.map((call) => call.name),
         },
       });
+
+      await emitter.emit(
+        "source_progress",
+        `Planned: ${effectivePreferences.sources.join(", ")}`,
+        {
+          source: "sources",
+          metadata: { plannedSources: effectivePreferences.sources },
+        },
+      );
 
       const loop = await runLoop({
         plan: {
@@ -323,6 +381,7 @@ export async function runDiscovery(
       dryRun,
       pipelineOptions,
     );
+    attachSkippedSourceStats(summary, selection.skipped);
     summary.agent = agentObservability;
     summary.warnings = [...new Set([...warnings, ...summary.warnings])];
 
@@ -380,6 +439,13 @@ function emptyCancelledSummary(
     acceptedCandidates: [],
     rejectedCandidates: [],
     sourceStats: [],
+    sourceAccounting: {
+      executedSources: [],
+      skippedSources: [],
+      failedSources: [],
+      degradedSources: [],
+      authRequiredSources: [],
+    },
     warnings,
     errors: ["Discovery run cancelled"],
   };

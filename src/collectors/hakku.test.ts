@@ -4,7 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import fixture from "@/collectors/__fixtures__/hakku-session.json";
-import { parseHakkuCards, type HakkuCard } from "@/collectors/hakku";
+import {
+  HAKKU_EXPLORE_URL,
+  parseHakkuCards,
+  type HakkuCard,
+} from "@/collectors/hakku";
 import {
   detectHakkuAuth,
   filterUpcomingHakkuCards,
@@ -20,6 +24,10 @@ import {
 import { writeHakkuSessionMeta } from "@/lib/browser/sessionMeta";
 
 describe("parseHakkuCards", () => {
+  it("uses the Hakku explore directory as the discovery URL", () => {
+    assert.equal(HAKKU_EXPLORE_URL, "https://www.hakku.app/explore");
+  });
+
   it("parses visible card data into RawLead objects", () => {
     const leads = parseHakkuCards(
       [

@@ -651,6 +651,7 @@ export const lumaCollector: Collector = {
         "Luma connected mode is unavailable (optional persistent-browser auth not implemented); continuing with public discovery only.",
       );
     }
+    input.logger?.("Starting public discovery...");
 
     try {
       for (const url of discoveryUrls) {
@@ -701,6 +702,9 @@ export const lumaCollector: Collector = {
         result.warnings.push(
           describeLumaFailure(hadParserIssue ? "selector_parser_failure" : "zero_matching_results"),
         );
+        input.logger?.("Public discovery completed with 0 matching events");
+      } else {
+        input.logger?.(`${result.leads.length} leads found`);
       }
     } catch (error) {
       result.errors.push(

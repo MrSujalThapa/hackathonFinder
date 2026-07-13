@@ -57,6 +57,7 @@ export type SourceSelectionResult = {
   skipped: Array<{ source: SourceName; reason: string }>;
   warnings: string[];
   planMessage: string;
+  availabilityBySource: Partial<Record<SourceName, SourceAvailability>>;
 };
 
 function defaultAvailability(
@@ -90,15 +91,6 @@ function defaultAvailability(
     };
   }
   return { source, enabled: true, health: "healthy" };
-}
-
-function isUsable(availability: SourceAvailability): boolean {
-  if (!availability.enabled) return false;
-  if (availability.health === "disabled") return false;
-  if (availability.health === "unconfigured") return false;
-  if (availability.health === "disconnected") return false;
-  if (availability.health === "auth_required") return false;
-  return true;
 }
 
 /**
@@ -233,6 +225,7 @@ export function selectDiscoverySources(
     skipped,
     warnings,
     planMessage,
+    availabilityBySource: availability,
   };
 }
 

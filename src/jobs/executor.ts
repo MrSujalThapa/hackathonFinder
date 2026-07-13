@@ -225,6 +225,7 @@ export async function executeDiscoveryJob(
         warnings: summary.warnings,
         errors: summary.errors,
         sourceStats: summary.sourceStats,
+        sourceAccounting: summary.sourceAccounting,
         agent: summary.agent ?? null,
       },
     }, terminal);

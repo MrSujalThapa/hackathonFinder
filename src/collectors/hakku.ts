@@ -23,8 +23,9 @@ import {
 import { hakkuProfileExists, writeHakkuSessionMeta } from "@/lib/browser/sessionMeta";
 import { normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
-export const HAKKU_SWIPE_URL = "https://tryhakku.vercel.app/swipe";
-const HAKKU_ORIGIN = "https://tryhakku.vercel.app";
+export const HAKKU_EXPLORE_URL = "https://www.hakku.app/explore";
+export const HAKKU_SWIPE_URL = HAKKU_EXPLORE_URL;
+const HAKKU_ORIGIN = "https://www.hakku.app";
 
 const MAX_SCROLL_ROUNDS = 4;
 const CONTENT_SELECTOR =
@@ -97,7 +98,9 @@ async function collectPageSignals(page: Page): Promise<{
   const hasPasswordField = (await page.locator("input[type='password']").count().catch(() => 0)) > 0;
   const hasSwipeCards =
     (await page
-      .locator("[data-testid='swipe-card'], article.card, .swipe-card, [class*='SwipeCard']")
+      .locator(
+        "[data-testid='event-card'], [data-testid='swipe-card'], article.card, article, .event-card, .swipe-card, [class*='EventCard'], [class*='SwipeCard']",
+      )
       .count()
       .catch(() => 0)) > 0;
 
@@ -130,7 +133,7 @@ async function extractCardsFromPage(page: Page): Promise<HakkuCard[]> {
         .map((anchor) => {
           const href = anchor.getAttribute("href") ?? "";
           try {
-            return new URL(href, "https://tryhakku.vercel.app").toString();
+            return new URL(href, HAKKU_ORIGIN).toString();
           } catch {
             return "";
           }
@@ -221,15 +224,17 @@ async function extractVisibleHakkuCards(options: {
   profileDir: string;
   timeoutMs: number;
   headless: boolean;
+  logger?: (message: string) => void;
 }): Promise<HakkuExtractResult> {
-  const { profileDir, timeoutMs, headless } = options;
+  const { profileDir, timeoutMs, headless, logger } = options;
 
   return withPersistentPlaywright(
     profileDir,
     async ({ page }) => {
       let pagesInspected = 0;
       try {
-        await page.goto(HAKKU_SWIPE_URL, {
+        logger?.("Opening https://www.hakku.app/explore");
+        await page.goto(HAKKU_EXPLORE_URL, {
           waitUntil: "domcontentloaded",
           timeout: timeoutMs,
         });
@@ -255,9 +260,13 @@ async function extractVisibleHakkuCards(options: {
           };
         }
 
-        // Soft health: if we landed off-swipe, try once more on the swipe route.
-        if (!signals.url.includes("/swipe")) {
-          await page.goto(HAKKU_SWIPE_URL, {
+        if (authStatus === "authenticated") {
+          logger?.("Persistent session authenticated");
+        }
+
+        // Soft health: if we landed away from the directory, try once more.
+        if (!signals.url.includes("/explore")) {
+          await page.goto(HAKKU_EXPLORE_URL, {
             waitUntil: "domcontentloaded",
             timeout: Math.min(timeoutMs, 10_000),
           });
@@ -279,10 +288,15 @@ async function extractVisibleHakkuCards(options: {
               stopReason: "auth_required",
             };
           }
+          if (authStatus === "authenticated") {
+            logger?.("Persistent session authenticated");
+          }
         }
 
+        logger?.("Explore directory loaded");
         await boundedScrollForMore(page, timeoutMs);
         const rawCards = await extractCardsFromPage(page);
+        logger?.(`${rawCards.length} raw event cards found`);
         const cards = filterUpcomingHakkuCards(rawCards);
 
         const mode: HakkuCollectMode =
@@ -363,6 +377,7 @@ export const hakkuCollector: Collector = {
         profileDir,
         timeoutMs: input.timeoutMs,
         headless,
+        logger: input.logger,
       });
 
       if (extract.stopReason === "auth_required") {
@@ -379,6 +394,9 @@ export const hakkuCollector: Collector = {
       const acceptedCards = extract.cards.slice(0, input.maxResults);
       result.leads = parseHakkuCards(acceptedCards, input.maxResults);
       applyHakkuMetrics(result, extract, result.leads.length);
+      if (result.leads.length > 0) {
+        input.logger?.(`${result.leads.length} leads found`);
+      }
 
       if (extract.authStatus === "authenticated") {
         writeHakkuSessionMeta("connected");
@@ -388,8 +406,9 @@ export const hakkuCollector: Collector = {
 
       if (result.leads.length === 0 && extract.stopReason === "no_cards") {
         result.warnings.push(
-          "Hakku returned no upcoming event cards; UI may have changed or the feed is empty.",
+          "Explore loaded, but no event cards matched the parser.",
         );
+        input.logger?.("Explore loaded, but no event cards matched the parser");
       }
     } catch (error) {
       if (isPlaywrightBrowserMissingError(error)) {

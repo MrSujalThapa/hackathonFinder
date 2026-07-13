@@ -114,6 +114,10 @@ describe("luma helpers", () => {
   it("defaults to public mode and stubs authenticated", () => {
     assert.equal(resolveLumaDiscoveryMode({} as unknown as NodeJS.ProcessEnv), "public");
     assert.equal(
+      resolveLumaDiscoveryMode({ LUMA_MODE: "" } as unknown as NodeJS.ProcessEnv),
+      "public",
+    );
+    assert.equal(
       resolveLumaDiscoveryMode({ LUMA_MODE: "authenticated" } as unknown as NodeJS.ProcessEnv),
       "authenticated",
     );
