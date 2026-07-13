@@ -235,12 +235,31 @@ function readConnectTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 5 * 60_000;
 }
 
+function allowHakkuMockConnection(): boolean {
+  return (
+    process.env.NODE_ENV !== "production" &&
+    process.env.TERMINAL_SOURCE_MOCK_HAKKU === "true"
+  );
+}
+
 async function connectHakku(
   context: TerminalSourceContext,
 ): Promise<TerminalSourceResult> {
   if (testHooks?.connectHakku) {
     return testHooks.connectHakku(async (line) => {
       await context.onLine?.(line);
+    });
+  }
+  if (allowHakkuMockConnection()) {
+    return collectLines(context, async (emit) => {
+      const checkedAt = new Date().toISOString();
+      await emit({ level: "info", text: "[hakku] Opening persistent browser session..." });
+      await emit({ level: "info", text: "[hakku] Waiting for manual sign-in..." });
+      writeHakkuSessionMeta("connected");
+      recordSourceHealth(sourceHealthFromHakkuProbe("authenticated", checkedAt));
+      await emit({ level: "success", text: "[hakku] Authentication detected." });
+      await emit({ level: "success", text: "[hakku] Session saved." });
+      await emit({ level: "success", text: "[hakku] Connected." });
     });
   }
 
@@ -344,6 +363,14 @@ async function checkHakku(
   if (testHooks?.checkHakku) {
     return testHooks.checkHakku(async (line) => {
       await context.onLine?.(line);
+    });
+  }
+  if (allowHakkuMockConnection()) {
+    return collectLines(context, async (emit) => {
+      const checkedAt = new Date().toISOString();
+      writeHakkuSessionMeta("connected");
+      recordSourceHealth(sourceHealthFromHakkuProbe("authenticated", checkedAt));
+      await emit({ level: "success", text: "[hakku] Connected." });
     });
   }
 

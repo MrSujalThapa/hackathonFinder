@@ -42,6 +42,10 @@ import type {
   TerminalEventLevel,
   TerminalSourceName,
 } from "@/lib/terminal/types";
+import type {
+  TerminalCommandHistoryEntry,
+  TerminalSession,
+} from "@/lib/terminal/sessions";
 import { normalizeJobEvent } from "@/lib/terminal/formatEvent";
 
 const SSE_EVENT_NAMES = [
@@ -172,6 +176,89 @@ export async function runTerminalSourceCommand(input: {
     cache: "no-store",
   });
   return parseEnvelope<TerminalSourceCommandResult>(response);
+}
+
+export type ListTerminalSessionsApiResult = {
+  sessions: TerminalSession[];
+  selectedSession: TerminalSession | null;
+};
+
+export type TerminalSessionApiResult = {
+  session: TerminalSession;
+};
+
+export type TerminalSessionHistoryApiResult = {
+  session: TerminalSession;
+  commandHistory: TerminalCommandHistoryEntry[];
+  jobs: DiscoveryJob[];
+  events: Record<string, DiscoveryJobEvent[]>;
+};
+
+export type AppendTerminalCommandHistoryResult = {
+  entry: TerminalCommandHistoryEntry;
+};
+
+export async function listTerminalSessions(): Promise<ListTerminalSessionsApiResult> {
+  const response = await fetch("/api/terminal/sessions", { cache: "no-store" });
+  return parseEnvelope<ListTerminalSessionsApiResult>(response);
+}
+
+export async function createTerminalSession(input: {
+  id?: string;
+  title?: string;
+  select?: boolean;
+}): Promise<TerminalSession> {
+  const response = await fetch("/api/terminal/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  const data = await parseEnvelope<TerminalSessionApiResult>(response);
+  return data.session;
+}
+
+export async function updateTerminalSession(
+  id: string,
+  input:
+    | { action: "select" | "touch" | "close" | "reopen" }
+    | { action: "rename"; title: string },
+): Promise<TerminalSession> {
+  const response = await fetch(`/api/terminal/sessions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  const data = await parseEnvelope<TerminalSessionApiResult>(response);
+  return data.session;
+}
+
+export async function fetchTerminalSessionHistory(
+  id: string,
+): Promise<TerminalSessionHistoryApiResult> {
+  const response = await fetch(
+    `/api/terminal/sessions/${encodeURIComponent(id)}/history`,
+    { cache: "no-store" },
+  );
+  return parseEnvelope<TerminalSessionHistoryApiResult>(response);
+}
+
+export async function appendTerminalCommandHistory(
+  id: string,
+  command: string,
+): Promise<TerminalCommandHistoryEntry> {
+  const response = await fetch(
+    `/api/terminal/sessions/${encodeURIComponent(id)}/history`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command }),
+      cache: "no-store",
+    },
+  );
+  const data = await parseEnvelope<AppendTerminalCommandHistoryResult>(response);
+  return data.entry;
 }
 
 export type StreamJobEventsHandlers = {

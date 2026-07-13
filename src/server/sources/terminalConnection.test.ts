@@ -24,6 +24,7 @@ afterEach(() => {
   setTerminalSourceConnectionHooksForTests(null);
   delete process.env.BROWSER_PROFILE_ROOT;
   delete process.env.HAKKU_PROFILE_NAME;
+  delete process.env.TERMINAL_SOURCE_MOCK_HAKKU;
   if (tmpRoot) {
     rmSync(tmpRoot, { recursive: true, force: true });
     tmpRoot = null;
@@ -95,5 +96,18 @@ describe("terminal source connection commands", () => {
         "[hakku] Connected.",
       ],
     );
+  });
+
+  it("allows development env mocked Hakku connect for browser QA", async () => {
+    process.env.TERMINAL_SOURCE_MOCK_HAKKU = "true";
+
+    const result = await connectTerminalSource("hakku", {
+      sessionId: "term-a",
+    });
+    const text = result.lines.map((line) => line.text).join("\n");
+
+    assert.match(text, /Opening persistent browser session/);
+    assert.match(text, /Authentication detected/);
+    assert.match(text, /Connected/);
   });
 });

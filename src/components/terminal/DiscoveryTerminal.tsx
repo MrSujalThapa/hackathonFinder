@@ -28,6 +28,7 @@ import {
   jobEventToTerminalLine,
 } from "@/lib/terminal/formatEvent";
 import { formatHelpText } from "@/lib/terminal/help";
+import { cycleAutocomplete } from "@/lib/terminal/autocomplete";
 import {
   isActiveJobStatus,
   parseTerminalCommand,
@@ -85,10 +86,12 @@ export function DiscoveryTerminal() {
     appendLines,
     setDraft,
     captureScrollTop,
+    appendCommandHistory,
   } = useTerminalSessions();
 
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [draftBeforeHistory, setDraftBeforeHistory] = useState("");
+  const [autocompleteIndex, setAutocompleteIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [sources, setSources] = useState<SourceHealth[]>([]);
   const [sourcesLoading, setSourcesLoading] = useState(false);
@@ -136,6 +139,7 @@ export function DiscoveryTerminal() {
       patchSession(sessionId, {
         activeJob: job,
         activeJobId: isActiveJobStatus(job.status) ? job.id : null,
+        selectedJobId: job.id,
       });
       if (!terminal) return;
 
@@ -146,6 +150,7 @@ export function DiscoveryTerminal() {
       patchSession(sessionId, {
         activeJob: job,
         activeJobId: isActiveJobStatus(job.status) ? job.id : null,
+        selectedJobId: job.id,
         showRunActions: true,
         lastCompletedJob: job,
       });
@@ -284,6 +289,7 @@ export function DiscoveryTerminal() {
           lastSequence: 0,
           activeJob: job,
           activeJobId: job.id,
+          selectedJobId: job.id,
         });
         const queued =
           typeof job.progress === "number" && job.status === "queued";
@@ -677,12 +683,13 @@ export function DiscoveryTerminal() {
     if (parsed.kind !== "rejected" && parsed.kind !== "clear") {
       patchSession(sessionId, (s) => {
         const trimmed = raw.trim();
-        const next = [
-          ...s.history.filter((h) => h !== trimmed),
-          trimmed,
-        ].slice(-50);
-        return { ...s, history: next };
-      });
+          const next = [
+            ...s.history.filter((h) => h !== trimmed),
+            trimmed,
+          ].slice(-50);
+          return { ...s, history: next };
+        });
+      appendCommandHistory(sessionId, raw.trim());
       setHistoryIndex(null);
     }
 
@@ -864,6 +871,7 @@ export function DiscoveryTerminal() {
     }
   }, [
     appendLines,
+    appendCommandHistory,
     handleSessionCommand,
     patchSession,
     runCancel,
@@ -906,6 +914,26 @@ export function DiscoveryTerminal() {
     setHistoryIndex(next);
     setDraft(session.id, session.history[next] ?? "");
   }, [draftBeforeHistory, historyIndex, setDraft]);
+
+  const onAutocomplete = useCallback(
+    (value: string, cursor: number) => {
+      const next = cycleAutocomplete(
+        value,
+        cursor,
+        {
+          terminalNames: sessionsRef.current.map((s) => s.title),
+          recentJobIds: sessionsRef.current
+            .flatMap((s) => [s.activeJobId, s.selectedJobId])
+            .filter((id): id is string => Boolean(id)),
+        },
+        autocompleteIndex,
+      );
+      if (!next) return null;
+      setAutocompleteIndex((idx) => idx + 1);
+      return { value: next.value, cursor: next.cursor };
+    },
+    [autocompleteIndex],
+  );
 
   const onRunAgain = useCallback(() => {
     const sessionId = activeIdRef.current;
@@ -954,6 +982,20 @@ export function DiscoveryTerminal() {
     ],
   );
 
+  // Reconnect restored sessions after a refresh or server-side hydration.
+  useEffect(() => {
+    if (!active.activeJobId) return;
+    if (streamingJobIdRef.current === active.activeJobId) return;
+    if (active.activeJob && !isActiveJobStatus(active.activeJob.status)) return;
+    attachStream(active.id, active.activeJobId, active.lastSequence);
+  }, [
+    active.activeJob,
+    active.activeJobId,
+    active.id,
+    active.lastSequence,
+    attachStream,
+  ]);
+
   // Deep-link / reconnect to a job from ?job=
   useEffect(() => {
     if (!focusJobId) return;
@@ -966,6 +1008,7 @@ export function DiscoveryTerminal() {
         patchSession(sessionId, {
           activeJob: job,
           activeJobId: isActiveJobStatus(job.status) ? job.id : null,
+          selectedJobId: job.id,
           lastCommand: job.command,
         });
         appendLines(sessionId, [
@@ -1068,6 +1111,7 @@ export function DiscoveryTerminal() {
             onSubmit={() => void submit()}
             onHistoryPrev={onHistoryPrev}
             onHistoryNext={onHistoryNext}
+            onAutocomplete={onAutocomplete}
             disabled={false}
             busy={submitting}
           />

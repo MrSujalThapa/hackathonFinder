@@ -8,6 +8,10 @@ type TerminalInputProps = {
   onSubmit: () => void;
   onHistoryPrev: () => void;
   onHistoryNext: () => void;
+  onAutocomplete?: (
+    value: string,
+    cursor: number,
+  ) => { value: string; cursor: number } | null;
   disabled?: boolean;
   busy?: boolean;
 };
@@ -18,6 +22,7 @@ export function TerminalInput({
   onSubmit,
   onHistoryPrev,
   onHistoryNext,
+  onAutocomplete,
   disabled = false,
   busy = false,
 }: TerminalInputProps) {
@@ -79,6 +84,17 @@ export function TerminalInput({
                 e.preventDefault();
                 onHistoryNext();
               }
+            }
+            if (e.key === "Tab" && onAutocomplete) {
+              const el = textareaRef.current;
+              if (!el) return;
+              const next = onAutocomplete(el.value, el.selectionStart);
+              if (!next) return;
+              e.preventDefault();
+              onChange(next.value);
+              requestAnimationFrame(() => {
+                textareaRef.current?.setSelectionRange(next.cursor, next.cursor);
+              });
             }
           }}
         />

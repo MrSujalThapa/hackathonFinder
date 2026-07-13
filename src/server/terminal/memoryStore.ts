@@ -22,12 +22,18 @@ type MemoryState = {
   historySequences: Map<string, number>;
 };
 
-const globalState: MemoryState = {
-  sessions: new Map(),
-  jobLinks: new Map(),
-  history: new Map(),
-  historySequences: new Map(),
-};
+const MEMORY_STATE_KEY = "__hackathonFinderTerminalMemoryState";
+const MEMORY_NOTICE_KEY = "__hackathonFinderTerminalMemoryNoticeShown";
+
+const globalState: MemoryState =
+  ((globalThis as unknown as Record<string, MemoryState | undefined>)[
+    MEMORY_STATE_KEY
+  ] ??= {
+    sessions: new Map(),
+    jobLinks: new Map(),
+    history: new Map(),
+    historySequences: new Map(),
+  });
 
 export function resetMemoryTerminalSessionStoreForTests(): void {
   globalState.sessions.clear();
@@ -90,11 +96,10 @@ function clearSelection(now = nowIso()): void {
   }
 }
 
-let memoryStoreNoticeShown = false;
-
 export function createMemoryTerminalSessionStore(): TerminalSessionRepository {
-  if (!memoryStoreNoticeShown) {
-    memoryStoreNoticeShown = true;
+  const globals = globalThis as unknown as Record<string, boolean | undefined>;
+  if (!globals[MEMORY_NOTICE_KEY]) {
+    globals[MEMORY_NOTICE_KEY] = true;
     console.info(
       "Terminal persistence is using the development memory store.\nApply migration 007 for durable sessions.",
     );

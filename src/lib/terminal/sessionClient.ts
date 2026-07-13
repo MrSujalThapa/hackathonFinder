@@ -16,6 +16,7 @@ export type ClientTerminalSession = {
   history: string[];
   draft: string;
   activeJobId: string | null;
+  selectedJobId: string | null;
   lastSequence: number;
   scrollTop: number;
   /** Serialized for React state (Set rebuilt when attaching streams). */
@@ -31,6 +32,8 @@ export type ClientTerminalSession = {
 export type TerminalSessionMeta = {
   id: string;
   title: string;
+  activeJobId?: string | null;
+  selectedJobId?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -69,6 +72,7 @@ export function createClientSession(
     history: [],
     draft: partial?.draft ?? "",
     activeJobId: null,
+    selectedJobId: null,
     lastSequence: 0,
     scrollTop: 0,
     seenEventIds: [],
@@ -212,6 +216,8 @@ export function bootstrapClientSessions(): {
         id: m.id,
         title: m.title,
         draft: drafts[m.id] ?? "",
+        activeJobId: m.activeJobId ?? null,
+        selectedJobId: m.selectedJobId ?? m.activeJobId ?? null,
         createdAt: m.createdAt,
         updatedAt: m.updatedAt,
       };
@@ -237,6 +243,8 @@ export function metaFromSessions(
     sessions: sessions.map((s) => ({
       id: s.id,
       title: s.title,
+      activeJobId: s.activeJobId,
+      selectedJobId: s.selectedJobId,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
     })),

@@ -24,11 +24,17 @@ type MemoryState = {
   sequences: Map<string, number>;
 };
 
-const globalState: MemoryState = {
-  jobs: new Map(),
-  events: new Map(),
-  sequences: new Map(),
-};
+const MEMORY_STATE_KEY = "__hackathonFinderDiscoveryJobMemoryState";
+const MEMORY_NOTICE_KEY = "__hackathonFinderDiscoveryJobMemoryNoticeShown";
+
+const globalState: MemoryState =
+  ((globalThis as unknown as Record<string, MemoryState | undefined>)[
+    MEMORY_STATE_KEY
+  ] ??= {
+    jobs: new Map(),
+    events: new Map(),
+    sequences: new Map(),
+  });
 
 export function resetMemoryDiscoveryJobStoreForTests(): void {
   globalState.jobs.clear();
@@ -46,11 +52,10 @@ function requireJob(id: string): DiscoveryJob {
   return job;
 }
 
-let memoryStoreNoticeShown = false;
-
 export function createMemoryDiscoveryJobStore(): DiscoveryJobRepository {
-  if (!memoryStoreNoticeShown) {
-    memoryStoreNoticeShown = true;
+  const globals = globalThis as unknown as Record<string, boolean | undefined>;
+  if (!globals[MEMORY_NOTICE_KEY]) {
+    globals[MEMORY_NOTICE_KEY] = true;
     console.info(
       "[discovery-jobs] Using DEV-ONLY in-memory job store. Not for production persistence.",
     );
