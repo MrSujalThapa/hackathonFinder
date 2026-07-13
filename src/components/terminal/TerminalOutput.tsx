@@ -6,6 +6,9 @@ import type { TerminalLine } from "@/lib/terminal/types";
 type TerminalOutputProps = {
   lines: TerminalLine[];
   live?: boolean;
+  /** Restored scroll position when switching sessions. */
+  scrollTop?: number;
+  onScrollTopChange?: (scrollTop: number) => void;
 };
 
 const PROMPT = "hackfinder>";
@@ -33,9 +36,23 @@ function lineClass(line: TerminalLine): string {
   }
 }
 
-export function TerminalOutput({ lines, live = false }: TerminalOutputProps) {
+export function TerminalOutput({
+  lines,
+  live = false,
+  scrollTop = 0,
+  onScrollTopChange,
+}: TerminalOutputProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const initialScrollRef = useRef(scrollTop);
+  const onScrollTopChangeRef = useRef(onScrollTopChange);
+  onScrollTopChangeRef.current = onScrollTopChange;
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    scroller.scrollTop = initialScrollRef.current;
+  }, []);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -47,6 +64,23 @@ export function TerminalOutput({ lines, live = false }: TerminalOutputProps) {
       bottomRef.current?.scrollIntoView({ block: "end" });
     }
   }, [lines, live]);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    let frame = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        onScrollTopChangeRef.current?.(scroller.scrollTop);
+      });
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      scroller.removeEventListener("scroll", onScroll);
+    };
+  }, []);
 
   return (
     <div

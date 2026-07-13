@@ -630,6 +630,136 @@ body {
   background: var(--mac-term-body);
 }
 
+.mac-terminal__tabs {
+  flex-shrink: 0;
+  border-bottom: 1px solid color-mix(in oklab, #fff 8%, transparent);
+  background: color-mix(in oklab, #000 28%, var(--mac-term-body));
+}
+
+.mac-terminal__tablist {
+  display: none;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: 0 0.35rem;
+}
+
+.mac-terminal__tab {
+  display: flex;
+  align-items: stretch;
+  max-width: 11rem;
+  border-right: 1px solid color-mix(in oklab, #fff 6%, transparent);
+}
+
+.mac-terminal__tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  border: none;
+  background: transparent;
+  padding: 0.45rem 0.35rem 0.45rem 0.65rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.7rem;
+  color: color-mix(in oklab, var(--mac-term-muted) 90%, transparent);
+  cursor: pointer;
+}
+
+.mac-terminal__tab-btn:hover {
+  color: var(--mac-term-fg);
+  background: color-mix(in oklab, #fff 4%, transparent);
+}
+
+.mac-terminal__tab--active .mac-terminal__tab-btn {
+  color: var(--mac-term-fg);
+  background: color-mix(in oklab, #fff 6%, transparent);
+  box-shadow: inset 0 -2px 0 var(--mac-term-prompt);
+}
+
+.mac-terminal__tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mac-terminal__tab-live {
+  flex-shrink: 0;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 9999px;
+  background: var(--mac-term-prompt);
+}
+
+.mac-terminal__tab-close {
+  flex-shrink: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  padding: 0 0.45rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: color-mix(in oklab, var(--mac-term-muted) 80%, transparent);
+  cursor: pointer;
+}
+
+.mac-terminal__tab-close:hover {
+  color: var(--mac-term-error);
+}
+
+.mac-terminal__tab-new {
+  flex-shrink: 0;
+  margin: 0.25rem 0.25rem 0.25rem 0.35rem;
+  border: 1px solid color-mix(in oklab, #fff 12%, transparent);
+  border-radius: 4px;
+  background: transparent;
+  padding: 0.2rem 0.55rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.65rem;
+  color: var(--mac-term-muted);
+  cursor: pointer;
+}
+
+.mac-terminal__tab-new:hover {
+  color: var(--mac-term-fg);
+  border-color: color-mix(in oklab, var(--mac-term-prompt) 40%, transparent);
+}
+
+.mac-terminal__tab-mobile {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+}
+
+.mac-terminal__tab-select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid color-mix(in oklab, #fff 12%, transparent);
+  border-radius: 4px;
+  background: color-mix(in oklab, #000 35%, var(--mac-term-body));
+  padding: 0.35rem 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--mac-term-fg);
+}
+
+.mac-terminal__tab-new--mobile {
+  margin: 0;
+}
+
+@media (min-width: 641px) {
+  .mac-terminal__tablist {
+    display: flex;
+  }
+
+  .mac-terminal__tab-mobile {
+    display: none;
+  }
+}
+
 .mac-terminal__scrollback {
   flex: 1;
   min-height: 0;

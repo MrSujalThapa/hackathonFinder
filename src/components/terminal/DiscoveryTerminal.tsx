@@ -7,6 +7,10 @@ import { TerminalInput } from "@/components/terminal/TerminalInput";
 import { TerminalOutput } from "@/components/terminal/TerminalOutput";
 import { TerminalRunActions } from "@/components/terminal/TerminalRunActions";
 import { TerminalSourceRail } from "@/components/terminal/TerminalSourceRail";
+import { TerminalTabStrip } from "@/components/terminal/TerminalTabStrip";
+import { useTerminalSessions } from "@/hooks/useTerminalSessions";
+import { fetchCandidates } from "@/lib/api/candidates";
+import { replaceQueue } from "@/lib/candidates/clientStore";
 import {
   cancelDiscoveryJob,
   createDiscoveryJob,
@@ -27,8 +31,7 @@ import {
   isActiveJobStatus,
   parseTerminalCommand,
 } from "@/lib/terminal/parseCommand";
-import { fetchCandidates } from "@/lib/api/candidates";
-import { replaceQueue } from "@/lib/candidates/clientStore";
+import { formatSessionListLine } from "@/lib/terminal/sessionClient";
 import type {
   DiscoveryJob,
   SourceHealth,
@@ -51,40 +54,49 @@ export function DiscoveryTerminal() {
   const searchParams = useSearchParams();
   const focusJobId = searchParams.get("job");
 
-  const [lines, setLines] = useState<TerminalLine[]>(() => [
-    makeLine({
-      kind: "system",
-      text: "Discovery console ready. Natural language or /help.",
-    }),
-  ]);
-  const [input, setInput] = useState("");
-  const [history, setHistory] = useState<string[]>([]);
+  const {
+    sessions,
+    activeId,
+    active,
+    createSession,
+    switchSession,
+    renameActive,
+    closeSession,
+    patchSession,
+    appendLines,
+    setDraft,
+    captureScrollTop,
+  } = useTerminalSessions();
+
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [draftBeforeHistory, setDraftBeforeHistory] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [activeJob, setActiveJob] = useState<DiscoveryJob | null>(null);
-  const [lastCompletedJob, setLastCompletedJob] = useState<DiscoveryJob | null>(
-    null,
-  );
-  const [lastCommand, setLastCommand] = useState<string | null>(null);
   const [sources, setSources] = useState<SourceHealth[]>([]);
   const [sourcesLoading, setSourcesLoading] = useState(false);
   const [sourcesError, setSourcesError] = useState<string | null>(null);
   const [railCollapsed, setRailCollapsed] = useState(true);
-  const [showRunActions, setShowRunActions] = useState(false);
 
-  const activeJobIdRef = useRef<string | null>(null);
-  const lastSequenceRef = useRef(0);
-  const seenEventIdsRef = useRef(new Set<string>());
+  /** Session currently owning the live EventSource (not always activeId). */
+  const streamingSessionIdRef = useRef<string | null>(null);
+  const streamingJobIdRef = useRef<string | null>(null);
   const stopStreamRef = useRef<(() => void) | null>(null);
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  /** Live scroll position for the active session; flushed on switch/close. */
+  const liveScrollTopRef = useRef(0);
 
-  const appendLines = useCallback((next: TerminalLine[]) => {
-    setLines((prev) => [...prev, ...next]);
-  }, []);
+  const flushScrollTop = useCallback(() => {
+    const id = activeIdRef.current;
+    captureScrollTop(id, liveScrollTopRef.current);
+  }, [captureScrollTop]);
 
   const stopStream = useCallback(() => {
     stopStreamRef.current?.();
     stopStreamRef.current = null;
+    streamingSessionIdRef.current = null;
+    streamingJobIdRef.current = null;
   }, []);
 
   const refreshQueueQuietly = useCallback(async () => {
@@ -101,17 +113,26 @@ export function DiscoveryTerminal() {
   }, []);
 
   const handleJobTerminal = useCallback(
-    async (job: DiscoveryJob, terminal: boolean) => {
-      setActiveJob(job);
+    async (sessionId: string, job: DiscoveryJob, terminal: boolean) => {
+      patchSession(sessionId, {
+        activeJob: job,
+        activeJobId: isActiveJobStatus(job.status) ? job.id : null,
+      });
       if (!terminal) return;
 
-      stopStream();
-      activeJobIdRef.current = null;
-      setShowRunActions(true);
-      setLastCompletedJob(job);
+      if (streamingSessionIdRef.current === sessionId) {
+        stopStream();
+      }
+
+      patchSession(sessionId, {
+        activeJob: job,
+        activeJobId: isActiveJobStatus(job.status) ? job.id : null,
+        showRunActions: true,
+        lastCompletedJob: job,
+      });
 
       if (job.status === "completed") {
-        appendLines([
+        appendLines(sessionId, [
           makeLine({
             kind: "summary",
             level: "success",
@@ -121,7 +142,7 @@ export function DiscoveryTerminal() {
         ]);
         void refreshQueueQuietly();
       } else if (job.status === "failed") {
-        appendLines([
+        appendLines(sessionId, [
           makeLine({
             kind: "error",
             level: "error",
@@ -130,7 +151,7 @@ export function DiscoveryTerminal() {
           }),
         ]);
       } else if (job.status === "cancelled") {
-        appendLines([
+        appendLines(sessionId, [
           makeLine({
             kind: "warning",
             level: "warning",
@@ -140,24 +161,27 @@ export function DiscoveryTerminal() {
         ]);
       }
     },
-    [appendLines, refreshQueueQuietly, stopStream],
+    [appendLines, patchSession, refreshQueueQuietly, stopStream],
   );
 
   const attachStream = useCallback(
-    (jobId: string) => {
+    (sessionId: string, jobId: string, afterSequence: number) => {
       stopStream();
-      activeJobIdRef.current = jobId;
+      streamingSessionIdRef.current = sessionId;
+      streamingJobIdRef.current = jobId;
 
       const finishFromServer = async () => {
-        if (activeJobIdRef.current !== jobId) return;
+        if (streamingJobIdRef.current !== jobId) return;
+        const session = sessionsRef.current.find((s) => s.id === sessionId);
         try {
           const job = await getDiscoveryJob(jobId);
-          await handleJobTerminal(job, true);
+          await handleJobTerminal(sessionId, job, true);
         } catch {
           await handleJobTerminal(
+            sessionId,
             {
               id: jobId,
-              command: lastCommand ?? "",
+              command: session?.lastCommand ?? "",
               status: "completed",
               createdAt: new Date().toISOString(),
             },
@@ -166,41 +190,82 @@ export function DiscoveryTerminal() {
         }
       };
 
-      stopStreamRef.current = streamJobEvents(jobId, lastSequenceRef.current, {
+      stopStreamRef.current = streamJobEvents(jobId, afterSequence, {
         onEvent: (event) => {
-          if (seenEventIdsRef.current.has(event.id)) return;
-          seenEventIdsRef.current.add(event.id);
-          if (event.sequence > lastSequenceRef.current) {
-            lastSequenceRef.current = event.sequence;
-          }
-          appendLines([jobEventToTerminalLine(event, nextLineId("ev"))]);
+          // Guard: only the session that owns this stream receives events.
+          if (streamingSessionIdRef.current !== sessionId) return;
+          if (streamingJobIdRef.current !== jobId) return;
+
+          patchSession(sessionId, (s) => {
+            if (s.seenEventIds.includes(event.id)) return s;
+            return {
+              ...s,
+              seenEventIds: [...s.seenEventIds, event.id],
+              lastSequence: Math.max(s.lastSequence, event.sequence),
+              lines: [
+                ...s.lines,
+                jobEventToTerminalLine(event, nextLineId("ev")),
+              ],
+            };
+          });
         },
         onDone: () => {
           void finishFromServer();
         },
       });
     },
-    [appendLines, handleJobTerminal, lastCommand, stopStream],
+    [handleJobTerminal, patchSession, stopStream],
+  );
+
+  /** Detach SSE only — jobs keep running (switch / close / unmount). */
+  const detachStreamPreserveJob = useCallback(() => {
+    stopStream();
+  }, [stopStream]);
+
+  const selectSession = useCallback(
+    (id: string) => {
+      if (id === activeIdRef.current) return;
+      const found = sessionsRef.current.find((s) => s.id === id);
+      if (!found) return;
+      flushScrollTop();
+      detachStreamPreserveJob();
+      switchSession(id);
+      liveScrollTopRef.current = found.scrollTop;
+      setHistoryIndex(null);
+      if (
+        found.activeJobId &&
+        (!found.activeJob || isActiveJobStatus(found.activeJob.status))
+      ) {
+        attachStream(id, found.activeJobId, found.lastSequence);
+      }
+    },
+    [attachStream, detachStreamPreserveJob, flushScrollTop, switchSession],
   );
 
   const startFind = useCallback(
-    async (request: string, rawDisplay: string) => {
+    async (sessionId: string, request: string, rawDisplay: string) => {
       if (submitting) return;
 
       setSubmitting(true);
-      setShowRunActions(false);
-      setLastCommand(request);
-      appendLines([makeLine({ kind: "prompt", text: rawDisplay.trim() })]);
+      patchSession(sessionId, {
+        showRunActions: false,
+        lastCommand: request,
+      });
+      appendLines(sessionId, [
+        makeLine({ kind: "prompt", text: rawDisplay.trim() }),
+      ]);
 
       try {
         const job = await createDiscoveryJob({ command: request });
-        seenEventIdsRef.current = new Set();
-        lastSequenceRef.current = 0;
-        setActiveJob(job);
-        activeJobIdRef.current = job.id;
+        patchSession(sessionId, {
+          seenEventIds: [],
+          lastSequence: 0,
+          activeJob: job,
+          activeJobId: job.id,
+        });
         const queued =
           typeof job.progress === "number" && job.status === "queued";
-        appendLines([
+        appendLines(sessionId, [
           makeLine({
             kind: "system",
             text: queued
@@ -209,212 +274,398 @@ export function DiscoveryTerminal() {
           }),
         ]);
         if (job.effectiveSources?.length) {
-          appendLines([
+          appendLines(sessionId, [
             makeLine({
               kind: "system",
               text: `[sources] ${job.effectiveSources.join(", ")}`,
             }),
           ]);
         }
-        attachStream(job.id);
-        setInput("");
+        attachStream(sessionId, job.id, 0);
+        setDraft(sessionId, "");
       } catch (error) {
         const message =
           error instanceof DiscoveryApiError
             ? error.message
             : "Could not start discovery. The job API may not be available yet.";
-        appendLines([
-          makeLine({ kind: "error", level: "error", text: `[error] ${message}` }),
+        appendLines(sessionId, [
+          makeLine({
+            kind: "error",
+            level: "error",
+            text: `[error] ${message}`,
+          }),
         ]);
-        // Preserve command on failure.
-        setInput(rawDisplay);
+        setDraft(sessionId, rawDisplay);
       } finally {
         setSubmitting(false);
       }
     },
-    [appendLines, attachStream, submitting],
+    [appendLines, attachStream, patchSession, setDraft, submitting],
   );
 
-  const runSources = useCallback(async () => {
-    setSourcesLoading(true);
-    setSourcesError(null);
-    setRailCollapsed(false);
-    try {
-      const list = await fetchSourceHealth();
-      setSources(list);
-      if (list.length === 0) {
-        appendLines([
+  const runSources = useCallback(
+    async (sessionId: string) => {
+      setSourcesLoading(true);
+      setSourcesError(null);
+      setRailCollapsed(false);
+      try {
+        const list = await fetchSourceHealth();
+        setSources(list);
+        if (list.length === 0) {
+          appendLines(sessionId, [
+            makeLine({
+              kind: "system",
+              text: "[sources] No source health data returned.",
+            }),
+          ]);
+        } else {
+          appendLines(
+            sessionId,
+            list.map((s) =>
+              makeLine({
+                kind:
+                  s.status === "failed" || s.status === "unconfigured"
+                    ? "error"
+                    : s.status === "degraded" || s.status === "auth_required"
+                      ? "warning"
+                      : "system",
+                level:
+                  s.status === "failed" || s.status === "unconfigured"
+                    ? "error"
+                    : s.status === "degraded" || s.status === "auth_required"
+                      ? "warning"
+                      : "info",
+                text: `[${s.source}] ${s.status.replace(/_/g, " ")}${s.safeMessage ? ` — ${s.safeMessage}` : ""}`,
+              }),
+            ),
+          );
+        }
+      } catch (error) {
+        const message =
+          error instanceof DiscoveryApiError
+            ? error.message
+            : "Source health API unavailable.";
+        setSourcesError(message);
+        appendLines(sessionId, [
           makeLine({
-            kind: "system",
-            text: "[sources] No source health data returned.",
+            kind: "warning",
+            level: "warning",
+            text: `[sources] ${message}`,
           }),
         ]);
-      } else {
-        appendLines(
-          list.map((s) =>
-            makeLine({
-              kind:
-                s.status === "failed" || s.status === "unconfigured"
-                  ? "error"
-                  : s.status === "degraded" || s.status === "auth_required"
-                    ? "warning"
-                    : "system",
-              level:
-                s.status === "failed" || s.status === "unconfigured"
-                  ? "error"
-                  : s.status === "degraded" || s.status === "auth_required"
-                    ? "warning"
-                    : "info",
-              text: `[${s.source}] ${s.status.replace(/_/g, " ")}${s.safeMessage ? ` — ${s.safeMessage}` : ""}`,
-            }),
-          ),
-        );
+      } finally {
+        setSourcesLoading(false);
       }
-    } catch (error) {
-      const message =
-        error instanceof DiscoveryApiError
-          ? error.message
-          : "Source health API unavailable.";
-      setSourcesError(message);
-      appendLines([
-        makeLine({
-          kind: "warning",
-          level: "warning",
-          text: `[sources] ${message}`,
-        }),
-      ]);
-    } finally {
-      setSourcesLoading(false);
-    }
-  }, [appendLines]);
+    },
+    [appendLines],
+  );
 
-  const runStatus = useCallback(async () => {
-    try {
-      if (activeJobIdRef.current) {
-        const job = await getDiscoveryJob(activeJobIdRef.current);
-        setActiveJob(job);
-        appendLines([
-          makeLine({ kind: "system", text: formatStatusLine(job) }),
+  const runStatus = useCallback(
+    async (sessionId: string) => {
+      const session = sessionsRef.current.find((s) => s.id === sessionId);
+      try {
+        if (session?.activeJobId) {
+          const job = await getDiscoveryJob(session.activeJobId);
+          patchSession(sessionId, { activeJob: job });
+          appendLines(sessionId, [
+            makeLine({ kind: "system", text: formatStatusLine(job) }),
+          ]);
+          if (!isActiveJobStatus(job.status)) {
+            await handleJobTerminal(sessionId, job, true);
+          }
+          return;
+        }
+        const jobs = await listDiscoveryJobs();
+        const latest = jobs[0];
+        if (!latest) {
+          appendLines(sessionId, [
+            makeLine({
+              kind: "system",
+              text: "[status] No discovery jobs yet.",
+            }),
+          ]);
+          return;
+        }
+        patchSession(sessionId, { activeJob: latest });
+        appendLines(sessionId, [
+          makeLine({ kind: "system", text: formatStatusLine(latest) }),
+        ]);
+      } catch (error) {
+        const message =
+          error instanceof DiscoveryApiError
+            ? error.message
+            : "Status API unavailable.";
+        appendLines(sessionId, [
+          makeLine({
+            kind: "warning",
+            level: "warning",
+            text: `[status] ${message}`,
+          }),
+        ]);
+      }
+    },
+    [appendLines, handleJobTerminal, patchSession],
+  );
+
+  const runHistory = useCallback(
+    async (sessionId: string) => {
+      try {
+        const jobs = await listDiscoveryJobs();
+        if (jobs.length === 0) {
+          appendLines(sessionId, [
+            makeLine({
+              kind: "system",
+              text: "[history] No recent jobs.",
+            }),
+          ]);
+          return;
+        }
+        appendLines(
+          sessionId,
+          jobs
+            .slice(0, 20)
+            .map((job) =>
+              makeLine({ kind: "system", text: formatHistoryLine(job) }),
+            ),
+        );
+      } catch (error) {
+        const message =
+          error instanceof DiscoveryApiError
+            ? error.message
+            : "History API unavailable.";
+        appendLines(sessionId, [
+          makeLine({
+            kind: "warning",
+            level: "warning",
+            text: `[history] ${message}`,
+          }),
+        ]);
+      }
+    },
+    [appendLines],
+  );
+
+  const runCancel = useCallback(
+    async (sessionId: string) => {
+      const session = sessionsRef.current.find((s) => s.id === sessionId);
+      const id = session?.activeJobId ?? session?.activeJob?.id;
+      if (!id) {
+        appendLines(sessionId, [
+          makeLine({
+            kind: "system",
+            text: "[cancel] No active discovery run.",
+          }),
+        ]);
+        return;
+      }
+      try {
+        const job = await cancelDiscoveryJob(id);
+        patchSession(sessionId, { activeJob: job });
+        appendLines(sessionId, [
+          makeLine({
+            kind: "warning",
+            level: "warning",
+            text: "[cancel] Cancellation requested.",
+          }),
         ]);
         if (!isActiveJobStatus(job.status)) {
-          await handleJobTerminal(job, true);
+          await handleJobTerminal(sessionId, job, true);
         }
-        return;
-      }
-      const jobs = await listDiscoveryJobs();
-      const latest = jobs[0];
-      if (!latest) {
-        appendLines([
-          makeLine({ kind: "system", text: "[status] No discovery jobs yet." }),
+      } catch (error) {
+        const message =
+          error instanceof DiscoveryApiError
+            ? error.message
+            : "Could not cancel the run.";
+        appendLines(sessionId, [
+          makeLine({
+            kind: "error",
+            level: "error",
+            text: `[cancel] ${message}`,
+          }),
         ]);
-        return;
       }
-      setActiveJob(latest);
-      appendLines([
-        makeLine({ kind: "system", text: formatStatusLine(latest) }),
-      ]);
-    } catch (error) {
-      const message =
-        error instanceof DiscoveryApiError
-          ? error.message
-          : "Status API unavailable.";
-      appendLines([
-        makeLine({
-          kind: "warning",
-          level: "warning",
-          text: `[status] ${message}`,
-        }),
-      ]);
-    }
-  }, [appendLines, handleJobTerminal]);
+    },
+    [appendLines, handleJobTerminal, patchSession],
+  );
 
-  const runHistory = useCallback(async () => {
-    try {
-      const jobs = await listDiscoveryJobs();
-      if (jobs.length === 0) {
-        appendLines([
+  const handleSessionCommand = useCallback(
+    (sessionId: string, kind: string, target?: string, name?: string) => {
+      if (kind === "new") {
+        flushScrollTop();
+        detachStreamPreserveJob();
+        const created = createSession();
+        liveScrollTopRef.current = 0;
+        appendLines(created.id, [
           makeLine({
             kind: "system",
-            text: "[history] No recent jobs.",
+            text: `[session] Created “${created.title}” (${created.id.slice(0, 8)}).`,
+          }),
+        ]);
+        setHistoryIndex(null);
+        return;
+      }
+
+      if (kind === "terminals") {
+        const list = sessionsRef.current;
+        appendLines(sessionId, [
+          makeLine({
+            kind: "system",
+            text: [
+              "ID        TITLE",
+              ...list.map((s) => formatSessionListLine(s, activeIdRef.current)),
+              "",
+              `${list.length} open · * = active`,
+            ].join("\n"),
           }),
         ]);
         return;
       }
-      appendLines(
-        jobs.slice(0, 20).map((job) =>
-          makeLine({ kind: "system", text: formatHistoryLine(job) }),
-        ),
-      );
-    } catch (error) {
-      const message =
-        error instanceof DiscoveryApiError
-          ? error.message
-          : "History API unavailable.";
-      appendLines([
-        makeLine({
-          kind: "warning",
-          level: "warning",
-          text: `[history] ${message}`,
-        }),
-      ]);
-    }
-  }, [appendLines]);
 
-  const runCancel = useCallback(async () => {
-    const id = activeJobIdRef.current ?? activeJob?.id;
-    if (!id) {
-      appendLines([
-        makeLine({
-          kind: "system",
-          text: "[cancel] No active discovery run.",
-        }),
-      ]);
-      return;
-    }
-    try {
-      const job = await cancelDiscoveryJob(id);
-      setActiveJob(job);
-      appendLines([
-        makeLine({
-          kind: "warning",
-          level: "warning",
-          text: "[cancel] Cancellation requested.",
-        }),
-      ]);
-      if (!isActiveJobStatus(job.status)) {
-        await handleJobTerminal(job, true);
+      if (kind === "switch" && target) {
+        const found = sessionsRef.current.find(
+          (s) =>
+            s.id === target ||
+            s.id.toLowerCase().startsWith(target.toLowerCase()) ||
+            s.title.toLowerCase() === target.toLowerCase() ||
+            s.title.toLowerCase().startsWith(target.toLowerCase()),
+        );
+        if (!found) {
+          appendLines(sessionId, [
+            makeLine({
+              kind: "warning",
+              level: "warning",
+              text: `[session] No open session matching “${target}”.`,
+            }),
+          ]);
+          return;
+        }
+        if (found.id === sessionId) {
+          appendLines(sessionId, [
+            makeLine({
+              kind: "system",
+              text: `[session] Already on “${found.title}”.`,
+            }),
+          ]);
+          return;
+        }
+        appendLines(sessionId, [
+          makeLine({
+            kind: "system",
+            text: `[session] Switching to “${found.title}”…`,
+          }),
+        ]);
+        selectSession(found.id);
+        queueMicrotask(() => {
+          appendLines(found.id, [
+            makeLine({
+              kind: "system",
+              text: `[session] Active: “${found.title}”.`,
+            }),
+          ]);
+        });
+        return;
       }
-    } catch (error) {
-      const message =
-        error instanceof DiscoveryApiError
-          ? error.message
-          : "Could not cancel the run.";
-      appendLines([
-        makeLine({
-          kind: "error",
-          level: "error",
-          text: `[cancel] ${message}`,
-        }),
-      ]);
-    }
-  }, [activeJob?.id, appendLines, handleJobTerminal]);
+
+      if (kind === "rename" && name) {
+        const renamed = renameActive(name);
+        if (!renamed) {
+          appendLines(sessionId, [
+            makeLine({
+              kind: "warning",
+              level: "warning",
+              text: "[session] Rename failed.",
+            }),
+          ]);
+          return;
+        }
+        appendLines(sessionId, [
+          makeLine({
+            kind: "system",
+            text: `[session] Renamed to “${name.trim()}”.`,
+          }),
+        ]);
+        return;
+      }
+
+      if (kind === "close") {
+        flushScrollTop();
+        const result = closeSession(target);
+        if (!result) {
+          appendLines(sessionId, [
+            makeLine({
+              kind: "warning",
+              level: "warning",
+              text: target
+                ? `[session] No open session matching “${target}”.`
+                : "[session] Nothing to close.",
+            }),
+          ]);
+          return;
+        }
+        // Keep-running: detach SSE only; do not cancel discovery jobs.
+        if (
+          streamingSessionIdRef.current === result.closed.id ||
+          result.closed.id === sessionId
+        ) {
+          detachStreamPreserveJob();
+        }
+        setHistoryIndex(null);
+        liveScrollTopRef.current = result.next.scrollTop;
+        appendLines(result.next.id, [
+          makeLine({
+            kind: "system",
+            text: `[session] Closed “${result.closed.title}” (${result.closed.id.slice(0, 8)}). Job left running if any. Now on “${result.next.title}”.`,
+          }),
+        ]);
+        const nextSnap = result.next;
+        if (
+          nextSnap.activeJobId &&
+          (!nextSnap.activeJob ||
+            isActiveJobStatus(nextSnap.activeJob.status))
+        ) {
+          attachStream(
+            nextSnap.id,
+            nextSnap.activeJobId,
+            nextSnap.lastSequence,
+          );
+        }
+      }
+    },
+    [
+      appendLines,
+      attachStream,
+      closeSession,
+      createSession,
+      detachStreamPreserveJob,
+      flushScrollTop,
+      renameActive,
+      selectSession,
+    ],
+  );
 
   const submit = useCallback(async () => {
-    const raw = input;
+    const sessionId = activeIdRef.current;
+    const session = sessionsRef.current.find((s) => s.id === sessionId);
+    if (!session) return;
+    const raw = session.draft;
     const parsed = parseTerminalCommand(raw);
 
     if (parsed.kind === "empty") return;
 
     if (parsed.kind !== "rejected" && parsed.kind !== "clear") {
-      setHistory((prev) => {
-        const next = [...prev.filter((h) => h !== raw.trim()), raw.trim()];
-        return next.slice(-50);
+      patchSession(sessionId, (s) => {
+        const trimmed = raw.trim();
+        const next = [
+          ...s.history.filter((h) => h !== trimmed),
+          trimmed,
+        ].slice(-50);
+        return { ...s, history: next };
       });
       setHistoryIndex(null);
     }
 
     if (parsed.kind === "rejected") {
-      appendLines([
+      appendLines(sessionId, [
         makeLine({ kind: "prompt", text: raw.trim() }),
         makeLine({
           kind: "warning",
@@ -428,58 +679,63 @@ export function DiscoveryTerminal() {
     }
 
     if (parsed.kind === "help") {
-      appendLines([
+      appendLines(sessionId, [
         makeLine({ kind: "prompt", text: raw.trim() || "/help" }),
         makeLine({
           kind: "help",
           text: formatHelpText(parsed.topic),
         }),
       ]);
-      setInput("");
+      setDraft(sessionId, "");
       return;
     }
 
     if (parsed.kind === "clear") {
-      setLines([
-        makeLine({
-          kind: "system",
-          text: "[clear] Scrollback cleared. Persisted jobs remain — use /history or /jobs.",
-        }),
-      ]);
-      setShowRunActions(false);
-      setInput("");
+      patchSession(sessionId, {
+        lines: [
+          makeLine({
+            kind: "system",
+            text: "[clear] Scrollback cleared. Persisted jobs remain — use /history or /jobs.",
+          }),
+        ],
+        showRunActions: false,
+      });
+      setDraft(sessionId, "");
       return;
     }
 
     if (parsed.kind === "find") {
-      await startFind(parsed.request, raw);
+      await startFind(sessionId, parsed.request, raw);
       return;
     }
 
-    appendLines([makeLine({ kind: "prompt", text: raw.trim() })]);
-    setInput("");
+    appendLines(sessionId, [makeLine({ kind: "prompt", text: raw.trim() })]);
+    setDraft(sessionId, "");
 
     if (parsed.kind === "sources") {
-      await runSources();
+      await runSources(sessionId);
       return;
     }
     if (parsed.kind === "status") {
-      await runStatus();
+      await runStatus(sessionId);
       return;
     }
     if (parsed.kind === "history") {
-      await runHistory();
+      await runHistory(sessionId);
       return;
     }
     if (parsed.kind === "jobs") {
       try {
         const jobs = await listDiscoveryJobs();
         if (jobs.length === 0) {
-          appendLines([
-            makeLine({ kind: "system", text: "[jobs] No discovery jobs yet." }),
+          appendLines(sessionId, [
+            makeLine({
+              kind: "system",
+              text: "[jobs] No discovery jobs yet.",
+            }),
           ]);
         } else {
-          appendLines([
+          appendLines(sessionId, [
             makeLine({
               kind: "system",
               text: "ID        STATUS      COMMAND",
@@ -497,26 +753,39 @@ export function DiscoveryTerminal() {
           error instanceof DiscoveryApiError
             ? error.message
             : "Could not list jobs.";
-        appendLines([
-          makeLine({ kind: "error", level: "error", text: `[jobs] ${message}` }),
+        appendLines(sessionId, [
+          makeLine({
+            kind: "error",
+            level: "error",
+            text: `[jobs] ${message}`,
+          }),
         ]);
       }
       return;
     }
     if (parsed.kind === "cancel") {
-      await runCancel();
+      await runCancel(sessionId);
       return;
     }
     if (parsed.kind === "source") {
-      appendLines([
+      appendLines(sessionId, [
         makeLine({
           kind: "system",
           text: `[source] ${parsed.action} ${parsed.source} — use Settings source health for now; dedicated connect/disconnect flows land next.`,
         }),
       ]);
       if (parsed.action === "status" || parsed.action === "check") {
-        await runSources();
+        await runSources(sessionId);
       }
+      return;
+    }
+    if (parsed.kind === "confirm") {
+      appendLines(sessionId, [
+        makeLine({
+          kind: "system",
+          text: `[confirm] ${parsed.action} ${parsed.source} — confirmation flows land with source connect/disconnect.`,
+        }),
+      ]);
       return;
     }
     if (
@@ -524,86 +793,140 @@ export function DiscoveryTerminal() {
       parsed.kind === "terminals" ||
       parsed.kind === "switch" ||
       parsed.kind === "rename" ||
-      parsed.kind === "close" ||
-      parsed.kind === "confirm"
+      parsed.kind === "close"
     ) {
-      appendLines([
-        makeLine({
-          kind: "system",
-          text: `[session] “${parsed.kind}” accepted. Multi-terminal tabs are wiring onto durable sessions (migration 007) — not fully interactive yet.`,
-        }),
-      ]);
-      return;
+      handleSessionCommand(
+        sessionId,
+        parsed.kind,
+        "target" in parsed ? parsed.target : undefined,
+        "name" in parsed ? parsed.name : undefined,
+      );
     }
   }, [
     appendLines,
-    input,
+    handleSessionCommand,
+    patchSession,
     runCancel,
     runHistory,
     runSources,
     runStatus,
+    setDraft,
     startFind,
   ]);
 
   const onHistoryPrev = useCallback(() => {
-    if (history.length === 0) return;
+    const session = sessionsRef.current.find(
+      (s) => s.id === activeIdRef.current,
+    );
+    if (!session || session.history.length === 0) return;
     setHistoryIndex((idx) => {
       if (idx === null) {
-        setDraftBeforeHistory(input);
-        const next = history.length - 1;
-        setInput(history[next] ?? "");
+        setDraftBeforeHistory(session.draft);
+        const next = session.history.length - 1;
+        setDraft(session.id, session.history[next] ?? "");
         return next;
       }
       const next = Math.max(0, idx - 1);
-      setInput(history[next] ?? "");
+      setDraft(session.id, session.history[next] ?? "");
       return next;
     });
-  }, [history, input]);
+  }, [setDraft]);
 
   const onHistoryNext = useCallback(() => {
-    if (historyIndex === null) return;
-    if (historyIndex >= history.length - 1) {
+    const session = sessionsRef.current.find(
+      (s) => s.id === activeIdRef.current,
+    );
+    if (!session || historyIndex === null) return;
+    if (historyIndex >= session.history.length - 1) {
       setHistoryIndex(null);
-      setInput(draftBeforeHistory);
+      setDraft(session.id, draftBeforeHistory);
       return;
     }
     const next = historyIndex + 1;
     setHistoryIndex(next);
-    setInput(history[next] ?? "");
-  }, [draftBeforeHistory, history, historyIndex]);
+    setDraft(session.id, session.history[next] ?? "");
+  }, [draftBeforeHistory, historyIndex, setDraft]);
 
   const onRunAgain = useCallback(() => {
-    const cmd = lastCommand ?? lastCompletedJob?.command;
+    const sessionId = activeIdRef.current;
+    const session = sessionsRef.current.find((s) => s.id === sessionId);
+    const cmd = session?.lastCommand ?? session?.lastCompletedJob?.command;
     if (!cmd) return;
-    setInput(cmd);
-    void startFind(cmd, cmd);
-  }, [lastCommand, lastCompletedJob?.command, startFind]);
+    setDraft(sessionId, cmd);
+    void startFind(sessionId, cmd, cmd);
+  }, [setDraft, startFind]);
+
+  const onNewTab = useCallback(() => {
+    flushScrollTop();
+    detachStreamPreserveJob();
+    createSession();
+    liveScrollTopRef.current = 0;
+    setHistoryIndex(null);
+  }, [createSession, detachStreamPreserveJob, flushScrollTop]);
+
+  const onCloseTab = useCallback(
+    (id: string) => {
+      flushScrollTop();
+      const closing = sessionsRef.current.find((s) => s.id === id);
+      const result = closeSession(id);
+      if (!result) return;
+      if (streamingSessionIdRef.current === result.closed.id) {
+        detachStreamPreserveJob();
+      }
+      setHistoryIndex(null);
+      liveScrollTopRef.current = result.next.scrollTop;
+      const nextSnap =
+        sessionsRef.current.find((s) => s.id === result.next.id) ?? result.next;
+      if (
+        nextSnap.activeJobId &&
+        (!nextSnap.activeJob ||
+          isActiveJobStatus(nextSnap.activeJob.status)) &&
+        nextSnap.id !== closing?.id
+      ) {
+        attachStream(nextSnap.id, nextSnap.activeJobId, nextSnap.lastSequence);
+      }
+    },
+    [
+      attachStream,
+      closeSession,
+      detachStreamPreserveJob,
+      flushScrollTop,
+    ],
+  );
 
   // Deep-link / reconnect to a job from ?job=
   useEffect(() => {
     if (!focusJobId) return;
     let cancelled = false;
+    const sessionId = activeIdRef.current;
     void (async () => {
       try {
         const job = await getDiscoveryJob(focusJobId);
         if (cancelled) return;
-        setActiveJob(job);
-        setLastCommand(job.command);
-        appendLines([
+        patchSession(sessionId, {
+          activeJob: job,
+          activeJobId: isActiveJobStatus(job.status) ? job.id : null,
+          lastCommand: job.command,
+        });
+        appendLines(sessionId, [
           makeLine({
             kind: "system",
             text: `[view] ${formatStatusLine(job)}`,
           }),
         ]);
         if (isActiveJobStatus(job.status)) {
-          lastSequenceRef.current = 0;
-          seenEventIdsRef.current = new Set();
-          attachStream(job.id);
+          patchSession(sessionId, {
+            lastSequence: 0,
+            seenEventIds: [],
+          });
+          attachStream(sessionId, job.id, 0);
         } else {
-          setLastCompletedJob(job);
-          setShowRunActions(true);
+          patchSession(sessionId, {
+            lastCompletedJob: job,
+            showRunActions: true,
+          });
           if (job.status === "completed") {
-            appendLines([
+            appendLines(sessionId, [
               makeLine({
                 kind: "summary",
                 text: formatJobSummary(job),
@@ -614,7 +937,7 @@ export function DiscoveryTerminal() {
         }
       } catch {
         if (!cancelled) {
-          appendLines([
+          appendLines(sessionId, [
             makeLine({
               kind: "warning",
               level: "warning",
@@ -633,9 +956,11 @@ export function DiscoveryTerminal() {
 
   useEffect(() => () => stopStream(), [stopStream]);
 
-  const live = Boolean(activeJob && isActiveJobStatus(activeJob.status));
-  const windowStatus = activeJob
-    ? `${activeJob.status} · ${activeJob.id.slice(0, 8)}`
+  const live = Boolean(
+    active.activeJob && isActiveJobStatus(active.activeJob.status),
+  );
+  const windowStatus = active.activeJob
+    ? `${active.activeJob.status} · ${active.activeJob.id.slice(0, 8)}`
     : "idle";
 
   return (
@@ -645,18 +970,41 @@ export function DiscoveryTerminal() {
       <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row lg:items-stretch">
         <MacTerminalChrome
           className="flex min-h-[min(82dvh,52rem)] flex-1 flex-col lg:min-h-[min(88dvh,58rem)]"
-          title="hackfinder — console — 120×40"
+          title={`hackfinder — ${active.title} — 120×40`}
           status={live ? `running · ${windowStatus}` : windowStatus}
         >
-          <TerminalOutput lines={lines} live={live} />
+          <TerminalTabStrip
+            sessions={sessions.map((s) => ({
+              id: s.id,
+              title: s.title,
+              busy: Boolean(
+                s.activeJobId &&
+                  s.activeJob &&
+                  isActiveJobStatus(s.activeJob.status),
+              ),
+            }))}
+            activeId={activeId}
+            onSelect={selectSession}
+            onNew={onNewTab}
+            onClose={onCloseTab}
+          />
+          <TerminalOutput
+            key={activeId}
+            lines={active.lines}
+            live={live}
+            scrollTop={active.scrollTop}
+            onScrollTopChange={(top) => {
+              liveScrollTopRef.current = top;
+            }}
+          />
           <TerminalRunActions
-            visible={showRunActions}
-            jobId={lastCompletedJob?.id ?? activeJob?.id ?? null}
+            visible={active.showRunActions}
+            jobId={active.lastCompletedJob?.id ?? active.activeJob?.id ?? null}
             onRunAgain={onRunAgain}
           />
           <TerminalInput
-            value={input}
-            onChange={setInput}
+            value={active.draft}
+            onChange={(value) => setDraft(activeId, value)}
             onSubmit={() => void submit()}
             onHistoryPrev={onHistoryPrev}
             onHistoryNext={onHistoryNext}
