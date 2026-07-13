@@ -14,13 +14,15 @@ import {
   isPlaywrightBrowserMissingError,
   withPlaywright,
 } from "@/lib/browser/playwright";
+import { collectUntilStable } from "@/lib/browser/collectUntilStable";
 import { normalizeUrl, normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
 const DEVPOST_BASE = "https://devpost.com";
 export const DEVPOST_OPEN_UPCOMING_URL =
   "https://devpost.com/hackathons?status[]=upcoming&status[]=open";
-const DEVPOST_MAX_SCROLLS = 12;
-const DEVPOST_MAX_CARDS = 200;
+const DEVPOST_MAX_SCROLLS = 30;
+const DEVPOST_MAX_CARDS = 100;
+const DEVPOST_NO_GROWTH_LIMIT = 3;
 const DEVPOST_SCROLL_WAIT_MS = 1_200;
 
 export type DevpostFailureHint =
@@ -399,53 +401,49 @@ async function collectRenderedDevpostListing(
 
     const initialCardCount = await uniqueCardCount().catch(() => 0);
     logger?.("Initial listing batch loaded");
-    logger?.(`${initialCardCount} event cards found`);
+    logger?.(`${initialCardCount} visible cards`);
 
-    let finalCardCount = initialCardCount;
-    let scrollAttempts = 0;
-    let noGrowthAttempts = 0;
-    let stopReason: DevpostLazyLoadStopReason = "no_additional_cards";
+    const collected = await collectUntilStable<string>({
+      collectItems: async () =>
+        page.locator("a.tile-anchor").evaluateAll((anchors) =>
+          anchors.map((anchor) => (anchor as HTMLAnchorElement).href).filter(Boolean),
+        ),
+      getKey: (url) => normalizeUrlForDedupe(url),
+      scroll: async () => {
+        await page.mouse.wheel(0, 2600).catch(() => undefined);
+      },
+      waitForIdle: async () => {
+        await page.waitForLoadState("networkidle", { timeout: DEVPOST_SCROLL_WAIT_MS }).catch(() => undefined);
+      },
+      maxItems: DEVPOST_MAX_CARDS,
+      maxScrolls: DEVPOST_MAX_SCROLLS,
+      noGrowthLimit: DEVPOST_NO_GROWTH_LIMIT,
+      timeoutMs: Math.max(1_000, timeoutMs - (Date.now() - startedAt)),
+      waitMs: DEVPOST_SCROLL_WAIT_MS,
+      logger,
+      loadingMessage: "Loading more listings...",
+      countMessage: (count) => `${count} unique cards`,
+    });
 
-    while (scrollAttempts < DEVPOST_MAX_SCROLLS && finalCardCount < DEVPOST_MAX_CARDS) {
-      if (Date.now() - startedAt > timeoutMs) {
-        stopReason = "timeout";
-        warnings.push(describeDevpostFailure("lazy_loading_timeout"));
-        break;
-      }
-
-      scrollAttempts += 1;
-      logger?.("Loading more listings...");
-      const before = finalCardCount;
-      await page.mouse.wheel(0, 2600).catch(() => undefined);
-      await page.waitForTimeout(DEVPOST_SCROLL_WAIT_MS);
-      await page.waitForLoadState("networkidle", { timeout: DEVPOST_SCROLL_WAIT_MS }).catch(() => undefined);
-      finalCardCount = await uniqueCardCount().catch(() => before);
-
-      if (finalCardCount > before) {
-        noGrowthAttempts = 0;
-        logger?.(`${finalCardCount} event cards found`);
-      } else {
-        noGrowthAttempts += 1;
-      }
-
-      const endMarker =
-        (await page
-          .locator("text=/end of results|no more hackathons|no additional/i")
-          .count()
-          .catch(() => 0)) > 0;
-      if (endMarker) {
-        stopReason = "end_marker_reached";
-        break;
-      }
-      if (noGrowthAttempts >= 3) {
-        stopReason = "no_additional_cards";
-        break;
-      }
+    let stopReason: DevpostLazyLoadStopReason =
+      collected.stopReason === "max_items"
+        ? "maximum_cards_reached"
+        : collected.stopReason === "max_scrolls"
+          ? "maximum_scrolls_reached"
+          : collected.stopReason === "timeout"
+            ? "timeout"
+            : "no_additional_cards";
+    const endMarker =
+      (await page
+        .locator("text=/end of results|no more hackathons|no additional/i")
+        .count()
+        .catch(() => 0)) > 0;
+    if (endMarker) stopReason = "end_marker_reached";
+    if (stopReason === "timeout") {
+      warnings.push(describeDevpostFailure("lazy_loading_timeout"));
     }
-
-    if (finalCardCount >= DEVPOST_MAX_CARDS) stopReason = "maximum_cards_reached";
-    else if (scrollAttempts >= DEVPOST_MAX_SCROLLS && noGrowthAttempts < 3) {
-      stopReason = "maximum_scrolls_reached";
+    if (stopReason === "no_additional_cards") {
+      logger?.(`No more cards found after ${collected.noGrowthAttempts} attempts`);
     }
 
     logger?.("Lazy loading complete");
@@ -454,9 +452,9 @@ async function collectRenderedDevpostListing(
       html: await page.content(),
       warnings,
       initialCardCount,
-      finalCardCount,
-      scrollAttempts,
-      noGrowthAttempts,
+      finalCardCount: collected.uniqueCount,
+      scrollAttempts: collected.scrollAttempts,
+      noGrowthAttempts: collected.noGrowthAttempts,
       stopReason,
       finalUrl: page.url(),
       listingContainerFound,
@@ -519,6 +517,10 @@ export const devpostCollector: Collector = {
         leadsEmitted: result.leads.length,
         searchUrls: 1,
       };
+      result.warnings.push(`stop_reason=${rendered.stopReason}`);
+      result.warnings.push(`unique_cards=${rendered.finalCardCount}`);
+      result.warnings.push(`scrolls=${rendered.scrollAttempts}`);
+      result.warnings.push(`no_growth_attempts=${rendered.noGrowthAttempts}`);
 
       if (result.leads.length === 0 && result.errors.length === 0) {
         const visibleCards = countDevpostTiles(rendered.html);

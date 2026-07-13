@@ -23,16 +23,18 @@ import {
   withPersistentPlaywright,
 } from "@/lib/browser/playwright";
 import { hakkuProfileExists, writeHakkuSessionMeta } from "@/lib/browser/sessionMeta";
+import { collectUntilStable } from "@/lib/browser/collectUntilStable";
 import { normalizeUrl, normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
 export const HAKKU_EXPLORE_URL = "https://www.hakku.app/explore";
 export const HAKKU_SWIPE_URL = HAKKU_EXPLORE_URL;
 const HAKKU_ORIGIN = "https://www.hakku.app";
 
-const HAKKU_MAX_SCROLLS = 12;
-const HAKKU_MAX_EVENTS = 150;
-const HAKKU_SCROLL_WAIT_MS = 1_000;
-const HAKKU_DETAIL_LIMIT = 50;
+const HAKKU_MAX_SCROLLS = 30;
+const HAKKU_MAX_EVENTS = 100;
+const HAKKU_NO_GROWTH_LIMIT = 3;
+const HAKKU_SCROLL_WAIT_MS = 1_200;
+const HAKKU_DETAIL_LIMIT = 100;
 const CONTENT_SELECTOR = "main, h1, h2, h3, a, button, input[type='password'], form";
 
 const MONTH_RE =
@@ -69,6 +71,9 @@ export type HakkuParserDiagnostics = {
   clickableCardCount: number;
   detailPagesOpened: number;
   detailPagesParsed: number;
+  detailFailures: number;
+  scrollAttempts: number;
+  noGrowthAttempts: number;
 };
 
 export type HakkuExtractResult = {
@@ -96,6 +101,9 @@ function emptyHakkuDiagnostics(): HakkuParserDiagnostics {
     clickableCardCount: 0,
     detailPagesOpened: 0,
     detailPagesParsed: 0,
+    detailFailures: 0,
+    scrollAttempts: 0,
+    noGrowthAttempts: 0,
   };
 }
 
@@ -407,7 +415,13 @@ export function extractHakkuCardsFromHtml(
     if (!title) continue;
 
     const links = allAnchorUrls(root, $);
-    const hakkuDetailUrl = extractHakkuDetailUrl(root, $);
+    const explicitHakkuDetailUrl = extractHakkuDetailUrl(root, $);
+    const hasClickableDetailAffordance =
+      root.is("[role='button'], [tabindex]") ||
+      root.find("[role='button'], [tabindex], .cursor-pointer, [class*='cursor-pointer']").length > 0;
+    const hakkuDetailUrl =
+      explicitHakkuDetailUrl ??
+      (hasClickableDetailAffordance ? `${HAKKU_ORIGIN}/events/${slugify(title)}` : undefined);
     const externalEventUrl = extractExternalEventUrl(root, $);
     const devpostUrl = links.find((url) => {
       try {
@@ -685,69 +699,70 @@ async function collectExploreCards(
   diagnostics: HakkuParserDiagnostics;
   stopReason: HakkuStopReason;
 }> {
-  const startedAt = Date.now();
   let parsed = await extractCardsFromPage(page);
-  logger?.(`${parsed.cards.length} raw event cards found`);
+  const collected = await collectUntilStable<HakkuCard>({
+    collectItems: async () => {
+      parsed = await extractCardsFromPage(page);
+      return parsed.cards;
+    },
+    getKey: (card) =>
+      normalizeUrlForDedupe(
+        card.externalEventUrl ?? card.hakkuDetailUrl ?? card.url ?? `${HAKKU_EXPLORE_URL}#${slugify(card.title)}`,
+      ),
+    scroll: async () => {
+      await page.mouse.wheel(0, 2200).catch(() => undefined);
+    },
+    waitForIdle: async () => {
+      await page.waitForLoadState("networkidle", { timeout: HAKKU_SCROLL_WAIT_MS }).catch(() => undefined);
+    },
+    maxItems: HAKKU_MAX_EVENTS,
+    maxScrolls: HAKKU_MAX_SCROLLS,
+    noGrowthLimit: HAKKU_NO_GROWTH_LIMIT,
+    timeoutMs,
+    waitMs: HAKKU_SCROLL_WAIT_MS,
+    logger,
+    loadingMessage: "Loading more cards...",
+    countMessage: (count) => `${count} unique cards found`,
+  });
 
-  let best = parsed;
-  let noGrowthAttempts = 0;
-  let scrollAttempts = 0;
-  let stopReason: HakkuStopReason = "completed";
+  const diagnostics = {
+    ...parsed.diagnostics,
+    validCards: collected.items.length,
+    scrollAttempts: collected.scrollAttempts,
+    noGrowthAttempts: collected.noGrowthAttempts,
+  };
+  const stopReason: HakkuStopReason =
+    collected.items.length === 0 && diagnostics.candidateContainers > 0
+      ? "parser_failure"
+      : collected.items.length === 0
+        ? "no_cards"
+        : collected.stopReason === "timeout"
+          ? "timeout"
+          : "completed";
 
-  while (scrollAttempts < HAKKU_MAX_SCROLLS && best.cards.length < HAKKU_MAX_EVENTS) {
-    if (Date.now() - startedAt > timeoutMs) {
-      stopReason = "timeout";
-      break;
-    }
-
-    scrollAttempts += 1;
-    logger?.("Loading more cards...");
-    const before = best.cards.length;
-    await page.mouse.wheel(0, 2200).catch(() => undefined);
-    await page.waitForTimeout(HAKKU_SCROLL_WAIT_MS).catch(() => undefined);
-    await page.waitForLoadState("networkidle", { timeout: HAKKU_SCROLL_WAIT_MS }).catch(() => undefined);
-
-    parsed = await extractCardsFromPage(page);
-    if (parsed.cards.length > before) {
-      best = parsed;
-      noGrowthAttempts = 0;
-      logger?.(`${best.cards.length} raw event cards found`);
-    } else {
-      if (parsed.diagnostics.candidateContainers > best.diagnostics.candidateContainers) {
-        best = parsed;
-      }
-      noGrowthAttempts += 1;
-    }
-
-    if (noGrowthAttempts >= 3) break;
+  if (collected.stopReason === "no_growth") {
+    logger?.(`No additional cards after ${collected.noGrowthAttempts} attempts`);
   }
-
-  if (best.cards.length >= HAKKU_MAX_EVENTS) {
-    stopReason = "completed";
-  } else if (scrollAttempts >= HAKKU_MAX_SCROLLS && noGrowthAttempts < 3) {
-    stopReason = "timeout";
-  } else if (best.cards.length === 0 && best.diagnostics.candidateContainers > 0) {
-    stopReason = "parser_failure";
-  } else if (best.cards.length === 0) {
-    stopReason = "no_cards";
-  }
-
   logger?.("Lazy loading complete");
-  return { ...best, stopReason };
+  return { cards: collected.items, diagnostics, stopReason };
 }
 
 async function enrichHakkuDetails(
   page: Page,
   cards: HakkuCard[],
+  maxDetails: number,
   logger?: (message: string) => void,
-): Promise<{ cards: HakkuCard[]; opened: number; parsed: number }> {
-  const targets = cards.filter((card) => card.hakkuDetailUrl).slice(0, HAKKU_DETAIL_LIMIT);
-  if (targets.length === 0) return { cards, opened: 0, parsed: 0 };
+): Promise<{ cards: HakkuCard[]; opened: number; parsed: number; failures: number }> {
+  const targets = cards
+    .filter((card) => card.hakkuDetailUrl)
+    .slice(0, Math.min(HAKKU_DETAIL_LIMIT, maxDetails));
+  if (targets.length === 0) return { cards, opened: 0, parsed: 0, failures: 0 };
 
   logger?.(`Opening ${targets.length} Hakku detail pages...`);
   const byDetailUrl = new Map(targets.map((card) => [card.hakkuDetailUrl, card]));
   let opened = 0;
   let parsed = 0;
+  let failures = 0;
 
   for (const card of targets) {
     if (!card.hakkuDetailUrl) continue;
@@ -764,6 +779,8 @@ async function enrichHakkuDetails(
     if (detail.title || detail.text || detail.externalEventUrl || detail.dateText) {
       byDetailUrl.set(card.hakkuDetailUrl, mergeHakkuDetail(card, detail));
       parsed += 1;
+    } else {
+      failures += 1;
     }
   }
 
@@ -773,6 +790,7 @@ async function enrichHakkuDetails(
     ),
     opened,
     parsed,
+    failures,
   };
 }
 
@@ -831,9 +849,10 @@ async function extractVisibleHakkuCards(options: {
   profileDir: string;
   timeoutMs: number;
   headless: boolean;
+  maxResults: number;
   logger?: (message: string) => void;
 }): Promise<HakkuExtractResult> {
-  const { profileDir, timeoutMs, headless, logger } = options;
+  const { profileDir, timeoutMs, headless, maxResults, logger } = options;
 
   return withPersistentPlaywright(
     profileDir,
@@ -903,11 +922,12 @@ async function extractVisibleHakkuCards(options: {
 
         logger?.("Explore directory loaded");
         const collected = await collectExploreCards(page, timeoutMs, logger);
-        const enriched = await enrichHakkuDetails(page, collected.cards, logger);
+        const enriched = await enrichHakkuDetails(page, collected.cards, maxResults, logger);
         const diagnostics = {
           ...collected.diagnostics,
           detailPagesOpened: enriched.opened,
           detailPagesParsed: enriched.parsed,
+          detailFailures: enriched.failures,
         };
         const cards = filterUpcomingHakkuCards(enriched.cards);
         const mode: HakkuCollectMode =
@@ -961,11 +981,20 @@ function applyHakkuMetrics(
     clickableCardCount: extract.diagnostics.clickableCardCount,
     detailPagesOpened: extract.diagnostics.detailPagesOpened,
     detailPagesParsed: extract.diagnostics.detailPagesParsed,
+    detailFailures: extract.diagnostics.detailFailures,
+    scrollAttempts: extract.diagnostics.scrollAttempts,
+    noGrowthAttempts: extract.diagnostics.noGrowthAttempts,
   };
 
   result.warnings.push(`mode=${extract.mode}`);
   result.warnings.push(`auth_status=${extract.authStatus}`);
   result.warnings.push(`stop_reason=${extract.stopReason}`);
+  result.warnings.push(`unique_cards=${extract.cards.length}`);
+  result.warnings.push(`scrolls=${extract.diagnostics.scrollAttempts}`);
+  result.warnings.push(`no_growth_attempts=${extract.diagnostics.noGrowthAttempts}`);
+  result.warnings.push(`details_opened=${extract.diagnostics.detailPagesOpened}`);
+  result.warnings.push(`details_parsed=${extract.diagnostics.detailPagesParsed}`);
+  result.warnings.push(`detail_failures=${extract.diagnostics.detailFailures}`);
 }
 
 export const hakkuCollector: Collector = {
@@ -1001,6 +1030,7 @@ export const hakkuCollector: Collector = {
         profileDir,
         timeoutMs: input.timeoutMs,
         headless,
+        maxResults: input.maxResults,
         logger: input.logger,
       });
 
