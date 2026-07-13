@@ -72,6 +72,7 @@ export type HakkuStopReason =
   | "auth_required"
   | "timeout"
   | "no_cards"
+  | "parser_failure"
   | "profile_missing"
   | "browser_missing"
   | "error";

@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import fixture from "@/collectors/__fixtures__/hakku-session.json";
 import {
   HAKKU_EXPLORE_URL,
+  extractHakkuCardsFromHtml,
+  extractHakkuDetailFromHtml,
+  mergeHakkuDetail,
   parseHakkuCards,
   type HakkuCard,
 } from "@/collectors/hakku";
@@ -22,6 +25,8 @@ import {
   resolveHakkuProfileName,
 } from "@/lib/browser/profilePaths";
 import { writeHakkuSessionMeta } from "@/lib/browser/sessionMeta";
+
+const fixturesDir = path.join(process.cwd(), "src", "collectors", "__fixtures__");
 
 describe("parseHakkuCards", () => {
   it("uses the Hakku explore directory as the discovery URL", () => {
@@ -67,6 +72,130 @@ describe("parseHakkuCards", () => {
     );
 
     assert.equal(leads.length, 1);
+  });
+
+  it("preserves native Hakku provenance and external official URLs", () => {
+    const leads = parseHakkuCards(
+      [
+        {
+          title: "Hack the 6ix",
+          url: "https://hackthe6ix.carrd.co/",
+          externalEventUrl: "https://hackthe6ix.carrd.co/",
+          hakkuDetailUrl: "https://www.hakku.app/events/hack-the-6ix",
+          dateText: "Jul 17-19",
+          location: "Toronto, Ontario, Canada",
+          format: "IN-PERSON",
+          text: "An in-person hackathon event in Toronto.",
+          links: ["https://hackthe6ix.carrd.co/"],
+          tags: ["IN-PERSON", "AI"],
+        },
+      ],
+      5,
+    );
+
+    assert.equal(leads.length, 1);
+    assert.equal(leads[0]?.source, "hakku");
+    assert.equal(leads[0]?.metadata?.discoveryMode, "authenticated_hakku_explore");
+    assert.equal(leads[0]?.metadata?.officialUrl, "https://hackthe6ix.carrd.co/");
+    assert.equal(leads[0]?.metadata?.hakkuDetailUrl, "https://www.hakku.app/events/hack-the-6ix");
+    assert.equal(leads[0]?.metadata?.mode, "in-person");
+  });
+});
+
+describe("extractHakkuCardsFromHtml", () => {
+  it("parses current non-anchor explore cards from rendered HTML", () => {
+    const html = readFileSync(path.join(fixturesDir, "hakku-explore.html"), "utf8");
+    const result = extractHakkuCardsFromHtml(html, 10);
+
+    assert.equal(result.cards.length, 3);
+    assert.equal(result.diagnostics.visitSiteButtons, 4);
+    assert.equal(result.diagnostics.saveButtons, 4);
+    assert.ok(result.diagnostics.candidateContainers >= 4);
+
+    const toronto = result.cards.find((card) => card.title === "Hack the 6ix");
+    assert.ok(toronto);
+    assert.equal(toronto.location, "Toronto, Ontario, Canada");
+    assert.equal(toronto.format, "IN-PERSON");
+    assert.equal(toronto.dateText, "Jul 17-19");
+    assert.equal(toronto.externalEventUrl, "https://hackthe6ix.carrd.co/");
+    assert.equal(toronto.hakkuDetailUrl, "https://www.hakku.app/events/hack-the-6ix");
+  });
+
+  it("accepts Hakku cards that have Visit Site and date but no location", () => {
+    const html = readFileSync(path.join(fixturesDir, "hakku-explore.html"), "utf8");
+    const result = extractHakkuCardsFromHtml(html, 10);
+
+    const devpostCard = result.cards.find((card) => card.title === "757 BLD WKND 2026 2.0");
+    assert.ok(devpostCard);
+    assert.equal(devpostCard.location, undefined);
+    assert.equal(devpostCard.devpostUrl, "https://757-bld-wknd-2026-2-0.devpost.com/");
+    assert.equal(devpostCard.externalEventUrl, "https://757-bld-wknd-2026-2-0.devpost.com/");
+  });
+
+  it("dedupes repeated Hakku cards by title and external URL", () => {
+    const html = readFileSync(path.join(fixturesDir, "hakku-explore.html"), "utf8");
+    const result = extractHakkuCardsFromHtml(html, 10);
+    const garuda = result.cards.filter((card) => card.title === "Garuda Hacks 7.0");
+
+    assert.equal(garuda.length, 1);
+    assert.equal(garuda[0]?.location, "TBA");
+  });
+
+  it("reports visible controls separately from valid parsed cards", () => {
+    const html = `
+      <main>
+        <div>
+          <h3>Broken Event Card</h3>
+          <p>Visible Hakku card controls rendered, but the event fields are incomplete.</p>
+          <a>Visit Site</a>
+          <button>Save</button>
+        </div>
+      </main>
+    `;
+    const result = extractHakkuCardsFromHtml(html, 10);
+
+    assert.equal(result.diagnostics.candidateContainers, 1);
+    assert.equal(result.cards.length, 0);
+    assert.equal(result.diagnostics.validCards, 0);
+  });
+});
+
+describe("extractHakkuDetailFromHtml", () => {
+  it("extracts bounded detail fields when an internal Hakku detail page is available", () => {
+    const html = readFileSync(path.join(fixturesDir, "hakku-detail.html"), "utf8");
+    const detail = extractHakkuDetailFromHtml(html, "https://www.hakku.app/events/hack-the-6ix");
+
+    assert.equal(detail.title, "Hack the 6ix");
+    assert.equal(detail.organizer, "Hack the 6ix Team");
+    assert.equal(detail.location, "Toronto, Ontario, Canada");
+    assert.equal(detail.dateText, "Jul 17-19, 2026");
+    assert.equal(detail.startDate, "2026-07-17");
+    assert.equal(detail.endDate, "2026-07-19");
+    assert.equal(detail.prizeSummary, "$10,000 in prizes");
+    assert.equal(detail.contactEmail, "team@example.org");
+    assert.equal(detail.externalEventUrl, "https://hackthe6ix.carrd.co/");
+    assert.equal(detail.devpostUrl, "https://hack-the-6ix.devpost.com/");
+    assert.ok(detail.tags?.includes("AI"));
+  });
+
+  it("merges detail fields without losing explore-card provenance", () => {
+    const html = readFileSync(path.join(fixturesDir, "hakku-detail.html"), "utf8");
+    const detail = extractHakkuDetailFromHtml(html, "https://www.hakku.app/events/hack-the-6ix");
+    const merged = mergeHakkuDetail(
+      {
+        title: "Hack the 6ix",
+        hakkuDetailUrl: "https://www.hakku.app/events/hack-the-6ix",
+        links: ["https://www.hakku.app/events/hack-the-6ix"],
+        tags: ["IN-PERSON"],
+      },
+      detail,
+    );
+
+    assert.equal(merged.hakkuDetailUrl, "https://www.hakku.app/events/hack-the-6ix");
+    assert.equal(merged.externalEventUrl, "https://hackthe6ix.carrd.co/");
+    assert.ok(merged.links.includes("https://www.hakku.app/events/hack-the-6ix"));
+    assert.ok(merged.tags.includes("IN-PERSON"));
+    assert.ok(merged.tags.includes("Security"));
   });
 });
 
