@@ -49,6 +49,7 @@ const CANDIDATE_CARD_SELECT = [
   "name",
   "summary",
   "source",
+  "source_ids",
   "official_url",
   "apply_url",
   "social_url",
@@ -70,6 +71,11 @@ const CANDIDATE_CARD_SELECT = [
   "sheet_row_id",
   "sheet_appended_at",
 ].join(",");
+
+function sourceFilterClause(source: string): string {
+  // source is validated by the API schema before it reaches the repository.
+  return `source.eq.${source},source_ids->>${source}.not.is.null`;
+}
 
 export async function listCandidates(
   params: ListCandidatesParams = {},
@@ -108,7 +114,7 @@ export async function listCandidates(
   }
 
   if (params.source) {
-    query = query.eq("source", params.source);
+    query = query.or(sourceFilterClause(params.source));
   }
 
   if (params.q) {
@@ -149,6 +155,30 @@ export async function listCandidates(
       hasMore && last ? encodeCursor(last) : undefined,
     total: count ?? undefined,
   };
+}
+
+export async function listPendingSources(): Promise<string[]> {
+  const supabase = createServiceSupabaseClient();
+  const { data, error } = await supabase
+    .from("candidates")
+    .select("source,source_ids")
+    .in("status", ["NEW", "NEEDS_REVIEW"]);
+
+  if (error) {
+    throw new Error(`Failed to list pending sources: ${error.message}`);
+  }
+
+  const sources = new Set<string>();
+  for (const row of data ?? []) {
+    if (row.source) sources.add(row.source);
+    const sourceIds = row.source_ids;
+    if (sourceIds && typeof sourceIds === "object" && !Array.isArray(sourceIds)) {
+      for (const key of Object.keys(sourceIds)) {
+        if (key) sources.add(key);
+      }
+    }
+  }
+  return [...sources].sort();
 }
 
 export async function getCandidate(id: string) {

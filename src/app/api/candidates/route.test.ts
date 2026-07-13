@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { GET as listCandidates } from "@/app/api/candidates/route";
+import { GET as listCandidateSources } from "@/app/api/candidates/sources/route";
 import { GET as getCandidate } from "@/app/api/candidates/[id]/route";
 import { POST as approveCandidate } from "@/app/api/candidates/[id]/approve/route";
 import { POST as rejectCandidate } from "@/app/api/candidates/[id]/reject/route";
@@ -85,6 +86,7 @@ function createMockRepo(
         name: item.name,
         summary: item.summary,
         source: item.source,
+        sourceIds: item.sourceIds,
         officialUrl: item.officialUrl,
         applyUrl: item.applyUrl,
         socialUrl: item.socialUrl,
@@ -114,7 +116,10 @@ function createMockRepo(
         candidates = candidates.filter((c) => statuses.has(c.status));
       }
       if (params.source) {
-        candidates = candidates.filter((c) => c.source === params.source);
+        const source = params.source;
+        candidates = candidates.filter(
+          (c) => c.source === source || Boolean(c.sourceIds?.[source]),
+        );
       }
       const limit = params.limit ?? 20;
       return {
@@ -139,6 +144,7 @@ function createMockRepo(
         name: updated.name,
         summary: updated.summary,
         source: updated.source,
+        sourceIds: updated.sourceIds,
         officialUrl: updated.officialUrl,
         applyUrl: updated.applyUrl,
         socialUrl: updated.socialUrl,
@@ -179,6 +185,7 @@ function createMockRepo(
         name: updated.name,
         summary: updated.summary,
         source: updated.source,
+        sourceIds: updated.sourceIds,
         officialUrl: updated.officialUrl,
         applyUrl: updated.applyUrl,
         socialUrl: updated.socialUrl,
@@ -200,6 +207,17 @@ function createMockRepo(
         sheetRowId: updated.sheetRowId,
         sheetAppendedAt: updated.sheetAppendedAt,
       };
+    },
+    async listPendingSources() {
+      const sources = new Set<string>();
+      for (const candidate of store.values()) {
+        if (candidate.status !== "NEW" && candidate.status !== "NEEDS_REVIEW") continue;
+        sources.add(candidate.source);
+        for (const key of Object.keys(candidate.sourceIds ?? {})) {
+          sources.add(key);
+        }
+      }
+      return [...sources].sort();
     },
   };
 }
@@ -257,6 +275,50 @@ describe("GET /api/candidates", () => {
     assert.equal(response.status, 400);
     const body = await response.json();
     assert.equal(body.error.code, "VALIDATION_ERROR");
+  });
+
+  it("returns pending source options from primary and merged source ids", async () => {
+    const store = new Map([
+      [
+        SAMPLE_ID,
+        baseDetail({
+          source: "hakku",
+          sourceIds: { hakku: "h1", luma: "l1" },
+          status: "NEEDS_REVIEW",
+        }),
+      ],
+    ]);
+    setCandidateRepositoryForTests(createMockRepo(store));
+
+    const response = await listCandidateSources(
+      new Request("http://localhost/api/candidates/sources"),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.data.sources, ["hakku", "luma"]);
+  });
+
+  it("filters candidates by merged source ids", async () => {
+    const store = new Map([
+      [
+        SAMPLE_ID,
+        baseDetail({
+          source: "hakku",
+          sourceIds: { hakku: "h1", luma: "l1" },
+          status: "NEEDS_REVIEW",
+        }),
+      ],
+    ]);
+    setCandidateRepositoryForTests(createMockRepo(store));
+
+    const response = await listCandidates(
+      new Request("http://localhost/api/candidates?statuses=NEW,NEEDS_REVIEW&source=luma"),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.data.candidates.length, 1);
+    assert.equal(body.data.candidates[0].source, "hakku");
+    assert.equal(body.data.total, 1);
   });
 });
 

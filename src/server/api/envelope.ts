@@ -36,7 +36,7 @@ export const listCandidatesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).optional().default(20),
   cursor: z.string().min(1).optional(),
   offset: z.coerce.number().int().min(0).optional(),
-  source: z.string().min(1).optional(),
+  source: z.string().min(1).regex(/^[a-z0-9_-]+$/i).optional(),
   sort: z.enum(["score", "found_at", "name"]).optional().default("score"),
   q: z.string().optional(),
 });

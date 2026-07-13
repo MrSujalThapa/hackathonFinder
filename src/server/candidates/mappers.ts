@@ -19,6 +19,7 @@ export function mapCandidateRow(row: CandidateRow): CandidateCard {
     name: row.name,
     summary: row.summary,
     source: row.source,
+    sourceIds: (row.source_ids as Record<string, unknown>) ?? {},
     officialUrl: row.official_url,
     applyUrl: row.apply_url,
     socialUrl: row.social_url,

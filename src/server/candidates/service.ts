@@ -17,6 +17,7 @@ import * as supabaseRepo from "@/server/candidates/repository";
 
 export type CandidateRepository = {
   listCandidates: (params?: ListCandidatesParams) => Promise<ListCandidatesResult>;
+  listPendingSources?: () => Promise<string[]>;
   listPendingSheetSync?: (limit?: number) => Promise<CandidateCard[]>;
   getCandidate: (id: string) => Promise<CandidateDetail | null>;
   updateCandidateStatus: (
@@ -77,6 +78,7 @@ export function getCandidateRepository(): CandidateRepository {
 
   return {
     listCandidates: supabaseRepo.listCandidates,
+    listPendingSources: supabaseRepo.listPendingSources,
     listPendingSheetSync: supabaseRepo.listPendingSheetSync,
     getCandidate: supabaseRepo.getCandidate,
     updateCandidateStatus: supabaseRepo.updateCandidateStatus,
