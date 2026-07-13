@@ -51,6 +51,14 @@ export async function GET(
 
   const encoder = new TextEncoder();
   let closed = false;
+  let pollTimer: ReturnType<typeof setInterval> | undefined;
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+
+  const cleanup = () => {
+    closed = true;
+    if (pollTimer) clearInterval(pollTimer);
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+  };
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -88,8 +96,7 @@ export async function GET(
               `event: end\ndata: ${JSON.stringify({ status: latest.status })}\n\n`,
             );
             closed = true;
-            clearInterval(pollTimer);
-            clearInterval(heartbeatTimer);
+            cleanup();
             controller.close();
           }
         } catch (error) {
@@ -99,31 +106,31 @@ export async function GET(
             })}\n\n`,
           );
           closed = true;
-          clearInterval(pollTimer);
-          clearInterval(heartbeatTimer);
+          cleanup();
           controller.close();
         }
       };
 
-      const pollTimer = setInterval(() => {
+      pollTimer = setInterval(() => {
         void tick();
       }, POLL_MS);
-      const heartbeatTimer = setInterval(() => {
+      heartbeatTimer = setInterval(() => {
         send(`: heartbeat ${Date.now()}\n\n`);
       }, HEARTBEAT_MS);
 
       void tick();
 
       request.signal.addEventListener("abort", () => {
-        closed = true;
-        clearInterval(pollTimer);
-        clearInterval(heartbeatTimer);
+        cleanup();
         try {
           controller.close();
         } catch {
           // already closed
         }
       });
+    },
+    cancel() {
+      cleanup();
     },
   });
 

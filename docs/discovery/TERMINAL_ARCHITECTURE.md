@@ -32,6 +32,8 @@ Related: `docs/discovery/TERMINAL.md`, `supabase/migrations/006_discovery_jobs.s
 | Jobs + events | Supabase (`006`) or DEV memory |
 | Candidates / evidence | Existing pipeline |
 | Terminal lines / ↑↓ history / UI active job | **React only** |
+| Terminal session repository | Supabase (`007`) or DEV memory |
+| Drafts / scroll position | localStorage UI convenience only |
 | Hakku login | Filesystem browser profile |
 
 ## 2. Failure points
@@ -49,6 +51,15 @@ Related: `docs/discovery/TERMINAL.md`, `supabase/migrations/006_discovery_jobs.s
 **React-only:** console lines, local command history, submitting flags, live SSE attachment.
 
 **Durable (when `006` applied):** job row, event log, cancel flag, claim metadata.
+
+**Durable (when `007` applied):** terminal sessions, selected session, active/selected job ids, per-session command history.
+
+**Development-only:** the in-memory terminal repository is non-durable and logs:
+
+```text
+Terminal persistence is using the development memory store.
+Apply migration 007 for durable sessions.
+```
 
 **`/clear`:** clears React lines only — does **not** delete jobs/events.
 
@@ -84,6 +95,7 @@ See `docs/discovery/TERMINAL_MIGRATION.md`.
 - In-process execution; stopping the Next.js process interrupts jobs.
 - Memory store common until `006` applied.
 - Browser profiles assume shared local disk.
+- Navigation, refresh, tab switching, terminal close, and SSE disconnect do not cancel a job. Stopping the entire Next.js process still interrupts local in-process jobs because local execution lives inside that process. Worker mode is the deployment solution for process-independent execution.
 
 ## 8. Worker-mode behavior
 

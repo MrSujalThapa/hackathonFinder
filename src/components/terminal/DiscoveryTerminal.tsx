@@ -468,9 +468,9 @@ export function DiscoveryTerminal() {
   );
 
   const runCancel = useCallback(
-    async (sessionId: string) => {
+    async (sessionId: string, requestedJobId?: string) => {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
-      const id = session?.activeJobId ?? session?.activeJob?.id;
+      const id = requestedJobId ?? session?.activeJobId ?? session?.activeJob?.id;
       if (!id) {
         appendLines(sessionId, [
           makeLine({
@@ -786,7 +786,7 @@ export function DiscoveryTerminal() {
       return;
     }
     if (parsed.kind === "cancel") {
-      await runCancel(sessionId);
+      await runCancel(sessionId, parsed.jobId);
       return;
     }
     if (parsed.kind === "source") {
