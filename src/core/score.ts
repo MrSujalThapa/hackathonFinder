@@ -5,10 +5,12 @@ import type {
 } from "@/core/discovery/types";
 import { normalizeText, sourceAuthority } from "@/core/dedupe";
 import {
+  deriveEventTemporalStatus,
   isDeadlineClosed,
-  isEventEnded,
   isStaleTitleYear,
+  timezoneForLocation,
 } from "@/core/dates";
+import { classifyExplicitTorontoLocation } from "@/core/locationConstraints";
 
 const THEME_BONUS_CAP = 30;
 const THEME_BONUS_EACH = 10;
@@ -77,11 +79,19 @@ function countThemeMatches(event: HackathonEvent, preferences: DiscoveryPreferen
 function inRequestedDateRange(
   event: HackathonEvent,
   preferences: DiscoveryPreferences,
+  now: Date,
 ): boolean {
   if (!preferences.dateFrom && !preferences.dateTo) return true;
 
-  const eventDay =
-    event.startDate ?? event.deadline ?? event.endDate;
+  const temporalStatus = deriveEventTemporalStatus({
+    startDate: event.startDate,
+    endDate: event.endDate,
+    timezone: timezoneForLocation(event),
+    now,
+  });
+  if (temporalStatus === "ONGOING") return true;
+
+  const eventDay = event.startDate ?? event.deadline ?? event.endDate;
   if (!eventDay) return true; // unknown dates do not fail eligibility
 
   if (preferences.dateFrom && eventDay < preferences.dateFrom) return false;
@@ -110,13 +120,23 @@ export function evaluateEligibility(
     };
   }
 
-  if (isEventEnded(event, now)) {
+  const temporalStatus = deriveEventTemporalStatus({
+    startDate: event.startDate,
+    endDate: event.endDate,
+    timezone: timezoneForLocation(event),
+    now,
+  });
+
+  if (temporalStatus === "FINISHED") {
     return {
       eligible: false,
       needsReview: false,
       reasons: ["Event ended"],
       rejectionReason: "Event already ended",
     };
+  }
+  if (temporalStatus === "UNKNOWN") {
+    reasons.push("Date unclear");
   }
 
   if (isStaleTitleYear(event.name, event, now)) {
@@ -144,6 +164,19 @@ export function evaluateEligibility(
     };
   }
 
+  const explicitLocation = classifyExplicitTorontoLocation(event, preferences);
+  if (!explicitLocation.eligible) {
+    return {
+      eligible: false,
+      needsReview: false,
+      reasons: [explicitLocation.reason],
+      rejectionReason: explicitLocation.reason,
+    };
+  }
+  if (explicitLocation.needsReview) {
+    reasons.push(explicitLocation.reason);
+  }
+
   const remoteOk = isRemoteEvent(event) && preferences.includeRemote;
   const locationOk = matchesPreferredLocation(event, preferences);
   if (!remoteOk && !locationOk) {
@@ -162,7 +195,7 @@ export function evaluateEligibility(
     };
   }
 
-  if (!inRequestedDateRange(event, preferences)) {
+  if (!inRequestedDateRange(event, preferences, now)) {
     if (broad) {
       return {
         eligible: true,
@@ -179,7 +212,7 @@ export function evaluateEligibility(
   }
 
   reasons.push("Passed hard eligibility");
-  return { eligible: true, needsReview: false, reasons };
+  return { eligible: true, needsReview: explicitLocation.needsReview, reasons };
 }
 
 function rankPreferences(
@@ -248,6 +281,11 @@ function rankPreferences(
   return { score, whyMatch, redFlags };
 }
 
+function clampScore(score: number): number {
+  if (!Number.isFinite(score)) return 0;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
 export function scoreHackathonEvent(
   event: HackathonEvent,
   preferences: DiscoveryPreferences,
@@ -269,7 +307,7 @@ export function scoreHackathonEvent(
     ranked.redFlags.push(...eligibility.reasons);
   }
   return {
-    score: ranked.score,
+    score: clampScore(ranked.score),
     whyMatch: ranked.whyMatch,
     redFlags: ranked.redFlags,
     rejected: false,

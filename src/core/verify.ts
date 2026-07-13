@@ -1,10 +1,11 @@
 import type { HackathonEvent, VerificationResult } from "@/core/discovery/types";
 import { normalizeDatePart } from "@/core/dedupe";
 import {
+  deriveEventTemporalStatus,
   isDeadlineClosed,
-  isEventEnded,
   isStaleTitleYear,
   todayIso,
+  timezoneForLocation,
 } from "@/core/dates";
 
 function isValidIsoDate(value?: string): boolean {
@@ -53,7 +54,14 @@ export function verifyHackathonEvent(
     };
   }
 
-  if (isEventEnded(event, now)) {
+  const temporalStatus = deriveEventTemporalStatus({
+    startDate: event.startDate,
+    endDate: event.endDate,
+    timezone: timezoneForLocation(event),
+    now,
+  });
+
+  if (temporalStatus === "FINISHED") {
     return {
       valid: false,
       confidence: "high",
@@ -61,6 +69,9 @@ export function verifyHackathonEvent(
       reasons: ["Event already ended"],
       redFlags: ["Event already ended"],
     };
+  }
+  if (temporalStatus === "UNKNOWN") {
+    redFlags.push("Date unclear");
   }
 
   if (isStaleTitleYear(event.name, event, now)) {

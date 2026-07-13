@@ -3,6 +3,7 @@ import {
   formatDate,
   formatDateRange,
   formatMode,
+  formatTemporalStatus,
 } from "@/lib/candidates/format";
 
 export function CandidateMetadata({
@@ -18,7 +19,12 @@ export function CandidateMetadata({
         <dt className="w-5 shrink-0 text-muted" aria-hidden>
           📅
         </dt>
-        <dd>{formatDateRange(candidate.startDate, candidate.endDate)}</dd>
+        <dd>
+          {formatDateRange(candidate.startDate, candidate.endDate)}
+          <span className="ml-2 text-xs text-muted">
+            {formatTemporalStatus(candidate)}
+          </span>
+        </dd>
       </div>
       <div className="flex gap-2">
         <dt className="w-5 shrink-0 text-muted" aria-hidden>

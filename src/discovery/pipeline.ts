@@ -24,7 +24,7 @@ import {
 import { enrichPromisingLeads } from "@/core/enrichLead";
 import { extractHackathonEvents } from "@/core/extract";
 import { mergeCrossSourceEvents } from "@/core/mergeEvents";
-import { scoreHackathonEvent } from "@/core/score";
+import { evaluateEligibility, scoreHackathonEvent } from "@/core/score";
 import { verifyHackathonEvent } from "@/core/verify";
 import { sourceAuthority } from "@/core/dedupe";
 import { addEvidence, upsertCandidateByFingerprint } from "@/server/candidates/repository";
@@ -507,6 +507,22 @@ export async function executeDiscoveryPipeline(
     for (const event of merged.events) {
       assertNotCancelled(options.cancellationSignal);
       try {
+        const hardEligibility = evaluateEligibility(event, preferences, { now });
+        if (!hardEligibility.eligible) {
+          const reason = hardEligibility.rejectionReason ?? hardEligibility.reasons[0] ?? "Failed hard constraints";
+          if (/deadline|ended|finished|stale title/i.test(reason)) {
+            summary.quality.historicalOrExpiredFiltered += 1;
+          }
+          rejected.push({
+            name: event.name,
+            source: event.source,
+            stage: "verification",
+            reason,
+          });
+          markInvalidRejected(event.source);
+          continue;
+        }
+
         const classified = classifyHackathonEvent(event);
 
         if (classified.classification === "EVENT_DIRECTORY") {

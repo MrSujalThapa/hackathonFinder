@@ -16,6 +16,16 @@ const basePreferences: DiscoveryPreferences = {
   dateTo: "2026-12-31",
 };
 
+const torontoPreferences: DiscoveryPreferences = {
+  ...getDefaultDiscoveryPreferences("find upcoming hackathons in Toronto"),
+  locations: ["Toronto"],
+  themes: ["AI"],
+  includeRemote: true,
+  includeInPerson: true,
+  dateFrom: "2026-07-13",
+  dateTo: "2026-12-31",
+};
+
 function event(overrides: Partial<HackathonEvent>): HackathonEvent {
   return {
     name: "Test Hackathon",
@@ -146,5 +156,59 @@ describe("eligibility vs ranking", () => {
     });
     const scored = scoreHackathonEvent(stale, basePreferences, { now: NOW });
     assert.equal(scored.rejected, true);
+  });
+
+  it("keeps an ongoing event for an upcoming query", () => {
+    const ongoing = event({
+      startDate: "2026-07-11",
+      endDate: "2026-07-18",
+      deadline: undefined,
+    });
+    const scored = scoreHackathonEvent(ongoing, torontoPreferences, {
+      now: new Date("2026-07-13T12:00:00Z"),
+    });
+    assert.equal(scored.rejected, false);
+  });
+
+  it("rejects confirmed in-person India events for explicit Toronto queries", () => {
+    const india = event({
+      name: "Find hackathonsworth your time",
+      city: "Bilaspur",
+      country: "India",
+      location: "Bilaspur, Chhattisgarh, India",
+      mode: "in-person",
+      startDate: "2026-07-11",
+      endDate: "2026-07-18",
+      deadline: undefined,
+    });
+    const scored = scoreHackathonEvent(india, torontoPreferences, {
+      now: new Date("2026-07-13T12:00:00Z"),
+    });
+    assert.equal(scored.rejected, true);
+    assert.match(scored.rejectionReason ?? "", /Location mismatch/i);
+  });
+
+  it("keeps virtual events for explicit Toronto queries", () => {
+    const virtual = event({
+      city: "Bilaspur",
+      country: "India",
+      location: "Online",
+      mode: "online",
+    });
+    const scored = scoreHackathonEvent(virtual, torontoPreferences, { now: NOW });
+    assert.equal(scored.rejected, false);
+  });
+
+  it("clamps discovery relevance to 100", () => {
+    const high = event({
+      themes: ["AI", "agents", "cloud", "developer tools"],
+      mode: "online",
+      location: "Toronto and online",
+      prize: "$100,000",
+      eligibility: "Open to students",
+    });
+    const scored = scoreHackathonEvent(high, basePreferences, { now: NOW });
+    assert.equal(scored.rejected, false);
+    assert.ok(scored.score <= 100);
   });
 });

@@ -1,6 +1,8 @@
 import type { HackathonEvent } from "@/core/discovery/types";
 import { normalizeDatePart } from "@/core/dedupe";
 
+export type EventTemporalStatus = "UPCOMING" | "ONGOING" | "FINISHED" | "UNKNOWN";
+
 export function todayIso(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
@@ -16,10 +18,69 @@ export function isDeadlineClosed(deadline: string | undefined, now: Date = new D
   return day < todayIso(now);
 }
 
+function todayInTimeZone(now: Date, timezone = "UTC"): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(now);
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    const day = parts.find((part) => part.type === "day")?.value;
+    if (year && month && day) return `${year}-${month}-${day}`;
+  } catch {
+    // Fall through to UTC when the caller supplied an invalid timezone.
+  }
+  return todayIso(now);
+}
+
+export function deriveEventTemporalStatus(input: {
+  startDate?: string | null;
+  endDate?: string | null;
+  timezone?: string | null;
+  now?: Date;
+}): EventTemporalStatus {
+  const now = input.now ?? new Date();
+  const today = todayInTimeZone(now, input.timezone ?? "UTC");
+  const start = normalizeDatePart(input.startDate);
+  const end = normalizeDatePart(input.endDate);
+
+  if (!start || !end || !/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+    return "UNKNOWN";
+  }
+  if (end < today) return "FINISHED";
+  if (start <= today && end >= today) return "ONGOING";
+  if (start > today) return "UPCOMING";
+  return "UNKNOWN";
+}
+
+export function timezoneForLocation(input: {
+  location?: string | null;
+  city?: string | null;
+  country?: string | null;
+  mode?: string | null;
+}): string {
+  const blob = [input.location, input.city, input.country]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (/toronto|mississauga|waterloo|ontario|canada|gta|greater toronto/.test(blob)) {
+    return "America/Toronto";
+  }
+  if (/india|chhattisgarh|bilaspur/.test(blob)) {
+    return "Asia/Kolkata";
+  }
+  return "UTC";
+}
+
 export function isEventEnded(event: Pick<HackathonEvent, "endDate" | "startDate">, now: Date = new Date()): boolean {
-  const end = normalizeDatePart(event.endDate) ?? normalizeDatePart(event.startDate);
-  if (!end || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return false;
-  return end < todayIso(now);
+  return deriveEventTemporalStatus({
+    startDate: event.startDate,
+    endDate: event.endDate,
+    now,
+  }) === "FINISHED";
 }
 
 /**

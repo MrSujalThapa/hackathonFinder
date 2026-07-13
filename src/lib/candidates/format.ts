@@ -1,5 +1,6 @@
 import type { CandidateCard } from "@/core/candidates/types";
 import type { CandidateMode } from "@/lib/supabase/database.types";
+import { deriveEventTemporalStatus } from "@/core/dates";
 
 export function formatDateRange(
   start: string | null,
@@ -19,6 +20,24 @@ export function formatDate(value: string): string {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+export function formatTemporalStatus(candidate: CandidateCard): string {
+  const status = deriveEventTemporalStatus({
+    startDate: candidate.startDate,
+    endDate: candidate.endDate,
+    timezone: "UTC",
+  });
+  switch (status) {
+    case "UPCOMING":
+      return "Upcoming";
+    case "ONGOING":
+      return "Ongoing";
+    case "FINISHED":
+      return "Finished";
+    case "UNKNOWN":
+      return "Date unclear";
+  }
 }
 
 export function formatLocation(candidate: CandidateCard): string {
