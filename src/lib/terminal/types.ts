@@ -136,6 +136,16 @@ export type SourceCommandAction =
   | "enable"
   | "disable";
 
+export type SiteCommandAction =
+  | "save"
+  | "list"
+  | "status"
+  | "check"
+  | "enable"
+  | "disable"
+  | "remove"
+  | "configure";
+
 export type TerminalHelpTopic =
   | "general"
   | "find"
@@ -170,6 +180,29 @@ export type ParsedTerminalCommand =
       kind: "confirm";
       action: "disconnect";
       source: TerminalSourceName;
+      raw: string;
+    }
+  | {
+      kind: "site";
+      action: SiteCommandAction;
+      name?: string;
+      url?: string;
+      mode?: "static" | "playwright";
+      location?: string;
+      topics?: string[];
+      maxItems?: number;
+      enabled?: boolean;
+      selectors?: {
+        cardSelector?: string;
+        titleSelector?: string;
+        linkSelector?: string;
+      };
+      raw: string;
+    }
+  | {
+      kind: "confirm_site";
+      action: "remove";
+      name: string;
       raw: string;
     }
   | {

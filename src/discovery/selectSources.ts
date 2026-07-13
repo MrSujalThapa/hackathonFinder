@@ -38,7 +38,7 @@ export type SourceAvailability = {
 };
 
 export type SelectSourcesInput = {
-  /** Explicit sources from command/CLI/API. Empty means use defaults. */
+  /** Explicit sources from command/CLI/API. Undefined means use defaults; [] means no built-ins. */
   requestedSources?: SourceName[];
   /** When true, include every enabled usable source (not X). */
   allSources?: boolean;
@@ -148,7 +148,7 @@ export function selectDiscoverySources(
     if (input.allSources) {
       return [...baseEnabled];
     }
-    if (input.requestedSources && input.requestedSources.length > 0) {
+    if (input.requestedSources !== undefined) {
       return [...input.requestedSources];
     }
     return [...baseEnabled];

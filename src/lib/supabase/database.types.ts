@@ -201,6 +201,46 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["candidate_answers"]["Insert"]>;
         Relationships: [];
       };
+      custom_sources: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string;
+          base_url: string;
+          listing_url: string;
+          mode: "static" | "playwright" | "rss" | "sitemap";
+          enabled: boolean;
+          location_scope: string;
+          topic_scope: string[];
+          max_items: number;
+          status: "healthy" | "degraded" | "auth_required" | "failed" | "disabled" | "unknown";
+          last_checked_at: string | null;
+          last_error_safe: string | null;
+          selectors: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          slug: string;
+          base_url: string;
+          listing_url: string;
+          mode?: "static" | "playwright" | "rss" | "sitemap";
+          enabled?: boolean;
+          location_scope?: string;
+          topic_scope?: string[];
+          max_items?: number;
+          status?: "healthy" | "degraded" | "auth_required" | "failed" | "disabled" | "unknown";
+          last_checked_at?: string | null;
+          last_error_safe?: string | null;
+          selectors?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["custom_sources"]["Insert"]>;
+        Relationships: [];
+      };
       agent_runs: {
         Row: {
           id: string;

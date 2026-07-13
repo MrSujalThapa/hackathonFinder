@@ -1,5 +1,6 @@
 import type {
   ParsedTerminalCommand,
+  SiteCommandAction,
   SourceCommandAction,
   TerminalHelpTopic,
   TerminalSourceName,
@@ -43,6 +44,8 @@ const SLASH_COMMANDS = [
   "rename",
   "close",
   "source",
+  "site",
+  "sites",
   "confirm",
 ] as const;
 
@@ -64,6 +67,8 @@ const HELP_TOPIC_ALIASES: Record<string, TerminalHelpTopic> = {
   find: "find",
   source: "source",
   sources: "source",
+  site: "source",
+  sites: "source",
   terminal: "terminals",
   terminals: "terminals",
   session: "terminals",
@@ -272,6 +277,71 @@ function parseSourceCommand(
   };
 }
 
+function stripQuotes(value: string): string {
+  return value.replace(/^["']|["']$/g, "");
+}
+
+function parseFlags(rest: string): { positional: string[]; flags: Record<string, string> } {
+  const positional: string[] = [];
+  const flags: Record<string, string> = {};
+  const parts = rest.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+  for (const part of parts) {
+    if (part.startsWith("--")) {
+      const eq = part.indexOf("=");
+      if (eq > 2) {
+        flags[part.slice(2, eq).toLowerCase()] = stripQuotes(part.slice(eq + 1));
+      }
+    } else {
+      positional.push(stripQuotes(part));
+    }
+  }
+  return { positional, flags };
+}
+
+function parseBooleanFlag(value: string | undefined): boolean | undefined {
+  if (value == null) return undefined;
+  if (/^(true|1|yes|on)$/i.test(value)) return true;
+  if (/^(false|0|no|off)$/i.test(value)) return false;
+  return undefined;
+}
+
+function parseSiteCommand(actionToken: string | undefined, rest: string, raw: string): ParsedTerminalCommand {
+  const action = actionToken?.toLowerCase();
+  if (!action) return reject("missing_site_action", "Usage: /site <save|status|check|enable|disable|remove|configure> <name>", raw);
+  if (action === "list") return { kind: "site", action: "list", raw };
+  if (!["save", "status", "check", "enable", "disable", "remove", "configure"].includes(action)) {
+    return reject("unknown_site_action", "Usage: /site <save|status|check|enable|disable|remove|configure> <name>", raw);
+  }
+  const parsed = parseFlags(rest);
+  const name = parsed.positional[0];
+  if (!name) return reject("missing_site_name", `Usage: /site ${action} <name>`, raw);
+  const mode = parsed.flags.mode?.toLowerCase();
+  if (mode && mode !== "static" && mode !== "playwright") {
+    return reject("invalid_site_mode", "--mode must be static or playwright", raw);
+  }
+  const maxItems = parsed.flags["max-items"] ? Number(parsed.flags["max-items"]) : undefined;
+  if (maxItems !== undefined && (!Number.isInteger(maxItems) || maxItems < 1 || maxItems > 100)) {
+    return reject("invalid_site_max_items", "--max-items must be an integer from 1 to 100", raw);
+  }
+  return {
+    kind: "site",
+    action: action as SiteCommandAction,
+    name,
+    url: parsed.flags.url,
+    mode: mode as "static" | "playwright" | undefined,
+    location: parsed.flags.location,
+    topics: parsed.flags.topics?.split(",").map((topic) => topic.trim()).filter(Boolean),
+    maxItems,
+    enabled: parseBooleanFlag(parsed.flags.enabled),
+    selectors: {
+      cardSelector: parsed.flags["card-selector"],
+      titleSelector: parsed.flags["title-selector"],
+      linkSelector: parsed.flags["link-selector"],
+    },
+    raw,
+  } as ParsedTerminalCommand;
+}
+
 function parseHelpTopic(rest: string): TerminalHelpTopic | ParsedTerminalCommand {
   const topicToken = rest.trim().split(/\s+/)[0]?.toLowerCase();
   if (!topicToken) return "general";
@@ -356,13 +426,24 @@ function parseSlash(
       const parts = rest.trim().split(/\s+/).filter(Boolean);
       return parseSourceCommand(parts[0], parts[1], raw);
     }
+    case "sites":
+      return { kind: "site", action: "list", raw };
+    case "site": {
+      const parts = rest.trim().split(/\s+/).filter(Boolean);
+      const action = parts[0];
+      const restAfterAction = rest.trim().slice(action?.length ?? 0).trim();
+      return parseSiteCommand(action, restAfterAction, raw);
+    }
     case "confirm": {
       const parts = rest.trim().split(/\s+/).filter(Boolean);
       const action = parts[0]?.toLowerCase();
+      if (action === "site" && parts[1]?.toLowerCase() === "remove" && parts[2]) {
+        return { kind: "confirm_site", action: "remove", name: parts[2], raw };
+      }
       if (action !== "disconnect") {
         return reject(
           "unknown_confirm_action",
-          "Usage: /confirm disconnect <source>",
+          "Usage: /confirm disconnect <source> or /confirm site remove <name>",
           raw,
         );
       }
@@ -402,6 +483,16 @@ function parseAlias(trimmed: string, raw: string): ParsedTerminalCommand | null 
   // source <action> <name>
   if (first === "source") {
     return parseSourceCommand(tokens[1], tokens[2], raw);
+  }
+
+  if (first === "sites") {
+    return { kind: "site", action: "list", raw };
+  }
+
+  if (first === "site") {
+    const action = tokens[1];
+    const restAfterAction = trimmed.split(/\s+/).slice(2).join(" ");
+    return parseSiteCommand(action, restAfterAction, raw);
   }
 
   // check source <name>  |  check <name>

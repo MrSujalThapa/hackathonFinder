@@ -18,6 +18,7 @@ import {
   fetchSourceHealth,
   getDiscoveryJob,
   listDiscoveryJobs,
+  runTerminalSiteCommand,
   runTerminalSourceCommand,
   streamJobEvents,
 } from "@/lib/terminal/api";
@@ -827,6 +828,67 @@ export function DiscoveryTerminal() {
             kind: "error",
             level: "error",
             text: `[source] ${message}`,
+          }),
+        ]);
+      }
+      return;
+    }
+    if (parsed.kind === "site") {
+      if (parsed.action === "remove") {
+        appendLines(sessionId, [
+          makeLine({
+            kind: "warning",
+            level: "warning",
+            text: `[site] Confirm removal with /confirm site remove ${parsed.name}`,
+          }),
+        ]);
+        return;
+      }
+      try {
+        const result = await runTerminalSiteCommand({
+          action: parsed.action === "list" ? "list" : parsed.action,
+          name: parsed.name,
+          url: parsed.url,
+          mode: parsed.mode,
+          location: parsed.location,
+          topics: parsed.topics,
+          maxItems: parsed.maxItems,
+          enabled: parsed.enabled,
+          selectors: parsed.selectors,
+        });
+        appendLines(sessionId, result.lines.map(sourceCommandLine));
+      } catch (error) {
+        const message =
+          error instanceof DiscoveryApiError
+            ? error.message
+            : "Site command failed.";
+        appendLines(sessionId, [
+          makeLine({
+            kind: "error",
+            level: "error",
+            text: `[site] ${message}`,
+          }),
+        ]);
+      }
+      return;
+    }
+    if (parsed.kind === "confirm_site") {
+      try {
+        const result = await runTerminalSiteCommand({
+          action: "remove_confirm",
+          name: parsed.name,
+        });
+        appendLines(sessionId, result.lines.map(sourceCommandLine));
+      } catch (error) {
+        const message =
+          error instanceof DiscoveryApiError
+            ? error.message
+            : "Site confirmation failed.";
+        appendLines(sessionId, [
+          makeLine({
+            kind: "error",
+            level: "error",
+            text: `[confirm] ${message}`,
           }),
         ]);
       }

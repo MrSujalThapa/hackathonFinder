@@ -29,6 +29,11 @@ import {
 import { reconcileSourcePlan } from "@/discovery/sourcePlan";
 import { emptyQualityStats } from "@/agent/summary";
 import { getEnabledSources } from "@/lib/sources/settingsStore";
+import {
+  getCustomSource,
+  listCustomSources,
+} from "@/server/customSources/repository";
+import type { CustomSource } from "@/server/customSources/types";
 
 export type DiscoveryRunMode = "auto" | "agent" | "deterministic";
 
@@ -69,6 +74,95 @@ export type DiscoveryRunResult = {
 
 function commandMentionsSources(command: string): boolean {
   return /\b(hacklist|hakku|devpost|mlh|luma|web|mock|twitter|x)\b/i.test(command);
+}
+
+const BUILTIN_SOURCE_NAMES = new Set<SourceName>([
+  "hacklist",
+  "hakku",
+  "devpost",
+  "mlh",
+  "luma",
+  "web",
+  "x",
+  "mock",
+]);
+
+function parseSourcesFlagFromCommand(command: string): string[] | undefined {
+  const match = command.match(/--sources=([^\s]+)/i);
+  if (!match?.[1]) return undefined;
+  return match[1].split(",").map((part) => part.trim().toLowerCase()).filter(Boolean);
+}
+
+function commandIncludesCustomSites(command: string): boolean {
+  return /\b--include-custom-sites\b/i.test(command);
+}
+
+function customSourceMatches(source: CustomSource, preferences: DiscoveryPreferences): boolean {
+  const locationScope = source.locationScope.toLowerCase();
+  const locations = preferences.locations.map((location) => location.toLowerCase());
+  const topics = preferences.themes.map((theme) => theme.toLowerCase());
+  const locationOk =
+    locationScope === "global" ||
+    locations.some((location) => location.includes(locationScope) || locationScope.includes(location));
+  const topicOk =
+    source.topicScope.length === 0 ||
+    source.topicScope.some((topic) =>
+      topics.some((pref) => pref.includes(topic) || topic.includes(pref)),
+    );
+  return locationOk && topicOk;
+}
+
+async function selectCustomSourcesForRun(
+  command: string,
+  preferences: DiscoveryPreferences,
+): Promise<{
+  customSources: CustomSource[];
+  builtInFromFlag?: SourceName[];
+  explicitSourceFlag: boolean;
+  warnings: string[];
+}> {
+  const fromFlag = parseSourcesFlagFromCommand(command);
+  const warnings: string[] = [];
+  const explicitSourceFlag = fromFlag !== undefined;
+  const builtInFromFlag = fromFlag?.filter((source): source is SourceName =>
+    BUILTIN_SOURCE_NAMES.has(source as SourceName),
+  );
+  const customSlugs = fromFlag?.filter((source) => !BUILTIN_SOURCE_NAMES.has(source as SourceName)) ?? [];
+  const customSources: CustomSource[] = [];
+
+  for (const slug of customSlugs) {
+    const custom = await getCustomSource(slug).catch((error) => {
+      warnings.push(error instanceof Error ? error.message : `Failed to load custom source ${slug}`);
+      return null;
+    });
+    if (!custom) {
+      warnings.push(`Custom source not found: ${slug}`);
+      continue;
+    }
+    if (!custom.enabled) {
+      warnings.push(`Skipped custom source ${custom.slug}: disabled`);
+      continue;
+    }
+    customSources.push(custom);
+  }
+
+  if (commandIncludesCustomSites(command)) {
+    const all = await listCustomSources({ enabledOnly: true }).catch((error) => {
+      warnings.push(error instanceof Error ? error.message : "Failed to list custom sources");
+      return [];
+    });
+    for (const custom of all) {
+      if (customSources.some((existing) => existing.id === custom.id)) continue;
+      if (customSourceMatches(custom, preferences)) customSources.push(custom);
+    }
+  }
+
+  return {
+    customSources,
+    builtInFromFlag,
+    explicitSourceFlag,
+    warnings,
+  };
 }
 
 function shouldUseAgentMode(
@@ -153,8 +247,9 @@ export async function runDiscovery(
 
   const hakku = await getHakkuConnectionStatus();
   const parsed = parseCommand(input.command);
+  const customSelection = await selectCustomSourcesForRun(input.command, parsed);
   const withCli = applyCliOptions(parsed, {
-    sources: input.sources,
+    sources: input.sources ?? customSelection.builtInFromFlag,
     maxResults: input.maxResults,
     reviewPolicy: input.reviewPolicy,
   });
@@ -162,6 +257,8 @@ export async function runDiscovery(
   const requestedSources: SourceName[] | undefined =
     input.sources && input.sources.length > 0
       ? input.sources
+      : customSelection.explicitSourceFlag
+        ? customSelection.builtInFromFlag ?? []
       : commandMentionsSources(input.command)
         ? withCli.sources
         : undefined;
@@ -198,10 +295,29 @@ export async function runDiscovery(
     });
   }
 
-  await emitter.emit("run_started", selection.planMessage, {
+  const plannedSourceLabels = [
+    ...selection.effectiveSources,
+    ...customSelection.customSources.map((source) => `custom:${source.slug}`),
+  ];
+
+  await emitter.emit(
+    "run_started",
+    plannedSourceLabels.length > 0
+      ? `Sources: ${plannedSourceLabels.join(", ")}`
+      : selection.planMessage,
+    {
     metadata: {
       effectiveSources: selection.effectiveSources,
+      customSources: customSelection.customSources.map((source) => source.slug),
       skipped: selection.skipped,
+    },
+  });
+
+  await emitter.emit("source_progress", `Planned: ${plannedSourceLabels.join(", ") || "(none)"}`, {
+    source: "sources",
+    metadata: {
+      plannedSources: selection.effectiveSources,
+      customSources: customSelection.customSources.map((source) => source.slug),
     },
   });
 
@@ -214,6 +330,7 @@ export async function runDiscovery(
   }
 
   const warnings: string[] = [...selection.warnings];
+  warnings.push(...customSelection.warnings);
   const agentMode = shouldUseAgentMode(dryRun, mode);
   if (agentMode.warning) warnings.push(agentMode.warning);
 
@@ -306,10 +423,16 @@ export async function runDiscovery(
 
       await emitter.emit(
         "source_progress",
-        `Planned: ${effectivePreferences.sources.join(", ")}`,
+        `Planned: ${[
+          ...effectivePreferences.sources,
+          ...customSelection.customSources.map((source) => `custom:${source.slug}`),
+        ].join(", ")}`,
         {
           source: "sources",
-          metadata: { plannedSources: effectivePreferences.sources },
+          metadata: {
+            plannedSources: effectivePreferences.sources,
+            customSources: customSelection.customSources.map((source) => source.slug),
+          },
         },
       );
 
@@ -380,6 +503,7 @@ export async function runDiscovery(
       eventSink: input.eventSink,
       cancellationSignal: input.cancellationSignal,
       emitPlansAsEvents: Boolean(input.eventSink),
+      customSources: customSelection.customSources,
     };
 
     const summary = await executeDiscoveryPipeline(

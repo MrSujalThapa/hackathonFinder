@@ -171,6 +171,34 @@ describe("parseTerminalCommand", () => {
     }
   });
 
+  it("parses custom site commands", () => {
+    const saved = parseTerminalCommand(
+      "/site save hacker-calendar --url=https://example.com/hackathons --mode=playwright --location=waterloo --topics=hackathon,ai --max-items=75",
+    );
+    assert.equal(saved.kind, "site");
+    if (saved.kind !== "site") return;
+    assert.equal(saved.action, "save");
+    assert.equal(saved.name, "hacker-calendar");
+    assert.equal(saved.url, "https://example.com/hackathons");
+    assert.equal(saved.mode, "playwright");
+    assert.equal(saved.location, "waterloo");
+    assert.deepEqual(saved.topics, ["hackathon", "ai"]);
+    assert.equal(saved.maxItems, 75);
+
+    const list = parseTerminalCommand("/sites");
+    assert.deepEqual(list, { kind: "site", action: "list", raw: "/sites" });
+  });
+
+  it("parses confirmed custom site removal", () => {
+    const parsed = parseTerminalCommand("/confirm site remove hacker-calendar");
+    assert.deepEqual(parsed, {
+      kind: "confirm_site",
+      action: "remove",
+      name: "hacker-calendar",
+      raw: "/confirm site remove hacker-calendar",
+    });
+  });
+
   it("parses confirm disconnect", () => {
     const parsed = parseTerminalCommand("/confirm disconnect hakku");
     assert.equal(parsed.kind, "confirm");

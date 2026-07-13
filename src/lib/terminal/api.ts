@@ -178,6 +178,49 @@ export async function runTerminalSourceCommand(input: {
   return parseEnvelope<TerminalSourceCommandResult>(response);
 }
 
+export type TerminalSiteCommandLine = {
+  level: TerminalEventLevel;
+  text: string;
+};
+
+export type TerminalSiteCommandResult = {
+  lines: TerminalSiteCommandLine[];
+  site?: unknown;
+  sites?: unknown[];
+};
+
+export async function runTerminalSiteCommand(input: {
+  action:
+    | "save"
+    | "list"
+    | "status"
+    | "check"
+    | "enable"
+    | "disable"
+    | "remove_confirm"
+    | "configure";
+  name?: string;
+  url?: string;
+  mode?: "static" | "playwright";
+  location?: string;
+  topics?: string[];
+  maxItems?: number;
+  enabled?: boolean;
+  selectors?: {
+    cardSelector?: string;
+    titleSelector?: string;
+    linkSelector?: string;
+  };
+}): Promise<TerminalSiteCommandResult> {
+  const response = await fetch("/api/terminal/site", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  return parseEnvelope<TerminalSiteCommandResult>(response);
+}
+
 export type ListTerminalSessionsApiResult = {
   sessions: TerminalSession[];
   selectedSession: TerminalSession | null;

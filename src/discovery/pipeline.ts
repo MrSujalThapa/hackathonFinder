@@ -43,6 +43,8 @@ import {
   type DiscoveryEventSink,
 } from "@/discovery/events";
 import { aggregateCollectorResults } from "@/discovery/collectorAggregation";
+import { collectCustomSource } from "@/collectors/customSource";
+import type { CustomSource } from "@/server/customSources/types";
 
 const SUPABASE_ENV_MESSAGE =
   "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in .env.local, or run with --dry-run.";
@@ -65,6 +67,7 @@ export type DiscoveryPipelineOptions = {
   cancellationSignal?: AbortSignal;
   /** When true, search/X plan text is emitted as events instead of console.log. */
   emitPlansAsEvents?: boolean;
+  customSources?: CustomSource[];
 };
 
 function initSourceStats(sources: SourceName[]): Map<SourceName, SourceRunStats> {
@@ -344,6 +347,56 @@ export async function executeDiscoveryPipeline(
     );
 
     let leads = aggregation.leads;
+    for (const customSource of options.customSources ?? []) {
+      assertNotCancelled(options.cancellationSignal);
+      await emitter.emit("source_started", "Opening listing page...", {
+        source: `custom:${customSource.slug}`,
+      });
+      const customResult = await collectCustomSource(customSource, {
+        timeoutMs: effectiveSourceTimeout,
+        logger: (message) => {
+          void emitter.emit("source_progress", message, {
+            source: `custom:${customSource.slug}`,
+          });
+        },
+        persistHealth: !dryRun,
+      });
+      leads.push(...customResult.leads);
+      summary.warnings.push(
+        ...customResult.warnings.map((warning) => `[custom:${customSource.slug}] ${warning}`),
+      );
+      summary.errors.push(
+        ...customResult.errors.map((error) => `[custom:${customSource.slug}] ${error}`),
+      );
+      if (customResult.status === "completed") {
+        await emitter.emit(
+          "source_completed",
+          `${customResult.leads.length} leads found`,
+          {
+            source: `custom:${customSource.slug}`,
+            metadata: {
+              leadsFound: customResult.leads.length,
+              durationMs: customResult.durationMs,
+              diagnostics: customResult.diagnostics,
+            },
+          },
+        );
+      } else {
+        await emitter.emit(
+          customResult.status === "failed" ? "source_degraded" : "source_degraded",
+          customResult.errors[0] ?? customResult.warnings[0] ?? "Custom source degraded",
+          {
+            source: `custom:${customSource.slug}`,
+            level: "warning",
+            metadata: {
+              leadsFound: customResult.leads.length,
+              durationMs: customResult.durationMs,
+              diagnostics: customResult.diagnostics,
+            },
+          },
+        );
+      }
+    }
     summary.rawLeads = leads.length;
 
     for (const result of collectorResults) {
