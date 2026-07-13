@@ -3,13 +3,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
+  buildDevpostApiUrl,
   buildDevpostListingsUrl,
   buildDevpostSearchUrls,
   canonicalizeDevpostUrl,
   DEVPOST_OPEN_UPCOMING_URL,
   describeDevpostFailure,
+  devpostFingerprint,
   isDevpostHackathonUrl,
   isRejectedDevpostUrl,
+  parseDevpostApiPayload,
   parseDevpostHtml,
 } from "@/collectors/devpost";
 import { getDefaultDiscoveryPreferences } from "@/agent/parseCommand";
@@ -107,6 +110,54 @@ describe("devpost url helpers", () => {
       buildDevpostListingsUrl(7),
       "https://devpost.com/hackathons?status[]=upcoming&status[]=open&page=7",
     );
+  });
+
+  it("builds the observed read-only API pagination URL", () => {
+    assert.equal(
+      buildDevpostApiUrl(2),
+      "https://devpost.com/api/hackathons?status[]=upcoming&status[]=open&page=2",
+    );
+  });
+
+  it("detects repeated manual page fingerprints", () => {
+    const pageOne = devpostFingerprint([
+      "https://xprize.devpost.com/?ref=discover",
+      "https://openai.devpost.com/",
+    ]);
+    const repeatedPageTwo = devpostFingerprint([
+      "https://openai.devpost.com/",
+      "https://xprize.devpost.com/",
+    ]);
+    assert.equal(repeatedPageTwo, pageOne);
+  });
+
+  it("parses native API payloads with Devpost provenance", () => {
+    const leads = parseDevpostApiPayload(
+      {
+        hackathons: [
+          {
+            id: 28039,
+            title: "Build with DataHub: The Agent Hackathon",
+            url: "https://datahub.devpost.com/?ref_feature=challenge",
+            displayed_location: { location: "Online" },
+            open_state: "open",
+            time_left_to_submission: "28 days left",
+            submission_period_dates: "Jul 06 - Aug 10, 2026",
+            themes: [{ name: "Machine Learning/AI" }],
+            prize_amount: "$<span data-currency-value>20,500</span>",
+            organization_name: "DataHub",
+            start_a_submission_url: "https://datahub.devpost.com/challenges/start_a_submission",
+          },
+        ],
+        meta: { total_count: 156, per_page: 9 },
+      },
+      10,
+    );
+    assert.equal(leads.length, 1);
+    assert.equal(leads[0]!.url, "https://datahub.devpost.com/");
+    assert.equal(leads[0]!.metadata?.provenance, "native_devpost");
+    assert.equal(leads[0]!.metadata?.discoveryMode, "native_devpost");
+    assert.match(String(leads[0]!.metadata?.prize), /20,500/);
   });
 
   it("formats failure categories for health classification", () => {
