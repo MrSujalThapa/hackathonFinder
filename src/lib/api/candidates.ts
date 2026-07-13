@@ -36,6 +36,10 @@ export type ListCandidatesResponse = {
   total: number | null;
 };
 
+export type CandidateSourcesResponse = {
+  sources: string[];
+};
+
 export async function fetchCandidates(params: {
   status?: string;
   statuses?: string[];
@@ -59,6 +63,13 @@ export async function fetchCandidates(params: {
       cache: "no-store",
     });
     return parseEnvelope<ListCandidatesResponse>(response);
+  });
+}
+
+export async function fetchCandidateSources(): Promise<CandidateSourcesResponse> {
+  return timedAsync("client.pending_sources_fetch", async () => {
+    const response = await fetch("/api/candidates/sources", { cache: "no-store" });
+    return parseEnvelope<CandidateSourcesResponse>(response);
   });
 }
 

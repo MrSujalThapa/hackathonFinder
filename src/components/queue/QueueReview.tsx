@@ -12,17 +12,26 @@ import { useCandidateQueue } from "@/hooks/useCandidateQueue";
 import { formatSourceLabel } from "@/lib/candidates/format";
 
 export function QueueReview() {
-  const queue = useCandidateQueue();
   const router = useRouter();
   const [sourceFilter, setSourceFilter] = useState("");
+  const queue = useCandidateQueue(sourceFilter || undefined);
+  const {
+    hasMore,
+    loadMore,
+    loading,
+    loadingMore,
+    total,
+  } = queue;
 
   const sources = useMemo(() => {
-    return [...new Set(queue.candidates.map((c) => c.source))].sort();
-  }, [queue.candidates]);
+    return queue.sourceOptions;
+  }, [queue.sourceOptions]);
 
   const filtered = useMemo(() => {
     if (!sourceFilter) return queue.candidates;
-    return queue.candidates.filter((c) => c.source === sourceFilter);
+    return queue.candidates.filter(
+      (c) => c.source === sourceFilter || Boolean(c.sourceIds?.[sourceFilter]),
+    );
   }, [queue.candidates, sourceFilter]);
 
   const visibleCurrent = filtered[0] ?? null;
@@ -34,6 +43,27 @@ export function QueueReview() {
       router.prefetch(`/candidate/${card.id}`);
     }
   }, [filtered, router]);
+
+  useEffect(() => {
+    if (
+      sourceFilter &&
+      filtered.length === 0 &&
+      total > 0 &&
+      hasMore &&
+      !loading &&
+      !loadingMore
+    ) {
+      void loadMore();
+    }
+  }, [
+    filtered.length,
+    hasMore,
+    loadMore,
+    loading,
+    loadingMore,
+    total,
+    sourceFilter,
+  ]);
 
   return (
     <section className="hf-review-workspace flex flex-1 flex-col">
@@ -101,7 +131,7 @@ export function QueueReview() {
           />
         ) : null}
 
-        {!queue.loading && !queue.error && !visibleCurrent ? (
+        {!queue.loading && !queue.loadingMore && !queue.error && !visibleCurrent && queue.total === 0 ? (
           <EmptyState
             title="No new hackathons to review"
             description="Run the agent to discover more, then refresh this queue. In mock mode you can also reset the in-memory fixtures."
@@ -122,6 +152,10 @@ export function QueueReview() {
               </button>
             }
           />
+        ) : null}
+
+        {!queue.loading && !queue.error && !visibleCurrent && queue.total > 0 ? (
+          <LoadingState label="Loading more candidates…" />
         ) : null}
 
         {visibleCurrent ? (

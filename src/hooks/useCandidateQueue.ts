@@ -6,6 +6,7 @@ import {
   CandidatesApiError,
   decideCandidate,
   fetchCandidates,
+  fetchCandidateSources,
   syncCandidateSheet,
   type DecisionAction,
 } from "@/lib/api/candidates";
@@ -40,6 +41,8 @@ type QueueState = {
   busy: boolean;
   outgoingId: string | null;
   loadingMore: boolean;
+  sourceOptions: string[];
+  hasMore: boolean;
 };
 
 const QUEUE_BATCH_SIZE = 30;
@@ -84,7 +87,7 @@ function statusForDecision(action: QueueDecision): CandidateCard["status"] {
   }
 }
 
-export function useCandidateQueue() {
+export function useCandidateQueue(sourceFilter?: string) {
   const [state, setState] = useState<QueueState>({
     candidates: [],
     total: 0,
@@ -94,6 +97,8 @@ export function useCandidateQueue() {
     busy: false,
     outgoingId: null,
     loadingMore: false,
+    sourceOptions: [],
+    hasMore: false,
   });
   const seenRef = useRef<Set<string>>(new Set());
   const pendingRef = useRef<Set<string>>(new Set());
@@ -102,6 +107,11 @@ export function useCandidateQueue() {
   const exhaustedRef = useRef(false);
   const loadingMoreRef = useRef(false);
   const totalRef = useRef(0);
+  const sourceFilterRef = useRef<string | undefined>(sourceFilter);
+
+  useEffect(() => {
+    sourceFilterRef.current = sourceFilter;
+  }, [sourceFilter]);
 
   useEffect(() => {
     candidatesRef.current = state.candidates;
@@ -146,11 +156,21 @@ export function useCandidateQueue() {
         total: authoritativeTotal,
         loading: false,
         loadingMore: false,
+        hasMore: !exhaustedRef.current,
         error: null,
       }));
     },
     [],
   );
+
+  const refreshSourceOptions = useCallback(async () => {
+    try {
+      const sources = await fetchCandidateSources();
+      setState((prev) => ({ ...prev, sourceOptions: sources.sources }));
+    } catch {
+      // Source options are secondary to queue actions; keep the last known list.
+    }
+  }, []);
 
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || exhaustedRef.current) return;
@@ -162,12 +182,14 @@ export function useCandidateQueue() {
           statuses: [...QUEUE_STATUSES],
           limit: QUEUE_BATCH_SIZE,
           sort: "score",
+          source: sourceFilterRef.current,
           cursor: cursorRef.current ?? undefined,
         }),
       );
       cursorRef.current = page.nextCursor;
       exhaustedRef.current = !page.nextCursor;
       mergeFetchedCandidates(page.candidates, page.total);
+      void refreshSourceOptions();
     } catch (error) {
       setState((prev) => ({
         ...prev,
@@ -182,7 +204,7 @@ export function useCandidateQueue() {
     } finally {
       loadingMoreRef.current = false;
     }
-  }, [mergeFetchedCandidates]);
+  }, [mergeFetchedCandidates, refreshSourceOptions]);
 
   const load = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
@@ -191,17 +213,22 @@ export function useCandidateQueue() {
       exhaustedRef.current = false;
       loadingMoreRef.current = false;
       const firstPage = await timedAsync("queue.initial_fetch", async () => {
-        return fetchCandidates({
+        const [page, sources] = await Promise.all([
+          fetchCandidates({
           statuses: [...QUEUE_STATUSES],
           limit: QUEUE_BATCH_SIZE,
           sort: "score",
-        });
+            source: sourceFilterRef.current,
+          }),
+          fetchCandidateSources().catch(() => ({ sources: [] })),
+        ]);
+        return { page, sources };
       });
-      cursorRef.current = firstPage.nextCursor;
-      exhaustedRef.current = !firstPage.nextCursor;
+      cursorRef.current = firstPage.page.nextCursor;
+      exhaustedRef.current = !firstPage.page.nextCursor;
       const seen = seenRef.current;
-      const filtered = firstPage.candidates.filter((candidate) => !seen.has(candidate.id));
-      const total = firstPage.total ?? filtered.length;
+      const filtered = firstPage.page.candidates.filter((candidate) => !seen.has(candidate.id));
+      const total = firstPage.page.total ?? filtered.length;
       candidatesRef.current = filtered;
       totalRef.current = total;
       replaceQueue(filtered, total);
@@ -214,12 +241,15 @@ export function useCandidateQueue() {
         busy: false,
         outgoingId: null,
         loadingMore: false,
+        sourceOptions: firstPage.sources.sources,
+        hasMore: !exhaustedRef.current,
       });
     } catch (error) {
       setState((prev) => ({
         ...prev,
         loading: false,
         loadingMore: false,
+        hasMore: !exhaustedRef.current,
         busy: false,
         outgoingId: null,
         error:
@@ -235,7 +265,7 @@ export function useCandidateQueue() {
   useEffect(() => {
     seenRef.current = readSeenIds();
     void load();
-  }, [load]);
+  }, [load, sourceFilter]);
 
   useEffect(() => {
     return subscribe(() => {
@@ -263,6 +293,7 @@ export function useCandidateQueue() {
         ...prev,
         candidates: next,
         total: getCounts().queue,
+        hasMore: !exhaustedRef.current,
       }));
     });
   }, []);
@@ -336,6 +367,7 @@ export function useCandidateQueue() {
           card: updated,
         });
         pendingRef.current.delete(current.id);
+        void refreshSourceOptions();
 
         if (action === "approve") {
           void timedAsync("queue.sheet_sync_bg", () =>
@@ -405,7 +437,7 @@ export function useCandidateQueue() {
         return { ok: false as const };
       }
     },
-    [loadMore],
+    [loadMore, refreshSourceOptions],
   );
 
   const clearError = useCallback(() => {
@@ -424,6 +456,7 @@ export function useCandidateQueue() {
     upcoming: state.candidates[1] ?? null,
     position: state.candidates.length ? 1 : 0,
     refresh: load,
+    loadMore,
     decide,
     clearError,
     clearSyncMessage,
