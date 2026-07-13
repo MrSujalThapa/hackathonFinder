@@ -10,7 +10,7 @@ import {
   isStaleTitleYear,
   timezoneForLocation,
 } from "@/core/dates";
-import { classifyExplicitTorontoLocation } from "@/core/locationConstraints";
+import { classifyExplicitCityLocation } from "@/core/locationConstraints";
 
 const THEME_BONUS_CAP = 30;
 const THEME_BONUS_EACH = 10;
@@ -164,7 +164,7 @@ export function evaluateEligibility(
     };
   }
 
-  const explicitLocation = classifyExplicitTorontoLocation(event, preferences);
+  const explicitLocation = classifyExplicitCityLocation(event, preferences);
   if (!explicitLocation.eligible) {
     return {
       eligible: false,
@@ -184,7 +184,7 @@ export function evaluateEligibility(
       return {
         eligible: true,
         needsReview: true,
-        reasons: ["Outside requested geography"],
+        reasons: [...reasons, "Outside requested geography"],
       };
     }
     return {

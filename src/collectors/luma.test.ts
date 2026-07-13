@@ -6,6 +6,7 @@ import {
   describeLumaFailure,
   isRejectedLumaLeadUrl,
   parseLumaHtml,
+  resolveLumaFeeds,
   resolveLumaDiscoveryMode,
 } from "@/collectors/luma";
 
@@ -110,6 +111,29 @@ describe("parseLumaHtml", () => {
 });
 
 describe("luma helpers", () => {
+  it("uses the Toronto feed for Toronto requests", () => {
+    const resolution = resolveLumaFeeds({ requestedLocation: "Toronto" });
+    assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/toronto"));
+  });
+
+  it("does not use the Toronto feed for Waterloo requests", () => {
+    const resolution = resolveLumaFeeds({ requestedLocation: "Waterloo" });
+    assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/waterloo"));
+    assert.ok(!resolution.feeds.some((feed) => feed.url === "https://luma.com/toronto"));
+  });
+
+  it("keeps topic feeds available for Waterloo requests", () => {
+    const resolution = resolveLumaFeeds({ requestedLocation: "Waterloo" });
+    assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/tech"));
+    assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/ai"));
+  });
+
+  it("uses explicit fallback when no verified city feed exists", () => {
+    const resolution = resolveLumaFeeds({ requestedLocation: "London" });
+    assert.match(resolution.fallbackReason ?? "", /No verified London city feed/i);
+    assert.ok(resolution.feeds.every((feed) => feed.type === "topic"));
+  });
+
   it("rejects discover/calendar/profile URLs as leads", () => {
     assert.equal(isRejectedLumaLeadUrl("https://luma.com/discover?q=hackathon"), true);
     assert.equal(isRejectedLumaLeadUrl("https://luma.com/home/calendars"), true);

@@ -45,7 +45,11 @@ const MEETUP_HINT =
   /\b(meetup|coffee|networking|happy\s*hour|casual\s*hang|fireside|panel\s*discussion|book\s*club|walkie|potluck|drink\s*&\s*draw)\b/i;
 
 export type LumaDiscoveryMode = "public" | "authenticated";
-export type LumaDiscoveryFeed = "luma_toronto" | "luma_tech" | "luma_ai";
+export type LumaDiscoveryFeed =
+  | "luma_toronto"
+  | "luma_waterloo"
+  | "luma_tech"
+  | "luma_ai";
 
 export type LumaFailureHint =
   | "network"
@@ -79,6 +83,13 @@ type LumaFeedConfig = {
   mode: LumaDiscoveryFeed;
   label: string;
   url: string;
+  type: "location" | "topic";
+};
+
+export type LumaFeedResolution = {
+  requestedLocation?: string;
+  feeds: LumaFeedConfig[];
+  fallbackReason?: string;
 };
 
 type LumaFeedCollection = {
@@ -203,12 +214,72 @@ function isUpcoming(startAt?: string, endAt?: string, now = new Date()): boolean
   return end.getTime() >= now.getTime() - 6 * 60 * 60 * 1000;
 }
 
-function buildDiscoveryFeeds(): LumaFeedConfig[] {
-  return [
-    { mode: "luma_toronto", label: "Toronto", url: `${LUMA_BASE}/toronto` },
-    { mode: "luma_tech", label: "Tech", url: `${LUMA_BASE}/tech` },
-    { mode: "luma_ai", label: "AI", url: `${LUMA_BASE}/ai` },
-  ];
+const VERIFIED_LOCATION_FEEDS: Record<string, LumaFeedConfig> = {
+  toronto: {
+    mode: "luma_toronto",
+    label: "Toronto",
+    url: `${LUMA_BASE}/toronto`,
+    type: "location",
+  },
+  waterloo: {
+    mode: "luma_waterloo",
+    label: "Waterloo",
+    url: `${LUMA_BASE}/waterloo`,
+    type: "location",
+  },
+};
+
+const TOPIC_FEEDS: LumaFeedConfig[] = [
+  { mode: "luma_tech", label: "Tech", url: `${LUMA_BASE}/tech`, type: "topic" },
+  { mode: "luma_ai", label: "AI", url: `${LUMA_BASE}/ai`, type: "topic" },
+];
+
+function requestedLumaLocation(input: CollectorInput): string | undefined {
+  const command = input.preferences.rawCommand.toLowerCase();
+  for (const city of Object.keys(VERIFIED_LOCATION_FEEDS)) {
+    if (new RegExp(`\\b(?:in|near|around|for)\\s+${city}\\b|\\b${city}\\b`, "i").test(command)) {
+      return city;
+    }
+  }
+  if (/\bontario\b/i.test(command)) return "ontario";
+  return undefined;
+}
+
+export function resolveLumaFeeds(input: {
+  requestedLocation?: string;
+  requestedTopics?: string[];
+}): LumaFeedResolution {
+  const feeds: LumaFeedConfig[] = [];
+  const requestedLocation = input.requestedLocation?.trim();
+  const key = requestedLocation?.toLowerCase();
+
+  if (key === "ontario") {
+    feeds.push(VERIFIED_LOCATION_FEEDS.toronto, VERIFIED_LOCATION_FEEDS.waterloo);
+  } else if (key && VERIFIED_LOCATION_FEEDS[key]) {
+    feeds.push(VERIFIED_LOCATION_FEEDS[key]);
+  }
+
+  feeds.push(...TOPIC_FEEDS);
+
+  const unique = new Map<string, LumaFeedConfig>();
+  for (const feed of feeds) unique.set(feed.url, feed);
+
+  return {
+    requestedLocation,
+    feeds: [...unique.values()],
+    fallbackReason:
+      key && key !== "ontario" && !VERIFIED_LOCATION_FEEDS[key]
+        ? `No verified ${requestedLocation} city feed available`
+        : undefined,
+  };
+}
+
+function buildDiscoveryFeeds(input: CollectorInput): LumaFeedResolution {
+  const requestedLocation = requestedLumaLocation(input);
+  return resolveLumaFeeds({
+    requestedLocation,
+    requestedTopics: input.preferences.themes,
+  });
 }
 
 function extractNextData($: cheerio.CheerioAPI): unknown | undefined {
@@ -588,7 +659,7 @@ function isLikelyLumaEventUrl(url: string | undefined): boolean {
     const path = parsed.pathname.replace(/\/+$/, "");
     if (!/^\/[a-z0-9][a-z0-9_-]{4,}$/i.test(path)) return false;
     if (
-      /^\/(about|ai|calendar|calendars|discover|explore|home|login|pricing|search|signin|tech|toronto|u|user)$/i.test(
+      /^\/(about|ai|calendar|calendars|discover|explore|home|login|pricing|search|signin|tech|toronto|waterloo|u|user)$/i.test(
         path,
       )
     ) {
@@ -619,7 +690,7 @@ async function collectLumaEventUrlsFromPage(
           const path = parsed.pathname.replace(/\/+$/, "");
           if (parsed.searchParams.get("k") === "c") return false;
           if (!/^\/[a-z0-9][a-z0-9_-]{4,}$/i.test(path)) return false;
-          return !/^\/(about|ai|calendar|calendars|discover|explore|home|login|pricing|search|signin|tech|toronto|u|user)$/i.test(
+          return !/^\/(about|ai|calendar|calendars|discover|explore|home|login|pricing|search|signin|tech|toronto|waterloo|u|user)$/i.test(
             path,
           );
         } catch {
@@ -804,7 +875,8 @@ export const lumaCollector: Collector = {
     const startedAt = Date.now();
     const result = emptyCollectorResult("luma", startedAt);
     const mode = resolveLumaDiscoveryMode();
-    const feeds = buildDiscoveryFeeds();
+    const feedResolution = buildDiscoveryFeeds(input);
+    const feeds = feedResolution.feeds;
     const byUrl = new Map<string, { url: string; feeds: Set<LumaDiscoveryFeed> }>();
     const budgetMs = input.timeoutMs;
     let pagesFetched = 0;
@@ -822,6 +894,20 @@ export const lumaCollector: Collector = {
       );
     }
     input.logger?.("Starting public discovery...");
+    if (feedResolution.requestedLocation) {
+      input.logger?.(`Requested location: ${feedResolution.requestedLocation}`);
+    }
+    const locationFeeds = feeds.filter((feed) => feed.type === "location");
+    const topicFeeds = feeds.filter((feed) => feed.type === "topic");
+    if (locationFeeds.length > 0) {
+      input.logger?.(`Location feed: ${locationFeeds.map((feed) => feed.label).join(", ")}`);
+    } else if (feedResolution.fallbackReason) {
+      input.logger?.(feedResolution.fallbackReason);
+      input.logger?.(
+        `Using ${topicFeeds.map((feed) => feed.label).join(" and ")} feeds with location filtering`,
+      );
+    }
+    input.logger?.(`Topic feeds: ${topicFeeds.map((feed) => feed.label).join(", ")}`);
 
     try {
       for (const feed of feeds) {

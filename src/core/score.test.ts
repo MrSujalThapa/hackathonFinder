@@ -26,6 +26,16 @@ const torontoPreferences: DiscoveryPreferences = {
   dateTo: "2026-12-31",
 };
 
+const waterlooPreferences: DiscoveryPreferences = {
+  ...getDefaultDiscoveryPreferences("find upcoming hackathons in Waterloo"),
+  locations: ["Waterloo"],
+  themes: ["AI"],
+  includeRemote: true,
+  includeInPerson: true,
+  dateFrom: "2026-07-13",
+  dateTo: "2026-12-31",
+};
+
 function event(overrides: Partial<HackathonEvent>): HackathonEvent {
   return {
     name: "Test Hackathon",
@@ -197,6 +207,41 @@ describe("eligibility vs ranking", () => {
     });
     const scored = scoreHackathonEvent(virtual, torontoPreferences, { now: NOW });
     assert.equal(scored.rejected, false);
+  });
+
+  it("keeps Waterloo in-person events for explicit Waterloo queries", () => {
+    const waterloo = event({
+      city: "Waterloo",
+      country: "Canada",
+      location: "Waterloo, Ontario",
+      mode: "in-person",
+    });
+    const scored = scoreHackathonEvent(waterloo, waterlooPreferences, { now: NOW });
+    assert.equal(scored.rejected, false);
+  });
+
+  it("rejects Toronto in-person events for explicit Waterloo queries", () => {
+    const toronto = event({
+      city: "Toronto",
+      country: "Canada",
+      location: "Toronto, Ontario",
+      mode: "in-person",
+    });
+    const scored = scoreHackathonEvent(toronto, waterlooPreferences, { now: NOW });
+    assert.equal(scored.rejected, true);
+    assert.match(scored.rejectionReason ?? "", /Waterloo/i);
+  });
+
+  it("keeps unknown locations for explicit Waterloo queries as needs review", () => {
+    const unknown = event({
+      city: undefined,
+      country: undefined,
+      location: undefined,
+      mode: "unknown",
+    });
+    const scored = scoreHackathonEvent(unknown, waterlooPreferences, { now: NOW });
+    assert.equal(scored.rejected, false);
+    assert.ok(scored.redFlags.some((flag) => /Location unclear/i.test(flag)));
   });
 
   it("clamps discovery relevance to 100", () => {

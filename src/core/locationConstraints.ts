@@ -19,8 +19,12 @@ export type LocationConstraintResult = {
 const GTA_RE =
   /\b(toronto|mississauga|brampton|markham|scarborough|north york|etobicoke|vaughan|richmond hill|oakville|burlington|ajax|pickering|oshawa|greater toronto|gta)\b/;
 const TORONTO_RE = /\btoronto\b/;
+const WATERLOO_RE = /\bwaterloo\b/;
+const WATERLOO_NEARBY_RE = /\b(kitchener|cambridge|guelph|kw|k-w|waterloo region)\b/;
 const ONTARIO_NEARBY_RE = /\b(waterloo|kitchener|hamilton|guelph|london|ottawa|ontario)\b/;
 const VIRTUAL_RE = /\b(online|virtual|remote|worldwide|global|anywhere)\b/;
+
+type ExplicitCity = "toronto" | "waterloo" | "mississauga";
 
 function eventLocationText(event: HackathonEvent): string {
   return normalizeText(
@@ -32,16 +36,103 @@ export function hasExplicitTorontoConstraint(preferences: DiscoveryPreferences):
   return /\b(?:in|near|around|for)\s+toronto\b|\btoronto\b/i.test(preferences.rawCommand);
 }
 
-export function classifyExplicitTorontoLocation(
+function explicitCityConstraint(preferences: DiscoveryPreferences): ExplicitCity | null {
+  const command = preferences.rawCommand;
+  for (const city of ["toronto", "waterloo", "mississauga"] as const) {
+    if (new RegExp(`\\b(?:in|near|around|for)\\s+${city}\\b|\\b${city}\\b`, "i").test(command)) {
+      return city;
+    }
+  }
+  return null;
+}
+
+export function hasExplicitCityConstraint(preferences: DiscoveryPreferences): boolean {
+  return explicitCityConstraint(preferences) !== null;
+}
+
+function classifyConcreteCity(
+  city: ExplicitCity,
+  text: string,
+): Pick<LocationConstraintResult, "status" | "eligible" | "needsReview" | "reason"> | null {
+  if (city === "toronto") {
+    if (TORONTO_RE.test(text)) {
+      return {
+        status: "EXACT_MATCH",
+        eligible: true,
+        needsReview: false,
+        reason: "Toronto location match",
+      };
+    }
+    if (GTA_RE.test(text)) {
+      return {
+        status: "GTA_MATCH",
+        eligible: true,
+        needsReview: false,
+        reason: "Greater Toronto Area location match",
+      };
+    }
+    if (ONTARIO_NEARBY_RE.test(text) || (text.includes("canada") && text.includes("ontario"))) {
+      return {
+        status: "ONTARIO_NEARBY",
+        eligible: true,
+        needsReview: true,
+        reason: "Ontario nearby location for explicit Toronto query",
+      };
+    }
+  }
+
+  if (city === "waterloo") {
+    if (WATERLOO_RE.test(text)) {
+      return {
+        status: "EXACT_MATCH",
+        eligible: true,
+        needsReview: false,
+        reason: "Waterloo location match",
+      };
+    }
+    if (WATERLOO_NEARBY_RE.test(text)) {
+      return {
+        status: "ONTARIO_NEARBY",
+        eligible: true,
+        needsReview: true,
+        reason: "Waterloo-region nearby location for explicit Waterloo query",
+      };
+    }
+  }
+
+  if (city === "mississauga") {
+    if (/\bmississauga\b/.test(text)) {
+      return {
+        status: "EXACT_MATCH",
+        eligible: true,
+        needsReview: false,
+        reason: "Mississauga location match",
+      };
+    }
+    if (GTA_RE.test(text)) {
+      return {
+        status: "GTA_MATCH",
+        eligible: true,
+        needsReview: true,
+        reason: "GTA nearby location for explicit Mississauga query",
+      };
+    }
+  }
+
+  return null;
+}
+
+export function classifyExplicitCityLocation(
   event: HackathonEvent,
   preferences: DiscoveryPreferences,
 ): LocationConstraintResult {
-  if (!hasExplicitTorontoConstraint(preferences)) {
+  const city = explicitCityConstraint(preferences);
+  if (!city) {
     return {
       status: "UNKNOWN",
       eligible: true,
       needsReview: false,
-      reason: "No explicit Toronto constraint",
+      reason: "No explicit city constraint",
     };
   }
 
@@ -55,7 +146,7 @@ export function classifyExplicitTorontoLocation(
       status: "VIRTUAL",
       eligible: true,
       needsReview: false,
-      reason: "Virtual event satisfies explicit Toronto query",
+      reason: "Virtual event satisfies explicit city query",
     };
   }
 
@@ -64,36 +155,12 @@ export function classifyExplicitTorontoLocation(
       status: "UNKNOWN",
       eligible: true,
       needsReview: true,
-      reason: "Location unclear for explicit Toronto query",
+      reason: "Location unclear for explicit city query",
     };
   }
 
-  if (TORONTO_RE.test(text)) {
-    return {
-      status: "EXACT_MATCH",
-      eligible: true,
-      needsReview: false,
-      reason: "Toronto location match",
-    };
-  }
-
-  if (GTA_RE.test(text)) {
-    return {
-      status: "GTA_MATCH",
-      eligible: true,
-      needsReview: false,
-      reason: "Greater Toronto Area location match",
-    };
-  }
-
-  if (ONTARIO_NEARBY_RE.test(text) || (text.includes("canada") && text.includes("ontario"))) {
-    return {
-      status: "ONTARIO_NEARBY",
-      eligible: true,
-      needsReview: true,
-      reason: "Ontario nearby location for explicit Toronto query",
-    };
-  }
+  const cityResult = classifyConcreteCity(city, text);
+  if (cityResult) return cityResult;
 
   const hasConcreteLocation =
     Boolean(event.location || event.city || event.country) &&
@@ -104,7 +171,7 @@ export function classifyExplicitTorontoLocation(
       status: "MISMATCH",
       eligible: false,
       needsReview: false,
-      reason: "Location mismatch for explicit Toronto query",
+      reason: `Location mismatch for explicit ${city[0]!.toUpperCase()}${city.slice(1)} query`,
     };
   }
 
@@ -112,6 +179,13 @@ export function classifyExplicitTorontoLocation(
     status: "UNKNOWN",
     eligible: true,
     needsReview: true,
-    reason: "Location unclear for explicit Toronto query",
+    reason: "Location unclear for explicit city query",
   };
+}
+
+export function classifyExplicitTorontoLocation(
+  event: HackathonEvent,
+  preferences: DiscoveryPreferences,
+): LocationConstraintResult {
+  return classifyExplicitCityLocation(event, preferences);
 }
