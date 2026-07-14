@@ -49,6 +49,12 @@ import type {
   DiscoveryPerformanceTracker,
   PersistenceTiming,
 } from "@/discovery/performance";
+import {
+  finalizePersistenceShadow,
+  isPersistenceBatchShadowEnabled,
+  preparePersistenceShadow,
+  type PersistenceShadowState,
+} from "@/discovery/persistence/persistenceShadow";
 
 const SUPABASE_ENV_MESSAGE =
   "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in .env.local, or run with --dry-run.";
@@ -818,6 +824,22 @@ export async function executeDiscoveryPipeline(
     assertNotCancelled(options.cancellationSignal);
     await emitter.emit("persistence_started", dryRun ? "Dry-run persistence…" : "Persisting candidates…");
 
+    let persistenceShadowState: PersistenceShadowState | undefined;
+    if (!dryRun && isPersistenceBatchShadowEnabled()) {
+      try {
+        persistenceShadowState = await preparePersistenceShadow(accepted, {
+          now,
+          agentRunId,
+        });
+      } catch (error) {
+        summary.warnings.push(
+          `[persistence-shadow] planning failed: ${
+            error instanceof Error ? error.message : "unknown error"
+          }`,
+        );
+      }
+    }
+
     const seenFingerprints = new Set<string>();
     const persistenceStartedAtMs = performanceTracker?.now();
     const persistenceTiming: PersistenceTiming = {
@@ -927,6 +949,21 @@ export async function executeDiscoveryPipeline(
       performanceTracker.setPersistence(persistenceTiming);
     }
 
+    if (persistenceShadowState) {
+      try {
+        summary.persistenceShadow = await finalizePersistenceShadow(
+          persistenceShadowState,
+          summary,
+        );
+      } catch (error) {
+        summary.warnings.push(
+          `[persistence-shadow] comparison failed: ${
+            error instanceof Error ? error.message : "unknown error"
+          }`,
+        );
+      }
+    }
+
     summary.acceptedCandidates = buildAcceptedSummary(accepted);
     summary.sourceStats = [...sourceStats.values()];
     summary.sourceAccounting = sourceAccountingFromStats(summary.sourceStats);
@@ -975,6 +1012,7 @@ export async function executeDiscoveryPipeline(
             outcome: stats.outcome,
           })),
           performance: performanceTracker?.finalize(),
+          persistenceShadow: summary.persistenceShadow ?? null,
         },
       },
     );

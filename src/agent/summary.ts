@@ -17,6 +17,7 @@ import type { AddEvidenceInput } from "@/core/candidates/types";
 import { normalizeDatePart } from "@/core/dedupe";
 import { deterministicCandidateSummary } from "@/core/candidateSummary";
 import { formatPerformanceSummary } from "@/discovery/performance";
+import { formatPersistenceShadowSummary } from "@/discovery/persistence/comparePersistenceResults";
 
 export function mapEvidenceType(type: HackathonEvidence["type"]): EvidenceType {
   switch (type) {
@@ -361,6 +362,13 @@ export function printAgentSummary(summary: AgentRunSummary): void {
 
   if (summary.performance) {
     for (const line of formatPerformanceSummary(summary.performance)) {
+      console.log(line);
+    }
+    console.log("");
+  }
+
+  if (summary.persistenceShadow) {
+    for (const line of formatPersistenceShadowSummary(summary.persistenceShadow)) {
       console.log(line);
     }
     console.log("");

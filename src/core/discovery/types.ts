@@ -1,4 +1,5 @@
 import type { DiscoveryPerformanceSummary } from "@/discovery/performance";
+import type { PersistenceShadowSummary } from "@/discovery/persistence/comparePersistenceResults";
 
 export type DiscoveryMode = "online" | "in-person" | "hybrid" | "unknown";
 export type ReviewPolicy = "broad" | "balanced" | "strict";
@@ -210,6 +211,7 @@ export type AgentRunSummary = {
   sourceAccounting: SourceAccounting;
   agent?: AgentRunObservability;
   performance?: DiscoveryPerformanceSummary;
+  persistenceShadow?: PersistenceShadowSummary;
   warnings: string[];
   errors: string[];
 };
