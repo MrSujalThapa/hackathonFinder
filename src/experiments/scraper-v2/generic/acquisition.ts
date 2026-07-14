@@ -292,7 +292,7 @@ async function observeBrowserArtifacts(
 
 export async function acquireGenericArtifacts(
   experiment: SourceExperiment,
-  shouldUseBrowser: (artifacts: AcquiredArtifact[]) => boolean,
+  staticArtifactsSufficient: (artifacts: AcquiredArtifact[]) => boolean,
 ): Promise<GenericAcquisitionResult> {
   const attemptedLayers: string[] = [];
   const skippedLayers: string[] = [];
@@ -354,7 +354,7 @@ export async function acquireGenericArtifacts(
   let browserPages = 0;
 
   attemptedLayers.push("framework state");
-  if (shouldUseBrowser(artifacts)) {
+  if (!staticArtifactsSufficient(artifacts)) {
     attemptedLayers.push("browser observation");
     const observed = await observeBrowserArtifacts(experiment, artifacts.length);
     artifacts = artifacts.concat(observed.artifacts).slice(0, experiment.maxRequests);
