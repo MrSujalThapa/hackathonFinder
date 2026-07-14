@@ -133,6 +133,7 @@ function extractStaticArtifacts(
       payload: {
         title: $("title").text().trim(),
         bodyTextLength: $("body").text().replace(/\s+/g, " ").trim().length,
+        html,
       },
       rawBytes: byteLength(html),
       acquisitionMode: "static",
@@ -271,6 +272,7 @@ async function observeBrowserArtifacts(
             payload: {
               title: await page.title().catch(() => ""),
               textLength: html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length,
+              html,
             },
             rawBytes: byteLength(html),
             acquisitionMode: "browser",

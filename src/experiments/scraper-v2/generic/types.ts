@@ -33,6 +33,107 @@ export type AcquiredArtifact = {
   timingMs: number;
 };
 
+export type DomNodeSummary = {
+  nodeId: number;
+  parentId?: number;
+  tag: string;
+  role?: string;
+  depth: number;
+  childCount: number;
+  classShape: string;
+  textSample?: string;
+  textLength: number;
+  headingText?: string;
+  anchorCount: number;
+  imageCount: number;
+  dateLikeCount: number;
+  locationLikeCount: number;
+  urlPattern?: string;
+  siblingIndex: number;
+  visible: boolean;
+  structuralFingerprint: string;
+  hrefs: string[];
+  childIds: number[];
+};
+
+export type DomRepresentation = {
+  sourceUrl: string;
+  artifactId: string;
+  nodeCount: number;
+  maxDepth: number;
+  nodes: DomNodeSummary[];
+};
+
+export type RepeatedUnitSet = {
+  unitSetId: string;
+  artifactId: string;
+  parentNodeId: number;
+  unitNodeIds: number[];
+  structuralScore: number;
+  fieldDensityScore: number;
+  layoutScore: number;
+  confidence: number;
+  rejectionReasons: string[];
+  diagnostics: {
+    unitCount: number;
+    averageTextLength: number;
+    uniqueTitleRatio: number;
+    uniqueUrlRatio: number;
+    dateCoverage: number;
+    locationCoverage: number;
+    anchorCoverage: number;
+    depth: number;
+  };
+};
+
+export type RelativeFieldSelector = {
+  relation: "self" | "heading" | "anchor" | "text" | "image_alt";
+  tag?: string;
+  confidence: number;
+  evidence: string[];
+};
+
+export type DomExtractionSchema = {
+  version: number;
+  pageFingerprint: string;
+  recordContainer: {
+    parentFingerprint: string;
+    unitFingerprint: string;
+    unitTag: string;
+    unitClassShape: string;
+  };
+  fields: {
+    title: RelativeFieldSelector;
+    url?: RelativeFieldSelector;
+    startDate?: RelativeFieldSelector;
+    endDate?: RelativeFieldSelector;
+    location?: RelativeFieldSelector;
+    mode?: RelativeFieldSelector;
+    description?: RelativeFieldSelector;
+  };
+  pagination?: PaginationInference;
+  confidence: number;
+  validationMetrics: {
+    testedRecords: number;
+    validRecords: number;
+    titleCompleteness: number;
+    identityCompleteness: number;
+    duplicateRate: number;
+  };
+};
+
+export type DomExtractionResult = {
+  strategy: "dom";
+  representations: Array<Pick<DomRepresentation, "artifactId" | "nodeCount" | "maxDepth">>;
+  repeatedUnitSets: RepeatedUnitSet[];
+  selectedUnitSet?: RepeatedUnitSet;
+  schema?: DomExtractionSchema;
+  leads: GenericShadowLead[];
+  availableRecords?: number;
+  stopReason: "not_attempted" | "no_dom_artifact" | "no_unit_set" | "schema_rejected" | "page_cap" | "no_growth" | "completed";
+  timings: Record<string, number>;
+};
+
 export type AcquisitionDiagnostics = {
   finalUrl: string;
   attemptedLayers: string[];
@@ -133,7 +234,18 @@ export type ExtractionQualityReport = {
   estimatedPrecision: number;
   estimatedRecall?: number;
   degradedReasons: string[];
-  classification: "healthy" | "usable" | "degraded" | "blocked" | "failed";
+  classification:
+    | "healthy"
+    | "usable"
+    | "degraded"
+    | "blocked"
+    | "failed"
+    | "healthy_complete"
+    | "healthy_bounded"
+    | "usable_partial"
+    | "degraded_under_extraction"
+    | "degraded_low_precision"
+    | "unsafe";
 };
 
 export type GenericStructuredExtractionResult = {
@@ -146,6 +258,8 @@ export type GenericStructuredExtractionResult = {
   selectedRecordSet?: Omit<CandidateRecordSet, "records"> & { records: number };
   schema?: InferredEventSchema;
   leads: GenericShadowLead[];
+  strategySelected: "structured" | "dom" | "none";
+  dom?: DomExtractionResult;
   pagination: PaginationInference;
   quality: ExtractionQualityReport;
   timings: Record<string, number>;
