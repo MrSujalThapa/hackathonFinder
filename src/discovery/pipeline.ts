@@ -172,6 +172,41 @@ export function isDiscoveryCancelledError(error: unknown): boolean {
   );
 }
 
+export type CollectorBudgetResult<T> = {
+  result: T;
+  timedOut: boolean;
+};
+
+export async function awaitCollectorResultsWithTotalBudget<T>(
+  collectorPromise: Promise<T>,
+  totalTimeoutMs: number,
+): Promise<CollectorBudgetResult<T>> {
+  const timeoutSentinel = Symbol("collector-timeout");
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    const timeoutPromise = new Promise<typeof timeoutSentinel>((resolve) => {
+      timeoutHandle = setTimeout(() => {
+        resolve(timeoutSentinel);
+      }, totalTimeoutMs);
+    });
+
+    const result = await Promise.race([collectorPromise, timeoutPromise]);
+    if (result !== timeoutSentinel) {
+      return { result, timedOut: false };
+    }
+
+    return {
+      result: await collectorPromise,
+      timedOut: true,
+    };
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
 /**
  * Core discovery pipeline shared by CLI and web job executors.
  * Emits structured progress events; does not write directly to stdout.
@@ -311,22 +346,17 @@ export async function executeDiscoveryPipeline(
       },
     );
 
-    let timedOut = false;
-    const collectorResults = await Promise.race([
+    const collectorBudget = await awaitCollectorResultsWithTotalBudget(
       collectorPromise,
-      new Promise<null>((resolve) => {
-        setTimeout(() => {
-          timedOut = true;
-          resolve(null);
-        }, totalTimeoutMs);
-      }),
-    ]).then(async (result) => {
-      if (result) return result;
+      totalTimeoutMs,
+    );
+    const collectorResults = collectorBudget.result;
+    const timedOut = collectorBudget.timedOut;
+    if (timedOut) {
       summary.warnings.push(
         `Total collector budget ${totalTimeoutMs}ms reached; waiting for bounded in-flight collectors to return explicit outcomes.`,
       );
-      return collectorPromise;
-    });
+    }
 
     assertNotCancelled(options.cancellationSignal);
 
