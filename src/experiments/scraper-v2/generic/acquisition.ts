@@ -29,7 +29,7 @@ function ms(startedAt: number): number {
   return Math.round(performance.now() - startedAt);
 }
 
-function parseJsonSafe(raw: string, maxPayloadBytes: number): unknown | undefined {
+export function parseJsonSafe(raw: string, maxPayloadBytes: number): unknown | undefined {
   const trimmed = raw.trim();
   if (!trimmed || byteLength(trimmed) > maxPayloadBytes) return undefined;
   try {
@@ -39,7 +39,7 @@ function parseJsonSafe(raw: string, maxPayloadBytes: number): unknown | undefine
   }
 }
 
-function makeArtifact(input: {
+export function makeArtifact(input: {
   kind: AcquiredArtifactKind;
   index: number;
   sourceUrl: string;
@@ -150,7 +150,7 @@ function eventPayloadScore(value: unknown): number {
   return score;
 }
 
-async function acquirePageParamArtifacts(input: {
+export async function acquirePageParamArtifacts(input: {
   experiment: SourceExperiment;
   artifacts: AcquiredArtifact[];
   nextArtifactIndex: number;
@@ -246,7 +246,7 @@ async function acquirePageParamArtifacts(input: {
   return { artifacts: out, requestsMade, pagesRequested, stopReason };
 }
 
-function extractStaticArtifacts(
+export function extractStaticArtifacts(
   html: string,
   finalUrl: string,
   experiment: SourceExperiment,

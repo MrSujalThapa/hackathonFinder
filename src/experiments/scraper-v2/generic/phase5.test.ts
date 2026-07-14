@@ -142,6 +142,20 @@ describe("phase 5 adaptive generic scraping helpers", () => {
     assert.ok(goodValidation.eventIntentScore > noisyValidation.eventIntentScore);
   });
 
+  it("rejects form/questionnaire arrays as event record sets", () => {
+    const result = discoverGenericRecordSets([
+      artifact({
+        questions: [
+          { question: "Please introduce your team background and experience", type: "textarea" },
+          { question: "Which track would you like to participate in?", options: ["AI", "Web3"] },
+          { question: "What is your team size?", options: ["2", "3", "4"] },
+          { question: "Do you have repositories to showcase?", type: "url" },
+        ],
+      }),
+    ]);
+    assert.equal(result.recordSets.some((set) => set.path === "questions" && set.rejectionReasons.length === 0), false);
+  });
+
   it("does not classify bounded low-recall samples as healthy complete", () => {
     const leads = Array.from({ length: 8 }, (_value, index) =>
       lead(`Useful Hack ${index + 1}`, `2026-${String((index % 3) + 8).padStart(2, "0")}-01T00:00:00.000Z`),

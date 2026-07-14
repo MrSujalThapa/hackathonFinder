@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadLocalEnv } from "@/cli/loadEnv";
+import { CrawleeRuntime, ExistingCustomRuntime } from "@/experiments/scraper-v2/generic/crawlRuntime";
+import { inferDiscoveryBudget } from "@/experiments/scraper-v2/generic/budget";
 import {
   formatGenericStructuredExtractionResult,
   runGenericStructuredExtraction,
@@ -29,6 +31,34 @@ function boolArg(name: string, fallback: boolean): boolean {
   return /^(1|true|yes|on)$/i.test(raw);
 }
 
+function runtimeArg(): ExistingCustomRuntime | CrawleeRuntime {
+  const runtime = (argValue("--runtime") ?? "custom").toLowerCase();
+  if (runtime === "crawlee") return new CrawleeRuntime();
+  if (runtime === "custom") return new ExistingCustomRuntime();
+  throw new Error("--runtime must be custom or crawlee");
+}
+
+function budgetArg() {
+  const profile = argValue("--profile") ?? "standard";
+  return inferDiscoveryBudget({
+    query: `${profile} public hackathon directory coverage`,
+    ...(argValue("--date-horizon-start") ? { dateHorizonStart: argValue("--date-horizon-start") } : {}),
+    ...(argValue("--date-horizon-end") ? { dateHorizonEnd: argValue("--date-horizon-end") } : {}),
+  });
+}
+
+function originVariants(origin: string): string[] {
+  const parsed = new URL(origin);
+  const host = parsed.hostname;
+  const variants = new Set([origin]);
+  if (host.startsWith("www.")) {
+    variants.add(`${parsed.protocol}//${host.slice(4)}${parsed.port ? `:${parsed.port}` : ""}`);
+  } else {
+    variants.add(`${parsed.protocol}//www.${host}${parsed.port ? `:${parsed.port}` : ""}`);
+  }
+  return [...variants];
+}
+
 function traceNameForUrl(url: string): string {
   const parsed = new URL(url);
   return `${parsed.hostname.replace(/^www\./, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}.md`;
@@ -46,7 +76,7 @@ function experimentFromArgs(): SourceExperiment {
     .filter(Boolean);
   return {
     inputUrl: parsed.toString(),
-    allowedOrigins: [...new Set([parsed.origin, ...extraOrigins])],
+    allowedOrigins: [...new Set([...originVariants(parsed.origin), ...extraOrigins.flatMap(originVariants)])],
     maxRequests: numericArg("--max-requests", 40),
     maxPages: numericArg("--max-pages", 3),
     maxPayloadBytes: numericArg("--max-payload-bytes", 5_000_000),
@@ -59,7 +89,11 @@ function experimentFromArgs(): SourceExperiment {
 async function main(): Promise<void> {
   const experiment = experimentFromArgs();
   const traceDir = argValue("--trace-dir") ?? DEFAULT_TRACE_DIR;
-  const result = await runGenericStructuredExtraction(experiment);
+  const result = await runGenericStructuredExtraction(experiment, {
+    runtime: runtimeArg(),
+    budget: budgetArg(),
+    checkpointDir: argValue("--checkpoint-dir"),
+  });
   const lines = formatGenericStructuredExtractionResult(result);
   console.log(lines.join("\n"));
 

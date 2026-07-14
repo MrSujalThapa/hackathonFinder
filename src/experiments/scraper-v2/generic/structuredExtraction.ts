@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import { acquireGenericArtifacts } from "@/experiments/scraper-v2/generic/acquisition";
+import { ExistingCustomRuntime } from "@/experiments/scraper-v2/generic/crawlRuntime";
 import { runGenericDomExtraction } from "@/experiments/scraper-v2/generic/domExtraction";
 import { validateEventIntent } from "@/experiments/scraper-v2/generic/eventIntentValidation";
 import { inferGenericEventSchema } from "@/experiments/scraper-v2/generic/fieldInference";
@@ -13,6 +13,8 @@ import {
 import type {
   AcquiredArtifact,
   CandidateRecordSet,
+  CrawlRuntime,
+  DiscoveryBudget,
   EventIntentValidation,
   GenericStructuredExtractionResult,
   InferredEventSchema,
@@ -89,6 +91,9 @@ function selectRecordSet(
   const validationById = new Map(validations?.map((validation) => [validation.recordSetId, validation]));
   const candidates = discovery.recordSets
     .filter((recordSet) => {
+      if (recordSet.rejectionReasons.some((reason) => /sponsor-only|filter\/facet-like|form\/questionnaire-like/i.test(reason))) {
+        return false;
+      }
       const viableLeadCount = viableLeadCounts?.get(recordSet.recordSetId);
       if (viableLeadCounts && (viableLeadCount ?? 0) <= 0) return false;
       const validation = validationById.get(recordSet.recordSetId);
@@ -120,10 +125,13 @@ function selectRecordSet(
   return candidates[0];
 }
 
-function staticArtifactsSufficient(artifacts: AcquiredArtifact[]): boolean {
+function staticArtifactsSufficientForExperiment(experiment: SourceExperiment, artifacts: AcquiredArtifact[]): boolean {
   const discovery = mergeCompatibleRecordSets(discoverGenericRecordSets(artifacts));
   const selected = selectRecordSet(discovery);
-  return Boolean(selected);
+  if (!selected) return false;
+  const expected = experiment.expectedMinimumEventCount;
+  if (expected && selected.records.length < Math.min(20, Math.ceil(expected * 0.2))) return false;
+  return true;
 }
 
 function selectExtractionStrategy(input: {
@@ -163,12 +171,20 @@ function selectExtractionStrategy(input: {
 
 export async function runGenericStructuredExtraction(
   experiment: SourceExperiment,
+  options: { runtime?: CrawlRuntime; budget?: DiscoveryBudget; signal?: AbortSignal; checkpointDir?: string } = {},
 ): Promise<GenericStructuredExtractionResult> {
   const totalStartedAt = performance.now();
   const timings: Record<string, number> = {};
 
   const acquisitionStartedAt = performance.now();
-  const acquisition = await acquireGenericArtifacts(experiment, staticArtifactsSufficient);
+  const runtime = options.runtime ?? new ExistingCustomRuntime();
+  const acquisition = await runtime.crawl({
+    experiment,
+    budget: options.budget,
+    signal: options.signal,
+    checkpointDir: options.checkpointDir,
+    staticArtifactsSufficient: (artifacts) => staticArtifactsSufficientForExperiment(experiment, artifacts),
+  });
   timings.staticAndBrowserAcquisitionMs = ms(acquisitionStartedAt);
 
   const discoveryStartedAt = performance.now();
@@ -281,11 +297,20 @@ export function formatGenericStructuredExtractionResult(
   lines.push(`  input                     ${result.inputUrl}`);
   lines.push(`  final URL                 ${result.finalUrl}`);
   lines.push(`  static/browser            ${result.acquisitionMode}`);
+  lines.push(`  runtime                   ${result.acquisition.runtime ?? "custom"}`);
   lines.push(`  artifacts                 ${result.artifacts.length}`);
   lines.push(`  requests                  ${result.acquisition.requestsMade}`);
+  lines.push(`  queue requests added      ${result.acquisition.queueRequestsAdded ?? 0}`);
+  lines.push(`  queue duplicates          ${result.acquisition.queueDuplicateRequests ?? 0}`);
+  lines.push(`  retries attempted         ${result.acquisition.retriesAttempted ?? 0}`);
   lines.push(`  pages requested           ${result.acquisition.pagesRequested ?? 1}`);
   lines.push(`  pagination executed       ${result.acquisition.paginationExecuted ? "yes" : "no"}`);
   lines.push(`  pagination stop           ${result.acquisition.paginationStopReason ?? "unknown"}`);
+  lines.push(`  browser escalated         ${result.acquisition.browserEscalated ? "yes" : "no"}`);
+  lines.push(`  actions discovered        ${result.acquisition.actionsDiscovered ?? 0}`);
+  lines.push(`  actions executed          ${result.acquisition.actionsExecuted ?? 0}`);
+  lines.push(`  checkpoint loaded         ${result.acquisition.checkpointLoaded ? "yes" : "no"}`);
+  lines.push(`  checkpoint saved          ${result.acquisition.checkpointSaved ? "yes" : "no"}`);
   lines.push(`  browser pages             ${result.acquisition.browserPages}`);
   lines.push(`  bytes inspected           ${result.counters.bytesInspected}`);
   lines.push(`  arrays scanned            ${result.counters.arraysScanned}`);

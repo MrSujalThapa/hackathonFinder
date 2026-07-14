@@ -89,6 +89,13 @@ function noisePenalty(keys: string[], records: Array<Record<string, unknown>>): 
     penalty += 0.25;
     reasons.push("filter/facet-like array");
   }
+  if (
+    /\b(question|questions|answer|answers|ask|form|field|option|options)\b/.test(keyText) ||
+    (records.length >= 4 && records.slice(0, 12).filter((record) => /\?|\$mode:|\$option:/i.test(textBlob(record))).length / Math.min(records.length, 12) >= 0.4)
+  ) {
+    penalty += 0.35;
+    reasons.push("form/questionnaire-like array");
+  }
   if (/\b(sponsor|partner|logo)\b/.test(keyText) && !/\b(date|deadline|registration)\b/.test(keyText)) {
     penalty += 0.25;
     reasons.push("sponsor-only array");
