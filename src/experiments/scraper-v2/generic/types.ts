@@ -171,6 +171,9 @@ export type AcquisitionDiagnostics = {
   attemptedLayers: string[];
   skippedLayers: string[];
   requestsMade: number;
+  pagesRequested?: number;
+  paginationExecuted?: boolean;
+  paginationStopReason?: "not_attempted" | "no_page_param" | "page_cap" | "request_cap" | "no_growth" | "fetch_failed";
   browserPages: number;
   bytesInspected: number;
   blockedReason?: string;
@@ -333,6 +336,7 @@ export type ExtractionQualityReport = {
   dateCompleteness: number;
   duplicateRate: number;
   estimatedPrecision: number;
+  estimatedAvailableRecords?: number;
   estimatedRecall?: number;
   degradedReasons: string[];
   classification:

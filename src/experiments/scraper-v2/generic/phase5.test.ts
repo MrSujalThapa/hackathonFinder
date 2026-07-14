@@ -12,6 +12,7 @@ import { checkpointId, LocalCheckpointStore } from "@/experiments/scraper-v2/gen
 import { summarizeDateCoverage, decideCrawlContinuation } from "@/experiments/scraper-v2/generic/dateCoverage";
 import { validateEventIntent } from "@/experiments/scraper-v2/generic/eventIntentValidation";
 import { inferGenericEventSchema } from "@/experiments/scraper-v2/generic/fieldInference";
+import { evaluateGenericExtractionQuality } from "@/experiments/scraper-v2/generic/quality";
 import { boundedMap, CircuitBreaker, HostConcurrencyLimiter, retryTransient } from "@/experiments/scraper-v2/generic/runtimeControls";
 import { discoverGenericRecordSets } from "@/experiments/scraper-v2/generic/recordDiscovery";
 import { runGenericStructuredExtraction } from "@/experiments/scraper-v2/generic/structuredExtraction";
@@ -141,6 +142,29 @@ describe("phase 5 adaptive generic scraping helpers", () => {
     assert.ok(goodValidation.eventIntentScore > noisyValidation.eventIntentScore);
   });
 
+  it("does not classify bounded low-recall samples as healthy complete", () => {
+    const leads = Array.from({ length: 8 }, (_value, index) =>
+      lead(`Useful Hack ${index + 1}`, `2026-${String((index % 3) + 8).padStart(2, "0")}-01T00:00:00.000Z`),
+    );
+    const quality = evaluateGenericExtractionQuality({
+      discoveredRecords: 8,
+      leads,
+      experiment: { ...experiment, expectedMinimumEventCount: 100 },
+      estimatedAvailableRecords: 100,
+    });
+    assert.equal(quality.estimatedRecall, 0.08);
+    assert.equal(quality.classification, "degraded_under_extraction");
+
+    const bounded = evaluateGenericExtractionQuality({
+      discoveredRecords: 50,
+      leads: Array.from({ length: 50 }, (_value, index) => lead(`Cap Hack ${index}`, "2026-08-01T00:00:00.000Z")),
+      experiment,
+      estimatedAvailableRecords: 100,
+      capReached: true,
+    });
+    assert.equal(bounded.classification, "healthy_bounded");
+  });
+
   it("applies event-intent selection end-to-end and persists nothing", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>
@@ -156,6 +180,50 @@ describe("phase 5 adaptive generic scraping helpers", () => {
       assert.equal(result.selectedRecordSet?.path, "props.pageProps.good");
       assert.ok(result.eventIntentValidations.length >= 1);
       assert.equal(result.quality.obviousNonEvents, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("executes generic page-param pagination and merges records across pages", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input) => {
+      const url = new URL(String(input));
+      const page = Number(url.searchParams.get("page") ?? "1");
+      const records = Array.from({ length: 3 }, (_value, index) => ({
+        id: `p${page}-${index}`,
+        title: `Page ${page} Hack ${index}`,
+        href: `/page-${page}-hack-${index}`,
+        starts_at: `2026-${String(Math.min(9, page + 7)).padStart(2, "0")}-01`,
+        location: "Online",
+        status: "open",
+      }));
+      if (page === 1) {
+        return new Response(
+          `<!doctype html><html><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+            records,
+            meta: { total_count: 9 },
+          })}</script></html>`,
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      }
+      return new Response(JSON.stringify({ records, meta: { total_count: 9 } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    try {
+      const result = await runGenericStructuredExtraction({
+        ...experiment,
+        inputUrl: "https://events.example/list?page=1",
+        maxPages: 3,
+        maxRequests: 10,
+      });
+      assert.equal(result.acquisition.paginationExecuted, true);
+      assert.equal(result.acquisition.pagesRequested, 3);
+      assert.equal(result.selectedRecordSet?.records, 9);
+      assert.equal(result.quality.validEventLeads, 9);
+      assert.equal(result.quality.estimatedAvailableRecords, 9);
     } finally {
       globalThis.fetch = originalFetch;
     }

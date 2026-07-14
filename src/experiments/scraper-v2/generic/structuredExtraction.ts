@@ -30,13 +30,67 @@ function summarizeRecordSet(recordSet: CandidateRecordSet): Omit<CandidateRecord
   };
 }
 
+function mergeCompatibleRecordSets(discovery: RecordDiscoveryResult): RecordDiscoveryResult {
+  const merged = new Map<string, CandidateRecordSet>();
+  for (const recordSet of discovery.recordSets) {
+    const key = recordSet.path || `${recordSet.artifactKind}:<root>`;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...recordSet, records: [...recordSet.records] });
+      continue;
+    }
+    merged.set(key, {
+      ...existing,
+      recordSetId: `${existing.recordSetId}+${recordSet.recordSetId}`,
+      records: [...existing.records, ...recordSet.records],
+      inspectedRecords: existing.inspectedRecords + recordSet.inspectedRecords,
+      structuralScore: Math.max(existing.structuralScore, recordSet.structuralScore),
+      eventScore: Math.max(existing.eventScore, recordSet.eventScore),
+      confidence: Math.max(existing.confidence, recordSet.confidence),
+      duplicateRate: Math.max(existing.duplicateRate, recordSet.duplicateRate),
+      rejectionReasons: [...new Set([...existing.rejectionReasons, ...recordSet.rejectionReasons])],
+    });
+  }
+  return {
+    ...discovery,
+    recordSets: [...merged.values()].sort((left, right) => right.confidence - left.confidence),
+  };
+}
+
+function estimateAvailableRecords(
+  artifacts: AcquiredArtifact[],
+  selected: CandidateRecordSet | undefined,
+): number | undefined {
+  let estimate = selected?.records.length;
+  function inspect(value: unknown, depth = 0): void {
+    if (depth > 5 || value == null) return;
+    if (Array.isArray(value)) {
+      estimate = Math.max(estimate ?? 0, value.length);
+      value.slice(0, 8).forEach((item) => inspect(item, depth + 1));
+      return;
+    }
+    if (typeof value !== "object") return;
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (/\b(total|total_count|totalCount|available)\b/.test(key) && typeof child === "number" && child > 0) {
+        estimate = Math.max(estimate ?? 0, child);
+      }
+      inspect(child, depth + 1);
+    }
+  }
+  artifacts.forEach((artifact) => inspect(artifact.payload));
+  return estimate;
+}
+
 function selectRecordSet(
   discovery: RecordDiscoveryResult,
   validations?: EventIntentValidation[],
+  viableLeadCounts?: Map<string, number>,
 ): CandidateRecordSet | undefined {
   const validationById = new Map(validations?.map((validation) => [validation.recordSetId, validation]));
   const candidates = discovery.recordSets
     .filter((recordSet) => {
+      const viableLeadCount = viableLeadCounts?.get(recordSet.recordSetId);
+      if (viableLeadCounts && (viableLeadCount ?? 0) <= 0) return false;
       const validation = validationById.get(recordSet.recordSetId);
       if (validation) {
         return (
@@ -54,6 +108,9 @@ function selectRecordSet(
       );
     })
     .sort((left, right) => {
+      const leftViable = viableLeadCounts?.get(left.recordSetId) ?? 0;
+      const rightViable = viableLeadCounts?.get(right.recordSetId) ?? 0;
+      if (leftViable !== rightViable) return rightViable - leftViable;
       const leftValidation = validationById.get(left.recordSetId);
       const rightValidation = validationById.get(right.recordSetId);
       const leftScore = (leftValidation?.eventIntentScore ?? left.confidence) + (leftValidation?.identityScore ?? 0) * 0.25;
@@ -64,7 +121,7 @@ function selectRecordSet(
 }
 
 function staticArtifactsSufficient(artifacts: AcquiredArtifact[]): boolean {
-  const discovery = discoverGenericRecordSets(artifacts);
+  const discovery = mergeCompatibleRecordSets(discoverGenericRecordSets(artifacts));
   const selected = selectRecordSet(discovery);
   return Boolean(selected);
 }
@@ -115,7 +172,7 @@ export async function runGenericStructuredExtraction(
   timings.staticAndBrowserAcquisitionMs = ms(acquisitionStartedAt);
 
   const discoveryStartedAt = performance.now();
-  const discovery = discoverGenericRecordSets(acquisition.artifacts);
+  const discovery = mergeCompatibleRecordSets(discoverGenericRecordSets(acquisition.artifacts));
   timings.recordSetDiscoveryMs = ms(discoveryStartedAt);
 
   const schemaStartedAt = performance.now();
@@ -126,12 +183,20 @@ export async function runGenericStructuredExtraction(
   const eventIntentValidations = discovery.recordSets.map((recordSet) =>
     validateEventIntent({ recordSet, schema: schemaByRecordSet.get(recordSet.recordSetId) }),
   );
-  const selected = selectRecordSet(discovery, eventIntentValidations);
+  const leadsByRecordSet = new Map<string, GenericStructuredExtractionResult["leads"]>();
+  const viableLeadCounts = new Map<string, number>();
+  for (const recordSet of discovery.recordSets) {
+    const recordSchema = schemaByRecordSet.get(recordSet.recordSetId);
+    const recordLeads = recordSchema ? normalizeGenericRecords(recordSet, recordSchema, experiment) : [];
+    leadsByRecordSet.set(recordSet.recordSetId, recordLeads);
+    viableLeadCounts.set(recordSet.recordSetId, recordLeads.length);
+  }
+  const selected = selectRecordSet(discovery, eventIntentValidations, viableLeadCounts);
   const schema = selected ? schemaByRecordSet.get(selected.recordSetId) : undefined;
   timings.fieldInferenceMs = ms(schemaStartedAt);
 
   const normalizationStartedAt = performance.now();
-  const structuredLeads = selected && schema ? normalizeGenericRecords(selected, schema, experiment) : [];
+  const structuredLeads = selected ? leadsByRecordSet.get(selected.recordSetId) ?? [] : [];
   timings.normalizationMs = ms(normalizationStartedAt);
 
   const domStartedAt = performance.now();
@@ -159,6 +224,11 @@ export async function runGenericStructuredExtraction(
     experiment,
     blockedReason: acquisition.diagnostics.blockedReason,
     schemaRejected: strategySelected === "dom" ? dom.stopReason === "schema_rejected" : schema?.rejected,
+    estimatedAvailableRecords: estimateAvailableRecords(acquisition.artifacts, selected),
+    sourceExhausted: acquisition.diagnostics.paginationStopReason === "no_growth",
+    capReached:
+      acquisition.diagnostics.paginationStopReason === "page_cap" ||
+      acquisition.diagnostics.paginationStopReason === "request_cap",
   });
   timings.qualityEvaluationMs = ms(qualityStartedAt);
   timings.totalMs = ms(totalStartedAt);
@@ -213,6 +283,9 @@ export function formatGenericStructuredExtractionResult(
   lines.push(`  static/browser            ${result.acquisitionMode}`);
   lines.push(`  artifacts                 ${result.artifacts.length}`);
   lines.push(`  requests                  ${result.acquisition.requestsMade}`);
+  lines.push(`  pages requested           ${result.acquisition.pagesRequested ?? 1}`);
+  lines.push(`  pagination executed       ${result.acquisition.paginationExecuted ? "yes" : "no"}`);
+  lines.push(`  pagination stop           ${result.acquisition.paginationStopReason ?? "unknown"}`);
   lines.push(`  browser pages             ${result.acquisition.browserPages}`);
   lines.push(`  bytes inspected           ${result.counters.bytesInspected}`);
   lines.push(`  arrays scanned            ${result.counters.arraysScanned}`);
@@ -226,6 +299,8 @@ export function formatGenericStructuredExtractionResult(
   lines.push(`  field inference           ${seconds(result.timings.fieldInferenceMs)}`);
   lines.push(`  normalized leads          ${result.quality.normalizedLeads}`);
   lines.push(`  valid events              ${result.quality.validEventLeads}`);
+  lines.push(`  estimated available       ${result.quality.estimatedAvailableRecords ?? "unknown"}`);
+  lines.push(`  estimated recall          ${pct(result.quality.estimatedRecall)}`);
   lines.push(`  obvious non-events        ${result.quality.obviousNonEvents}`);
   lines.push(`  title completeness        ${pct(result.quality.titleCompleteness)}`);
   lines.push(`  URL completeness          ${pct(result.quality.urlCompleteness)}`);

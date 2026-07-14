@@ -35,6 +35,9 @@ export function evaluateGenericExtractionQuality(input: {
   experiment: SourceExperiment;
   blockedReason?: string;
   schemaRejected?: boolean;
+  estimatedAvailableRecords?: number;
+  sourceExhausted?: boolean;
+  capReached?: boolean;
 }): ExtractionQualityReport {
   const obviousNonEvents = input.leads.filter(isObviousNonEvent).length;
   const validEventLeads = Math.max(0, input.leads.length - obviousNonEvents);
@@ -46,28 +49,41 @@ export function evaluateGenericExtractionQuality(input: {
   if (input.leads.length > 0 && ratio(validEventLeads, input.leads.length) < 0.7) degradedReasons.push("low precision estimate");
   if (input.leads.length > 0 && ratio(input.leads.filter((lead) => lead.title).length, input.leads.length) < 0.8) degradedReasons.push("low title completeness");
   if (duplicates > 0.2) degradedReasons.push("high duplicate rate");
-  if (
-    input.experiment.expectedMinimumEventCount &&
-    validEventLeads < input.experiment.expectedMinimumEventCount * 0.5
-  ) {
+  const estimatedAvailableRecords = Math.max(
+    input.estimatedAvailableRecords ?? 0,
+    input.experiment.expectedMinimumEventCount ?? 0,
+    input.discoveredRecords,
+  ) || undefined;
+  if (estimatedAvailableRecords && validEventLeads < estimatedAvailableRecords * 0.5) {
     degradedReasons.push("under-extracted against evaluation minimum");
   }
 
   const estimatedPrecision = input.leads.length === 0 ? 0 : ratio(validEventLeads, input.leads.length);
-  const estimatedRecall = input.experiment.expectedMinimumEventCount
-    ? normalizeRatio(validEventLeads / input.experiment.expectedMinimumEventCount)
+  const estimatedRecall = estimatedAvailableRecords
+    ? normalizeRatio(validEventLeads / estimatedAvailableRecords)
     : undefined;
 
-  let classification: ExtractionQualityReport["classification"] = "healthy_complete";
+  let classification: ExtractionQualityReport["classification"] = "usable_partial";
   if (input.blockedReason) classification = "blocked";
   else if (validEventLeads === 0) classification = "failed";
   else if (estimatedPrecision < 0.9) classification = "degraded_low_precision";
-  else if (degradedReasons.some((reason) => /under-extracted|records discovered but none/i.test(reason))) {
+  else if (
+    degradedReasons.some((reason) => /under-extracted|records discovered but none/i.test(reason)) ||
+    (estimatedAvailableRecords !== undefined &&
+      validEventLeads >= 5 &&
+      estimatedAvailableRecords >= validEventLeads * 2 &&
+      (estimatedRecall ?? 0) < 0.5)
+  ) {
     classification = "degraded_under_extraction";
+  } else if (
+    (input.sourceExhausted && (estimatedRecall === undefined || estimatedRecall >= 0.8)) ||
+    (estimatedRecall !== undefined && estimatedRecall >= 0.9)
+  ) {
+    classification = "healthy_complete";
+  } else if (input.capReached && estimatedAvailableRecords !== undefined) {
+    classification = "healthy_bounded";
   } else if (estimatedRecall !== undefined && estimatedRecall < 0.8) {
     classification = "usable_partial";
-  } else if (input.experiment.expectedMinimumEventCount && validEventLeads >= input.experiment.expectedMinimumEventCount) {
-    classification = "healthy_bounded";
   } else if (validEventLeads < 5) {
     classification = "usable_partial";
   }
@@ -85,6 +101,7 @@ export function evaluateGenericExtractionQuality(input: {
     ),
     duplicateRate: duplicates,
     estimatedPrecision,
+    ...(estimatedAvailableRecords !== undefined ? { estimatedAvailableRecords } : {}),
     ...(estimatedRecall !== undefined ? { estimatedRecall } : {}),
     degradedReasons,
     classification,

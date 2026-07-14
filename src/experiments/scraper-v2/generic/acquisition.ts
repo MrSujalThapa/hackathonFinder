@@ -112,6 +112,140 @@ function artifactKindForScript(id: string, payload: unknown): AcquiredArtifactKi
   return "embedded_json";
 }
 
+function payloadFingerprint(payload: unknown): string {
+  return JSON.stringify(payload).slice(0, 10_000);
+}
+
+function numericPageParam(url: string): { param: string; page: number } | undefined {
+  try {
+    const parsed = new URL(url);
+    for (const param of ["page", "p"]) {
+      const value = parsed.searchParams.get(param);
+      if (!value) continue;
+      const page = Number(value);
+      if (Number.isInteger(page) && page >= 1) return { param, page };
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function largestArrayLength(value: unknown, depth = 0): number {
+  if (depth > 5 || value == null) return 0;
+  if (Array.isArray(value)) {
+    return Math.max(value.length, ...value.slice(0, 8).map((item) => largestArrayLength(item, depth + 1)));
+  }
+  if (typeof value !== "object") return 0;
+  return Math.max(0, ...Object.values(value as Record<string, unknown>).map((child) => largestArrayLength(child, depth + 1)));
+}
+
+function eventPayloadScore(value: unknown): number {
+  const text = JSON.stringify(value).slice(0, 20_000).toLowerCase();
+  let score = 0;
+  if (/\b(hackathon|challenge|event|competition|summit|workshop)\b/.test(text)) score += 3;
+  if (/\b(title|name|url|href|slug)\b/.test(text)) score += 1;
+  if (/\b(start|date|deadline|submission|open|upcoming|location|venue)\b/.test(text)) score += 2;
+  if (/\b(organization|theme|eligibility)\b/.test(text) && !/\b(submission|deadline|location)\b/.test(text)) score -= 2;
+  return score;
+}
+
+async function acquirePageParamArtifacts(input: {
+  experiment: SourceExperiment;
+  artifacts: AcquiredArtifact[];
+  nextArtifactIndex: number;
+}): Promise<{
+  artifacts: AcquiredArtifact[];
+  requestsMade: number;
+  pagesRequested: number;
+  stopReason: NonNullable<AcquisitionDiagnostics["paginationStopReason"]>;
+}> {
+  if (input.experiment.maxPages <= 1 || input.artifacts.length >= input.experiment.maxRequests) {
+    return { artifacts: [], requestsMade: 0, pagesRequested: 1, stopReason: "page_cap" };
+  }
+
+  const seed = input.artifacts
+    .filter((artifact) =>
+      artifact.kind !== "html" &&
+      artifact.kind !== "dom_snapshot" &&
+      largestArrayLength(artifact.payload) >= 2 &&
+      isSafePublicOrigin(artifact.sourceUrl, input.experiment.allowedOrigins)
+    )
+    .sort((left, right) => {
+      const networkPriority = Number(right.kind === "network_json") - Number(left.kind === "network_json");
+      if (networkPriority !== 0) return networkPriority;
+      const eventPriority = eventPayloadScore(right.payload) - eventPayloadScore(left.payload);
+      if (eventPriority !== 0) return eventPriority;
+      return largestArrayLength(right.payload) - largestArrayLength(left.payload);
+    })[0];
+  if (!seed) {
+    return { artifacts: [], requestsMade: 0, pagesRequested: 1, stopReason: "no_page_param" };
+  }
+  const pageParam = numericPageParam(seed.sourceUrl) ?? { param: "page", page: 1 };
+
+  const seenFingerprints = new Set(input.artifacts.map((artifact) => payloadFingerprint(artifact.payload)));
+  const out: AcquiredArtifact[] = [];
+  let requestsMade = 0;
+  let pagesRequested = 1;
+  let stopReason: NonNullable<AcquisitionDiagnostics["paginationStopReason"]> = "page_cap";
+
+  for (let page = pageParam.page + 1; page <= input.experiment.maxPages; page += 1) {
+    if (input.nextArtifactIndex + out.length >= input.experiment.maxRequests) {
+      stopReason = "request_cap";
+      break;
+    }
+    const url = new URL(seed.sourceUrl);
+    url.searchParams.set(pageParam.param, String(page));
+    if (!isSafePublicOrigin(url.toString(), input.experiment.allowedOrigins)) {
+      stopReason = "fetch_failed";
+      break;
+    }
+    pagesRequested += 1;
+    requestsMade += 1;
+    const startedAt = performance.now();
+    const response = await fetch(url, {
+      headers: {
+        accept: "application/json, text/plain, */*",
+        "user-agent": "hackathon-finder-structured-v2-experiment/1.0",
+      },
+    }).catch(() => undefined);
+    if (!response?.ok) {
+      stopReason = "fetch_failed";
+      break;
+    }
+    const text = await response.text().catch(() => "");
+    if (!text || byteLength(text) > input.experiment.maxPayloadBytes) {
+      stopReason = "fetch_failed";
+      break;
+    }
+    const payload = parseJsonSafe(text, input.experiment.maxPayloadBytes);
+    if (payload === undefined) {
+      stopReason = "fetch_failed";
+      break;
+    }
+    const fingerprint = payloadFingerprint(payload);
+    if (seenFingerprints.has(fingerprint)) {
+      stopReason = "no_growth";
+      break;
+    }
+    seenFingerprints.add(fingerprint);
+    out.push(
+      makeArtifact({
+        kind: "network_json",
+        index: input.nextArtifactIndex + out.length,
+        sourceUrl: response.url || url.toString(),
+        contentType: response.headers.get("content-type") ?? undefined,
+        payload,
+        rawBytes: byteLength(text),
+        acquisitionMode: "static",
+        timingMs: ms(startedAt),
+      }),
+    );
+  }
+
+  return { artifacts: out, requestsMade, pagesRequested, stopReason };
+}
+
 function extractStaticArtifacts(
   html: string,
   finalUrl: string,
@@ -354,6 +488,8 @@ export async function acquireGenericArtifacts(
   let artifacts = staticResult.artifacts.slice(0, experiment.maxRequests);
   let requestsMade = 1;
   let browserPages = 0;
+  let pagesRequested = 1;
+  let paginationStopReason: NonNullable<AcquisitionDiagnostics["paginationStopReason"]> = "not_attempted";
 
   attemptedLayers.push("framework state");
   if (!staticArtifactsSufficient(artifacts)) {
@@ -374,6 +510,21 @@ export async function acquireGenericArtifacts(
     skippedLayers.push("browser observation skipped because static artifacts were sufficient");
   }
 
+  attemptedLayers.push("generic page-param pagination");
+  const paginated = await acquirePageParamArtifacts({
+    experiment,
+    artifacts,
+    nextArtifactIndex: artifacts.length,
+  });
+  if (paginated.artifacts.length > 0) {
+    artifacts = artifacts.concat(paginated.artifacts).slice(0, experiment.maxRequests);
+  } else if (paginated.stopReason === "no_page_param") {
+    skippedLayers.push("page-param pagination skipped because no safe numeric page parameter was observed");
+  }
+  requestsMade += paginated.requestsMade;
+  pagesRequested = Math.max(pagesRequested, paginated.pagesRequested);
+  paginationStopReason = paginated.stopReason;
+
   return {
     artifacts,
     diagnostics: {
@@ -381,6 +532,9 @@ export async function acquireGenericArtifacts(
       attemptedLayers,
       skippedLayers,
       requestsMade,
+      pagesRequested,
+      paginationExecuted: paginated.artifacts.length > 0,
+      paginationStopReason,
       browserPages,
       bytesInspected: artifacts.reduce((total, artifact) => total + artifact.byteSize, 0),
       rssLinks: staticResult.rssLinks,
