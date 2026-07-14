@@ -297,9 +297,14 @@ export function planPersistence(
   for (const item of normalized) {
     const existing = existingByFingerprint.get(item.candidate.fingerprint);
     if (!existing) {
+      const row = candidateRowFromUpsertInput(item.candidate);
       candidateCreates.push({
         fingerprint: item.candidate.fingerprint,
-        row: candidateRowFromUpsertInput(item.candidate),
+        row: {
+          ...row,
+          found_at: row.found_at ?? now,
+          last_verified: row.last_verified ?? now,
+        },
         sourceInput: item.candidate,
       });
     } else {

@@ -372,6 +372,7 @@ export class BatchPersistenceStrategy implements PersistenceStrategy {
         writeSet,
         existingCandidates: candidateLoad.rows,
         existingEvidence: evidenceLoad.rows,
+        createdCandidates: writeResult.createdCandidates,
         plan,
         now: input.now.toISOString(),
         candidateIds,
@@ -448,17 +449,21 @@ async function verifyBatchFinalState(input: {
   writeSet: IncomingCandidateWrite[];
   existingCandidates: CandidateRow[];
   existingEvidence: EvidenceRow[];
+  createdCandidates: CandidateRow[];
   plan: PersistencePlan;
   now: string;
   candidateIds: string[];
 }): Promise<EvidenceFinalStateComparison> {
   const evidenceLoad = await input.repository.fetchEvidenceByCandidateIds(input.candidateIds);
+  const candidateIdByFingerprint = new Map(
+    input.createdCandidates.map((candidate) => [candidate.fingerprint, candidate.id]),
+  );
   return compareEvidenceFinalStates({
     v1: simulateV1EvidenceFinalState(
       input.writeSet,
       input.existingCandidates,
       input.existingEvidence,
-      { now: input.now },
+      { now: input.now, candidateIdByFingerprint },
     ),
     batch: evidenceRowsToStateMap(evidenceLoad.rows),
     batchMutationCount: input.plan.evidenceCreates.length + input.plan.evidenceUpdates.length,

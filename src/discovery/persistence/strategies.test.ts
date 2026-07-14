@@ -283,4 +283,143 @@ describe("batch persistence strategy integration", () => {
     assert.equal(plan.evidenceCreates[0]?.observationCount, 2);
     assert.equal(plan.evidenceCreates[0]?.row.seen_count, 2);
   });
+
+  it("reports post-write parity pass when reread evidence matches the plan", async () => {
+    const previous = process.env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE;
+    process.env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE = "true";
+    let currentEvidence = evidenceRow();
+    try {
+      const strategy = new BatchPersistenceStrategy(
+        new BatchPersistenceRepository(
+          adapter({
+            async selectCandidatesByFingerprints(fingerprints) {
+              return [candidateRow({ fingerprint: fingerprints[0] ?? "fp" })];
+            },
+            async selectEvidenceByCandidateIds() {
+              return [currentEvidence];
+            },
+            async upsertEvidenceUpdates(rows) {
+              currentEvidence = evidenceRow({
+                ...rows[0],
+                id: rows[0]?.id ?? "evidence-1",
+                candidate_id: rows[0]?.candidate_id ?? "candidate-1",
+              });
+              return [currentEvidence];
+            },
+          }),
+        ),
+      );
+
+      const result = await strategy.persist({
+        accepted: [accepted()],
+        dryRun: false,
+        now: new Date(NOW),
+        assertNotCancelled: () => {},
+      });
+
+      assert.equal(result.postWriteParity, "pass");
+      assert.equal(result.timing.postWriteParity, "pass");
+      assert.equal(result.storageFailures, 0);
+    } finally {
+      if (previous == null) {
+        delete process.env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE;
+      } else {
+        process.env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE = previous;
+      }
+    }
+  });
+
+  it("reports post-write parity pass for evidence on newly created candidates", async () => {
+    const previous = process.env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE;
+    process.env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE = "true";
+    const writtenEvidence: EvidenceRow[] = [];
+    try {
+      const strategy = new BatchPersistenceStrategy(
+        new BatchPersistenceRepository(
+          adapter({
+            async selectCandidatesByFingerprints() {
+              return [];
+            },
+            async selectEvidenceByCandidateIds() {
+              return writtenEvidence;
+            },
+            async insertEvidence(rows) {
+              const created = rows.map((row, index) =>
+                evidenceRow({
+                  id: `created-e-${index}`,
+                  candidate_id: row.candidate_id,
+                  type: row.type,
+                  url: row.url ?? null,
+                  url_key: row.url_key,
+                  title: row.title ?? null,
+                  snippet: row.snippet ?? null,
+                  raw: row.raw ?? {},
+                  found_at: row.found_at ?? NOW,
+                  first_seen_at: row.first_seen_at ?? row.found_at ?? NOW,
+                  last_seen_at: row.last_seen_at ?? row.found_at ?? NOW,
+                  seen_count: row.seen_count ?? 1,
+                  agent_run_id: row.agent_run_id ?? null,
+                }),
+              );
+              writtenEvidence.push(...created);
+              return created;
+            },
+          }),
+        ),
+      );
+
+      const result = await strategy.persist({
+        accepted: [accepted()],
+        dryRun: false,
+        now: new Date(NOW),
+        assertNotCancelled: () => {},
+      });
+
+      assert.equal(result.created, 1);
+      assert.equal(result.postWriteParity, "pass");
+      assert.equal(result.storageFailures, 0);
+    } finally {
+      if (previous == null) {
+        delete process.env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE;
+      } else {
+        process.env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE = previous;
+      }
+    }
+  });
+
+  it("reports post-write parity failure safely when reread evidence differs", async () => {
+    const previous = process.env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE;
+    process.env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE = "true";
+    try {
+      const strategy = new BatchPersistenceStrategy(
+        new BatchPersistenceRepository(
+          adapter({
+            async selectCandidatesByFingerprints(fingerprints) {
+              return [candidateRow({ fingerprint: fingerprints[0] ?? "fp" })];
+            },
+            async selectEvidenceByCandidateIds() {
+              return [evidenceRow()];
+            },
+          }),
+        ),
+      );
+
+      const result = await strategy.persist({
+        accepted: [accepted()],
+        dryRun: false,
+        now: new Date(NOW),
+        assertNotCancelled: () => {},
+      });
+
+      assert.equal(result.postWriteParity, "fail");
+      assert.equal(result.timing.postWriteParity, "fail");
+      assert.match(result.warnings.join("\n"), /Post-write parity failed/);
+    } finally {
+      if (previous == null) {
+        delete process.env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE;
+      } else {
+        process.env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE = previous;
+      }
+    }
+  });
 });

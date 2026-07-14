@@ -147,7 +147,7 @@ export function simulateV1EvidenceFinalState(
   writeSet: IncomingCandidateWrite[],
   existingCandidates: CandidateRow[],
   existingEvidence: EvidenceRow[],
-  options: { now: string },
+  options: { now: string; candidateIdByFingerprint?: Map<string, string> },
 ): {
   states: Map<string, SimulatedEvidenceState>;
   operationCount: number;
@@ -169,7 +169,9 @@ export function simulateV1EvidenceFinalState(
 
   for (const item of writeSet) {
     const candidateRef =
-      existingByFingerprint.get(item.candidate.fingerprint)?.id ?? item.candidate.fingerprint;
+      existingByFingerprint.get(item.candidate.fingerprint)?.id ??
+      options.candidateIdByFingerprint?.get(item.candidate.fingerprint) ??
+      item.candidate.fingerprint;
     for (const evidence of item.evidence) {
       operationCount += 1;
       const urlKey = normalizeEvidenceUrlKey(evidence.url);

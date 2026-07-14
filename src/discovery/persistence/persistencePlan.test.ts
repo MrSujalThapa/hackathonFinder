@@ -140,6 +140,26 @@ describe("planPersistence", () => {
     assert.equal(plan.evidenceCreates.length, 1);
   });
 
+  it("fills batch create timestamps when incoming candidates omit them", () => {
+    const plan = planPersistence(
+      [
+        write(
+          candidate({
+            foundAt: undefined,
+            lastVerified: undefined,
+          }),
+          [],
+        ),
+      ],
+      [],
+      [],
+      { now: NOW },
+    );
+
+    assert.equal(plan.candidateCreates[0]?.row.found_at, NOW);
+    assert.equal(plan.candidateCreates[0]?.row.last_verified, NOW);
+  });
+
   it("plans an existing changed candidate as an update", () => {
     const existing = rowFrom(candidate({ summary: null }));
     const plan = planPersistence([write(candidate({ summary: "New summary" }))], [existing], [], {
