@@ -74,7 +74,15 @@ export function hostnameFromUrl(url: string | null): string | null {
 
 /** Display label for a candidate source slug (never mutate storage values). */
 export function formatSourceLabel(source: string): string {
-  switch (source.toLowerCase()) {
+  const normalized = source.toLowerCase();
+  if (/^custom:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalized)) {
+    return source.slice("custom:".length)
+      .split(/[-_]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
+  switch (normalized) {
     case "mock":
       return "Mock";
     case "hacklist":

@@ -320,6 +320,41 @@ describe("GET /api/candidates", () => {
     assert.equal(body.data.candidates[0].source, "hakku");
     assert.equal(body.data.total, 1);
   });
+
+  it("accepts encoded custom source filters and matches merged provenance", async () => {
+    const store = new Map([
+      [
+        SAMPLE_ID,
+        baseDetail({
+          source: "web",
+          sourceIds: { web: "w1", "custom:hackathonmap": "map-1" },
+          status: "NEEDS_REVIEW",
+        }),
+      ],
+    ]);
+    setCandidateRepositoryForTests(createMockRepo(store));
+
+    const response = await listCandidates(
+      new Request(
+        "http://localhost/api/candidates?statuses=NEW,NEEDS_REVIEW&source=custom%3Ahackathonmap",
+      ),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.data.candidates.length, 1);
+    assert.equal(body.data.candidates[0].source, "web");
+    assert.equal(body.data.total, 1);
+  });
+
+  it("rejects malformed custom source filters", async () => {
+    setCandidateRepositoryForTests(createMockRepo(new Map()));
+    for (const source of ["custom:bad/slug", "custom:", "other:hackathonmap"]) {
+      const response = await listCandidates(
+        new Request(`http://localhost/api/candidates?source=${encodeURIComponent(source)}`),
+      );
+      assert.equal(response.status, 400, source);
+    }
+  });
 });
 
 describe("GET /api/candidates/[id]", () => {
