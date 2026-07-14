@@ -318,7 +318,7 @@ export async function acquireGenericArtifacts(
           attemptedLayers: [...attemptedLayers, "browser observation"],
           skippedLayers: [
             "static structured parsing skipped because static response was not OK",
-            "general repeated-DOM inference not implemented in Phase 3B",
+            "static structured parsing produced no safe public artifacts",
           ],
           requestsMade: 1 + browserFallback.requestsMade,
           browserPages: browserFallback.browserPages,
@@ -373,8 +373,6 @@ export async function acquireGenericArtifacts(
   } else {
     skippedLayers.push("browser observation skipped because static artifacts were sufficient");
   }
-
-  skippedLayers.push("general repeated-DOM inference not implemented in Phase 3B");
 
   return {
     artifacts,

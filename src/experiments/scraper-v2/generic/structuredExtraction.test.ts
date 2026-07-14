@@ -335,6 +335,73 @@ describe("generic structured extraction", () => {
     }
   });
 
+  it("prefers higher-precision DOM extraction over larger noisy structured records", async () => {
+    const noisyStructuredRecords = [
+      {
+        id: "home",
+        title: "Home",
+        href: "/home",
+        starts_at: "2026-08-01",
+        location: "Online",
+        status: "open",
+        kind: "hackathon event",
+      },
+      {
+        id: "about",
+        title: "About",
+        href: "/about",
+        starts_at: "2026-08-02",
+        location: "Online",
+        status: "open",
+        kind: "hackathon event",
+      },
+      {
+        id: "sponsor",
+        title: "Sponsor",
+        href: "/sponsor",
+        starts_at: "2026-08-03",
+        location: "Online",
+        status: "open",
+        kind: "hackathon event",
+      },
+      {
+        id: "faq",
+        title: "FAQ",
+        href: "/faq",
+        starts_at: "2026-08-04",
+        location: "Online",
+        status: "open",
+        kind: "hackathon event",
+      },
+      {
+        id: "menu",
+        title: "Menu",
+        href: "/menu",
+        starts_at: "2026-08-05",
+        location: "Online",
+        status: "open",
+        kind: "hackathon event",
+      },
+    ];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(
+        `<!doctype html><html><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+          props: { pageProps: { records: noisyStructuredRecords } },
+        })}</script><body>${repeatedCardsHtml}</body></html>`,
+        { status: 200, headers: { "content-type": "text/html" } },
+      );
+    try {
+      const result = await runGenericStructuredExtraction(experiment);
+      assert.equal(result.persistenceDisabled, true);
+      assert.equal(result.strategySelected, "dom");
+      assert.deepEqual(result.leads.map((lead) => lead.title), ["Alpha Hack", "Beta Build", "Gamma Jam"]);
+      assert.equal(result.quality.obviousNonEvents, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("experiment modules do not import persistence, Queue mutation, or source health writes", async () => {
     const files = [
       "src/experiments/scraper-v2/generic/acquisition.ts",

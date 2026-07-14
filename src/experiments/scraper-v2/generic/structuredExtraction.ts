@@ -43,6 +43,41 @@ function staticArtifactsSufficient(artifacts: AcquiredArtifact[]): boolean {
   return Boolean(selected);
 }
 
+function selectExtractionStrategy(input: {
+  structuredLeads: GenericStructuredExtractionResult["leads"];
+  structuredDiscoveredRecords: number;
+  structuredSchemaRejected?: boolean;
+  dom: NonNullable<GenericStructuredExtractionResult["dom"]>;
+  experiment: SourceExperiment;
+  blockedReason?: string;
+}): GenericStructuredExtractionResult["strategySelected"] {
+  if (input.dom.leads.length === 0 && input.structuredLeads.length === 0) return "none";
+  if (input.dom.leads.length === 0) return "structured";
+  if (input.structuredLeads.length === 0) return "dom";
+
+  const structuredQuality = evaluateGenericExtractionQuality({
+    discoveredRecords: input.structuredDiscoveredRecords,
+    leads: input.structuredLeads,
+    experiment: input.experiment,
+    blockedReason: input.blockedReason,
+    schemaRejected: input.structuredSchemaRejected,
+  });
+  const domQuality = evaluateGenericExtractionQuality({
+    discoveredRecords: input.dom.availableRecords ?? input.dom.leads.length,
+    leads: input.dom.leads,
+    experiment: input.experiment,
+    blockedReason: input.blockedReason,
+    schemaRejected: input.dom.stopReason === "schema_rejected",
+  });
+
+  const domPrecisionAdvantage = domQuality.estimatedPrecision - structuredQuality.estimatedPrecision;
+  const structuredLowPrecision = structuredQuality.classification === "degraded_low_precision";
+  const domUsable = domQuality.validEventLeads > 0 && domQuality.estimatedPrecision >= 0.9;
+  if (domUsable && (structuredLowPrecision || domPrecisionAdvantage >= 0.2)) return "dom";
+
+  return domQuality.validEventLeads > structuredQuality.validEventLeads ? "dom" : "structured";
+}
+
 export async function runGenericStructuredExtraction(
   experiment: SourceExperiment,
 ): Promise<GenericStructuredExtractionResult> {
@@ -70,12 +105,14 @@ export async function runGenericStructuredExtraction(
   const dom = runGenericDomExtraction(acquisition.artifacts, experiment);
   timings.domInferenceMs = ms(domStartedAt);
 
-  const strategySelected =
-    dom.leads.length > 0 && (structuredLeads.length === 0 || dom.leads.length > structuredLeads.length)
-      ? "dom"
-      : structuredLeads.length > 0
-        ? "structured"
-        : "none";
+  const strategySelected = selectExtractionStrategy({
+    structuredLeads,
+    structuredDiscoveredRecords: selected?.records.length ?? 0,
+    structuredSchemaRejected: schema?.rejected,
+    dom,
+    experiment,
+    blockedReason: acquisition.diagnostics.blockedReason,
+  });
   const leads = strategySelected === "dom" ? dom.leads : structuredLeads;
 
   const paginationStartedAt = performance.now();
