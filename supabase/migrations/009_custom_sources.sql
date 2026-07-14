@@ -30,11 +30,15 @@ create index if not exists custom_sources_enabled_idx
 create index if not exists custom_sources_location_scope_idx
   on public.custom_sources (location_scope);
 
+drop trigger if exists custom_sources_set_updated_at on public.custom_sources;
+
 create trigger custom_sources_set_updated_at
 before update on public.custom_sources
 for each row execute function public.set_updated_at();
 
 alter table public.custom_sources enable row level security;
+
+drop policy if exists "custom_sources_service_role_all" on public.custom_sources;
 
 create policy "custom_sources_service_role_all"
   on public.custom_sources
