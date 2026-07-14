@@ -46,9 +46,14 @@ function candidateHref(nodes: DomNodeSummary[], experiment: SourceExperiment): s
     if (!href || /^(#|javascript:|mailto:|tel:)/i.test(href)) continue;
     try {
       const resolved = new URL(href, experiment.inputUrl);
-      if (!experiment.allowedOrigins.includes(resolved.origin)) continue;
+      if (!/^https?:$/i.test(resolved.protocol)) continue;
       const listing = new URL(experiment.inputUrl);
-      if (resolved.pathname.replace(/\/$/, "") === listing.pathname.replace(/\/$/, "")) continue;
+      if (
+        resolved.origin === listing.origin &&
+        resolved.pathname.replace(/\/$/, "") === listing.pathname.replace(/\/$/, "")
+      ) {
+        continue;
+      }
       return resolved.toString();
     } catch {
       // Ignore malformed hrefs.
