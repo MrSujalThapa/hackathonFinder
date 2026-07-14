@@ -305,6 +305,55 @@ function parseBooleanFlag(value: string | undefined): boolean | undefined {
   return undefined;
 }
 
+function parseDiscoveryRequest(rawRequest: string, raw: string): ParsedTerminalCommand {
+  const parts = rawRequest.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+  const queryParts: string[] = [];
+  const sources: string[] = [];
+  let includeCustomSites = false;
+  let reviewPolicy: "broad" | "balanced" | "strict" | undefined;
+
+  for (const part of parts) {
+    if (!part.startsWith("--")) {
+      queryParts.push(stripQuotes(part));
+      continue;
+    }
+    if (part === "--include-custom-sites") {
+      includeCustomSites = true;
+      continue;
+    }
+    if (part.startsWith("--sources=")) {
+      const value = stripQuotes(part.slice("--sources=".length));
+      if (!value.trim()) {
+        return reject("invalid_discovery_sources", "--sources requires at least one source", raw);
+      }
+      sources.push(...value.split(",").map((item) => item.trim().toLowerCase()).filter(Boolean));
+      continue;
+    }
+    if (part.startsWith("--review-policy=")) {
+      const value = stripQuotes(part.slice("--review-policy=".length)).toLowerCase();
+      if (value !== "broad" && value !== "balanced" && value !== "strict") {
+        return reject("invalid_review_policy", "--review-policy must be broad, balanced, or strict", raw);
+      }
+      reviewPolicy = value;
+      continue;
+    }
+    return reject("unknown_discovery_flag", `Unknown discovery flag "${part}"`, raw);
+  }
+
+  const request = queryParts.join(" ").trim();
+  if (!request) {
+    return reject("missing_request", "Usage: /find <discovery request>", raw);
+  }
+  return {
+    kind: "find",
+    request,
+    raw,
+    ...(includeCustomSites ? { includeCustomSites } : {}),
+    ...(sources.length > 0 ? { sources: [...new Set(sources)] } : {}),
+    ...(reviewPolicy ? { reviewPolicy } : {}),
+  };
+}
+
 function parseSiteCommand(actionToken: string | undefined, rest: string, raw: string): ParsedTerminalCommand {
   const action = actionToken?.toLowerCase();
   if (!action) return reject("missing_site_action", "Usage: /site <save|status|check|enable|disable|remove|configure> <name>", raw);
@@ -382,7 +431,7 @@ function parseSlash(
           raw,
         );
       }
-      return { kind: "find", request, raw };
+      return parseDiscoveryRequest(request, raw);
     }
     case "sources":
       return { kind: "sources", raw };
@@ -577,7 +626,7 @@ function parseAlias(trimmed: string, raw: string): ParsedTerminalCommand | null 
         raw,
       );
     }
-    return { kind: "find", request, raw };
+    return parseDiscoveryRequest(request, raw);
   }
 
   return null;
@@ -621,7 +670,7 @@ export function parseTerminalCommand(input: string): ParsedTerminalCommand {
   if (aliased) return aliased;
 
   // Natural language discovery request.
-  return { kind: "find", request: trimmed, raw };
+  return parseDiscoveryRequest(trimmed, raw);
 }
 
 export function isActiveJobStatus(status: string | null | undefined): boolean {

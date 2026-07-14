@@ -282,7 +282,7 @@ export function DiscoveryTerminal() {
 
       try {
         const job = await createDiscoveryJob({
-          command: request,
+          command: rawDisplay.trim(),
           terminalSessionId: sessionId,
         });
         patchSession(sessionId, {

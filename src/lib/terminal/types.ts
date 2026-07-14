@@ -157,7 +157,14 @@ export type TerminalHelpTopic =
  * Never shell-executable — UI/runtime maps these to domain APIs only.
  */
 export type ParsedTerminalCommand =
-  | { kind: "find"; request: string; raw: string }
+  | {
+      kind: "find";
+      request: string;
+      raw: string;
+      includeCustomSites?: boolean;
+      sources?: string[];
+      reviewPolicy?: "broad" | "balanced" | "strict";
+    }
   | { kind: "sources"; raw: string }
   | { kind: "status"; raw: string }
   | { kind: "history"; raw: string }

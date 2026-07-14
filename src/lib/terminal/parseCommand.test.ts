@@ -27,6 +27,26 @@ describe("parseTerminalCommand", () => {
     }
   });
 
+  it("parses discovery flags and removes them from the natural-language request", () => {
+    const parsed = parseTerminalCommand(
+      "upcoming hackathons --include-custom-sites --sources=hackathonmap,hackathonradar --review-policy=broad",
+    );
+    assert.equal(parsed.kind, "find");
+    if (parsed.kind !== "find") return;
+    assert.equal(parsed.request, "upcoming hackathons");
+    assert.equal(parsed.includeCustomSites, true);
+    assert.deepEqual(parsed.sources, ["hackathonmap", "hackathonradar"]);
+    assert.equal(parsed.reviewPolicy, "broad");
+  });
+
+  it("rejects unknown discovery flags", () => {
+    const parsed = parseTerminalCommand("upcoming hackathons --wat");
+    assert.equal(parsed.kind, "rejected");
+    if (parsed.kind === "rejected") {
+      assert.equal(parsed.reason, "unknown_discovery_flag");
+    }
+  });
+
   it("parses find and search aliases", () => {
     const findAlias = parseTerminalCommand(
       "find upcoming AI hackathons in Toronto",
