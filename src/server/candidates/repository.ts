@@ -72,9 +72,10 @@ const CANDIDATE_CARD_SELECT = [
   "sheet_appended_at",
 ].join(",");
 
-function sourceFilterClause(source: string): string {
+export function sourceFilterClause(source: string): string {
   // source is validated by the API schema before it reaches the repository.
-  return `source.eq.${source},source_ids->>${source}.not.is.null`;
+  const sourceIdKey = source.replaceAll('"', '\\"');
+  return `source.eq.${source},source_ids->>"${sourceIdKey}".not.is.null`;
 }
 
 export async function listCandidates(
