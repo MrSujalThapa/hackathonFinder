@@ -30,7 +30,7 @@ const FIELD_KEY_HINTS: Record<FieldName, RegExp[]> = {
   mode: [/\b(mode|format|type|online|virtual|hybrid|remote)\b/i],
   description: [/\b(description|summary|subtitle|tagline|about|excerpt|details)\b/i],
   status: [/\b(status|state|phase|open|closed|active|upcoming|past|registration)\b/i],
-  sourceRecordId: [/\b(id|uuid|uid|identifier|key|slug|handle)\b/i],
+  sourceRecordId: [/\b(id|uuid|uid|identifier|key|slug|handle|position|rank|index)\b/i],
 };
 
 function keyMatches(path: string, patterns: RegExp[]): boolean {
@@ -45,9 +45,24 @@ function scoreTextTitle(values: unknown[], path: string): FieldMapping {
   const goodLength = texts.filter((value) => value.length >= 4 && value.length <= 140).length / Math.max(1, texts.length);
   const badUrl = texts.filter(isLikelyUrl).length / Math.max(1, texts.length);
   const statusish = texts.filter((value) => /^(open|closed|past|upcoming|active|online|virtual)$/i.test(value)).length / Math.max(1, texts.length);
+  const schemaTypeish = texts.filter((value) => /^(ListItem|ItemList|Thing|WebPage|Event)$/i.test(value)).length / Math.max(1, texts.length);
   const keyHint = keyMatches(path, FIELD_KEY_HINTS.title) ? 0.25 : 0;
+  const identityKeyPenalty =
+    keyHint === 0 && keyMatches(path, FIELD_KEY_HINTS.sourceRecordId) ? 0.35 : 0;
+  const urlKeyPenalty = keyHint === 0 && keyMatches(path, FIELD_KEY_HINTS.url) ? 0.35 : 0;
   const vocab = texts.some((value) => /hack|challenge|event|build|summit|competition|bounty/i.test(value)) ? 0.15 : 0;
-  const confidence = normalizeRatio(coverage * 0.25 + unique * 0.2 + goodLength * 0.25 + keyHint + vocab - badUrl * 0.4 - statusish * 0.35);
+  const rawConfidence =
+    coverage * 0.2 +
+    unique * 0.35 +
+    goodLength * 0.2 +
+    keyHint +
+    vocab -
+    badUrl * 0.4 -
+    statusish * 0.35 -
+    schemaTypeish * 0.45 -
+    identityKeyPenalty -
+    urlKeyPenalty;
+  const confidence = normalizeRatio(unique < 0.3 ? Math.min(rawConfidence, 0.45) : rawConfidence);
   return { path, confidence, evidence: [`coverage=${coverage.toFixed(2)}`, `unique=${unique.toFixed(2)}`] };
 }
 

@@ -157,6 +157,22 @@ describe("generic structured extraction", () => {
     assert.equal(inferGenericEventSchema(set).rejected, true);
   });
 
+  it("rejects repeated schema type labels as titles", () => {
+    const [set] = discoverGenericRecordSets([
+      artifact({
+        itemListElement: [
+          { "@type": "ListItem", position: 1, url: "https://events.example/one" },
+          { "@type": "ListItem", position: 2, url: "https://events.example/two" },
+          { "@type": "ListItem", position: 3, url: "https://events.example/three" },
+          { "@type": "ListItem", position: 4, url: "https://events.example/four" },
+          { "@type": "ListItem", position: 5, url: "https://events.example/five" },
+        ],
+      }),
+    ]).recordSets;
+    assert.ok(set);
+    assert.equal(inferGenericEventSchema(set).rejected, true);
+  });
+
   it("normalizes open/upcoming records and excludes past or completed records", () => {
     const set = selectedRecordSet();
     const schema = inferGenericEventSchema(set);
