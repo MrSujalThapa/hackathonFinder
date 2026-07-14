@@ -112,6 +112,7 @@ function emptyPlan(overrides: Partial<PersistencePlan> = {}): PersistencePlan {
       duplicateIncomingCandidates: 0,
       incomingEvidence: 0,
       uniqueEvidence: 0,
+      duplicateEvidenceObservations: 0,
     },
     ...overrides,
   };
@@ -133,6 +134,7 @@ describe("evidence final-state simulation", () => {
     const state = [...v1.states.values()][0]!;
 
     assert.equal(v1.operationCount, 2);
+    assert.equal(v1.distinctObservedIdentityCount, 1);
     assert.equal(v1.duplicateObservationCount, 1);
     assert.equal(state.row.seenCount, 2);
     assert.equal(state.row.title, "Second");
@@ -226,6 +228,8 @@ describe("evidence final-state simulation", () => {
             last_seen_at: LATER,
             agent_run_id: "run-a",
           },
+          observationCount: 2,
+          seenCountIncrement: 2,
         },
       ],
     });
@@ -261,6 +265,8 @@ describe("evidence final-state simulation", () => {
             last_seen_at: NOW,
             agent_run_id: "run-a",
           },
+          observationCount: 1,
+          seenCountIncrement: 1,
         },
       ],
     });

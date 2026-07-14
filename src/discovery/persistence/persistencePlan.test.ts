@@ -272,9 +272,13 @@ describe("planPersistence", () => {
     );
 
     assert.equal(plan.evidenceCreates.length, 1);
-    assert.equal(plan.evidenceUnchanged.length, 1);
+    assert.equal(plan.evidenceCreates[0]?.observationCount, 2);
+    assert.equal(plan.evidenceCreates[0]?.seenCountIncrement, 2);
+    assert.equal(plan.evidenceCreates[0]?.row.seen_count, 2);
+    assert.equal(plan.evidenceUnchanged.length, 0);
     assert.equal(plan.diagnostics.incomingEvidence, 2);
     assert.equal(plan.diagnostics.uniqueEvidence, 1);
+    assert.equal(plan.diagnostics.duplicateEvidenceObservations, 1);
   });
 
   it("does not create duplicate actions for idempotent unchanged reruns", () => {

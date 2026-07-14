@@ -146,6 +146,7 @@ export function simulateV1EvidenceFinalState(
 ): {
   states: Map<string, SimulatedEvidenceState>;
   operationCount: number;
+  distinctObservedIdentityCount: number;
   duplicateObservationCount: number;
   duplicateIdentityHashes: string[];
 } {
@@ -182,6 +183,7 @@ export function simulateV1EvidenceFinalState(
   return {
     states,
     operationCount,
+    distinctObservedIdentityCount: observedCounts.size,
     duplicateObservationCount: [...observedCounts.values()].reduce(
       (total, count) => total + Math.max(0, count - 1),
       0,
@@ -338,7 +340,7 @@ export function compareEvidenceFinalStates(input: {
     lastSeenAtParity,
     agentRunParity,
     v1OperationCount: input.v1.operationCount,
-    v1DistinctIdentities: input.v1.states.size,
+    v1DistinctIdentities: input.v1.distinctObservedIdentityCount,
     batchMutationCount: input.batchMutationCount,
     duplicateObservationCount: input.v1.duplicateObservationCount,
     duplicateIdentityHashes: input.v1.duplicateIdentityHashes,

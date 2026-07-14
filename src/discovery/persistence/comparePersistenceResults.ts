@@ -3,6 +3,7 @@ import path from "node:path";
 import type { AgentRunSummary } from "@/core/discovery/types";
 import type { PersistencePlan } from "@/discovery/persistence/persistencePlan";
 import type { BatchPersistenceMetrics } from "@/discovery/persistence/batchPersistenceRepository";
+import type { EvidenceFinalStateComparison } from "@/discovery/persistence/evidenceFinalState";
 
 export type PersistenceParity = "pass" | "fail";
 
@@ -15,12 +16,19 @@ export type PersistenceShadowSummary = {
   plannedUpdates: number;
   plannedUnchanged: number;
   v1EvidenceWrites: number;
+  v1DistinctEvidenceIdentities?: number;
   plannedEvidenceWrites: number;
+  duplicateEvidenceObservations?: number;
+  duplicateEvidenceIdentityHashes?: string[];
   plannedActions: number;
   candidateParity: PersistenceParity;
   candidateFieldParity: PersistenceParity;
   statusParity: PersistenceParity;
   evidenceParity: PersistenceParity;
+  evidenceFinalStateParity?: PersistenceParity;
+  seenCountParity?: PersistenceParity;
+  lastSeenAtParity?: PersistenceParity;
+  agentRunParity?: PersistenceParity;
   actionParity: PersistenceParity;
   batchWritesEnabled: false;
   estimatedBatchDatabaseCalls: number;
@@ -35,7 +43,13 @@ export type PersistenceShadowSummary = {
 };
 
 export type PersistenceShadowMismatch = {
-  area: "candidate" | "candidate-field" | "status" | "evidence" | "action";
+  area:
+    | "candidate"
+    | "candidate-field"
+    | "status"
+    | "evidence"
+    | "evidence-final-state"
+    | "action";
   message: string;
   fingerprint?: string;
   evidenceKey?: string;
@@ -47,6 +61,7 @@ export type ComparePersistenceShadowInput = {
   metrics: BatchPersistenceMetrics;
   estimatedBatchDatabaseCalls: number;
   timing: PersistenceShadowSummary["timing"];
+  evidenceFinalState?: EvidenceFinalStateComparison;
 };
 
 function parity(mismatches: PersistenceShadowMismatch[], area: PersistenceShadowMismatch["area"]): PersistenceParity {
@@ -56,7 +71,7 @@ function parity(mismatches: PersistenceShadowMismatch[], area: PersistenceShadow
 export function comparePersistenceShadow(
   input: ComparePersistenceShadowInput,
 ): { summary: PersistenceShadowSummary; mismatches: PersistenceShadowMismatch[] } {
-  const { plan, summary, metrics, estimatedBatchDatabaseCalls, timing } = input;
+  const { plan, summary, metrics, estimatedBatchDatabaseCalls, timing, evidenceFinalState } = input;
   const plannedEvidenceWrites = plan.evidenceCreates.length + plan.evidenceUpdates.length;
   const mismatches: PersistenceShadowMismatch[] = [];
 
@@ -72,11 +87,20 @@ export function comparePersistenceShadow(
       message: `update count mismatch: V1=${summary.updated} planned=${plan.candidateUpdates.length}`,
     });
   }
-  if (summary.evidenceWritten !== plannedEvidenceWrites) {
+  if (!evidenceFinalState && summary.evidenceWritten !== plannedEvidenceWrites) {
     mismatches.push({
       area: "evidence",
       message: `evidence write count mismatch: V1=${summary.evidenceWritten} planned=${plannedEvidenceWrites}`,
     });
+  }
+  if (evidenceFinalState?.parity === "fail") {
+    for (const difference of evidenceFinalState.differences) {
+      mismatches.push({
+        area: "evidence-final-state",
+        evidenceKey: difference.identityHash,
+        message: `evidence final-state mismatch: ${difference.field}`,
+      });
+    }
   }
   for (const update of plan.candidateUpdates) {
     if ("status" in update.payload) {
@@ -112,12 +136,21 @@ export function comparePersistenceShadow(
       plannedUpdates: plan.candidateUpdates.length,
       plannedUnchanged: plan.candidateUnchanged.length,
       v1EvidenceWrites: summary.evidenceWritten,
+      v1DistinctEvidenceIdentities: evidenceFinalState?.v1DistinctIdentities,
       plannedEvidenceWrites,
+      duplicateEvidenceObservations: evidenceFinalState?.duplicateObservationCount,
+      duplicateEvidenceIdentityHashes: evidenceFinalState?.duplicateIdentityHashes,
       plannedActions: plan.actionsToCreate.length,
       candidateParity: parity(mismatches, "candidate"),
       candidateFieldParity: parity(mismatches, "candidate-field"),
       statusParity: parity(mismatches, "status"),
-      evidenceParity: parity(mismatches, "evidence"),
+      evidenceParity: evidenceFinalState
+        ? evidenceFinalState.parity
+        : parity(mismatches, "evidence"),
+      evidenceFinalStateParity: evidenceFinalState?.parity,
+      seenCountParity: evidenceFinalState?.seenCountParity,
+      lastSeenAtParity: evidenceFinalState?.lastSeenAtParity,
+      agentRunParity: evidenceFinalState?.agentRunParity,
       actionParity: parity(mismatches, "action"),
       batchWritesEnabled: false,
       estimatedBatchDatabaseCalls,
@@ -141,12 +174,27 @@ export function formatPersistenceShadowSummary(summary: PersistenceShadowSummary
     line("batch planned updates", summary.plannedUpdates),
     line("batch planned unchanged", summary.plannedUnchanged),
     line("V1 evidence writes", summary.v1EvidenceWrites),
+    ...(summary.v1DistinctEvidenceIdentities != null
+      ? [line("V1 distinct evidence", summary.v1DistinctEvidenceIdentities)]
+      : []),
     line("batch planned evidence", summary.plannedEvidenceWrites),
+    ...(summary.duplicateEvidenceObservations != null
+      ? [line("duplicate observations", summary.duplicateEvidenceObservations)]
+      : []),
+    ...(summary.duplicateEvidenceIdentityHashes?.length
+      ? [line("duplicate identity hashes", summary.duplicateEvidenceIdentityHashes.join(","))]
+      : []),
     line("batch planned actions", summary.plannedActions),
     line("candidate parity", summary.candidateParity),
     line("field parity", summary.candidateFieldParity),
     line("status parity", summary.statusParity),
     line("evidence parity", summary.evidenceParity),
+    ...(summary.evidenceFinalStateParity
+      ? [line("final-state parity", summary.evidenceFinalStateParity)]
+      : []),
+    ...(summary.seenCountParity ? [line("seen-count parity", summary.seenCountParity)] : []),
+    ...(summary.lastSeenAtParity ? [line("last-seen parity", summary.lastSeenAtParity)] : []),
+    ...(summary.agentRunParity ? [line("agent-run parity", summary.agentRunParity)] : []),
     line("action parity", summary.actionParity),
     line("candidate lookup", `${summary.timing.candidateLookupMs}ms`),
     line("evidence lookup", `${summary.timing.evidenceLookupMs}ms`),

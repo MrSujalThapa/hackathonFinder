@@ -21,12 +21,19 @@ import {
 } from "@/discovery/persistence/comparePersistenceResults";
 import type { AgentRunSummary } from "@/core/discovery/types";
 import { performance } from "node:perf_hooks";
+import {
+  compareEvidenceFinalStates,
+  simulateBatchEvidenceFinalState,
+  simulateV1EvidenceFinalState,
+  type EvidenceFinalStateComparison,
+} from "@/discovery/persistence/evidenceFinalState";
 
 export type PersistenceShadowState = {
   plan: PersistencePlan;
   metrics: BatchPersistenceMetrics;
   estimatedBatchDatabaseCalls: number;
   timing: PersistenceShadowSummary["timing"];
+  evidenceFinalState: EvidenceFinalStateComparison;
 };
 
 export function isPersistenceBatchShadowEnabled(): boolean {
@@ -87,12 +94,25 @@ export async function preparePersistenceShadow(
   const plan = planPersistence(writeSet, candidateLoad.rows, evidenceLoad.rows, {
     now: options.now.toISOString(),
   });
+  const v1Evidence = simulateV1EvidenceFinalState(
+    writeSet,
+    candidateLoad.rows,
+    evidenceLoad.rows,
+    { now: options.now.toISOString() },
+  );
+  const batchEvidence = simulateBatchEvidenceFinalState(plan, evidenceLoad.rows);
+  const evidenceFinalState = compareEvidenceFinalStates({
+    v1: v1Evidence,
+    batch: batchEvidence,
+    batchMutationCount: plan.evidenceCreates.length + plan.evidenceUpdates.length,
+  });
   const planningMs = Math.round(performance.now() - planningStartedAt);
   return {
     plan,
     metrics: evidenceLoad.metrics,
     estimatedBatchDatabaseCalls:
       evidenceLoad.metrics.databaseCalls + repository.estimateWriteCalls(plan),
+    evidenceFinalState,
     timing: {
       candidateLookupMs,
       evidenceLookupMs,
@@ -112,6 +132,7 @@ export async function finalizePersistenceShadow(
     metrics: state.metrics,
     estimatedBatchDatabaseCalls: state.estimatedBatchDatabaseCalls,
     timing: state.timing,
+    evidenceFinalState: state.evidenceFinalState,
   });
   const mismatchTracePath = await writePersistenceShadowTrace(
     comparison.mismatches,

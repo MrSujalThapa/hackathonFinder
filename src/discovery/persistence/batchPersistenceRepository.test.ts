@@ -78,6 +78,7 @@ function emptyPlan(overrides: Partial<PersistencePlan> = {}): PersistencePlan {
       duplicateIncomingCandidates: 0,
       incomingEvidence: 0,
       uniqueEvidence: 0,
+      duplicateEvidenceObservations: 0,
     },
     ...overrides,
   };
@@ -205,6 +206,8 @@ describe("BatchPersistenceRepository", () => {
             type: "official_page",
             url_key: "",
           },
+          observationCount: 1,
+          seenCountIncrement: 1,
         })),
       }),
     );

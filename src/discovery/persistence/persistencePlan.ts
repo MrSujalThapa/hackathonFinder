@@ -47,11 +47,15 @@ export type EvidenceIdentity = {
 
 export type EvidenceCreate = EvidenceIdentity & {
   row: EvidenceInsert;
+  observationCount: number;
+  seenCountIncrement: number;
 };
 
 export type EvidenceUpdate = EvidenceIdentity & {
   id: string;
   payload: EvidenceUpdatePayload;
+  observationCount: number;
+  seenCountIncrement: number;
 };
 
 export type CandidateActionCreate = {
@@ -74,6 +78,7 @@ export type PersistencePlan = {
     duplicateIncomingCandidates: number;
     incomingEvidence: number;
     uniqueEvidence: number;
+    duplicateEvidenceObservations: number;
   };
 };
 
@@ -226,6 +231,40 @@ function evidenceInputToUpdate(
   };
 }
 
+function applyEvidenceObservationToInsert(
+  row: EvidenceInsert,
+  evidence: AddEvidenceInput,
+  now: string,
+): EvidenceInsert {
+  return {
+    ...row,
+    title: evidence.title ?? row.title ?? null,
+    snippet: evidence.snippet ?? row.snippet ?? null,
+    raw: (evidence.raw ?? row.raw ?? {}) as Json,
+    url: evidence.url ?? row.url ?? null,
+    last_seen_at: evidence.foundAt ?? now,
+    seen_count: (row.seen_count ?? 1) + 1,
+    agent_run_id: evidence.agentRunId ?? row.agent_run_id ?? null,
+  };
+}
+
+function applyEvidenceObservationToUpdate(
+  payload: EvidenceUpdatePayload,
+  evidence: AddEvidenceInput,
+  now: string,
+): EvidenceUpdatePayload {
+  return {
+    ...payload,
+    title: evidence.title ?? payload.title ?? null,
+    snippet: evidence.snippet ?? payload.snippet ?? null,
+    raw: (evidence.raw ?? payload.raw ?? {}) as Json,
+    url: evidence.url ?? payload.url ?? null,
+    last_seen_at: evidence.foundAt ?? now,
+    seen_count: (payload.seen_count ?? 1) + 1,
+    agent_run_id: evidence.agentRunId ?? payload.agent_run_id ?? null,
+  };
+}
+
 export function planPersistence(
   incomingWriteSet: IncomingCandidateWrite[],
   existingCandidates: CandidateRow[],
@@ -253,6 +292,7 @@ export function planPersistence(
   const actionsToCreate: CandidateActionCreate[] = [];
   let incomingEvidence = 0;
   const uniqueEvidenceKeys = new Set<string>();
+  let duplicateEvidenceObservations = 0;
 
   for (const item of normalized) {
     const existing = existingByFingerprint.get(item.candidate.fingerprint);
@@ -294,7 +334,10 @@ export function planPersistence(
     }
 
     const candidateId = existing?.id;
-    const candidateEvidenceSeen = new Set<string>();
+    const plannedEvidenceByKey = new Map<
+      string,
+      { kind: "create"; value: EvidenceCreate } | { kind: "update"; value: EvidenceUpdate }
+    >();
     for (const evidence of item.evidence) {
       incomingEvidence += 1;
       const urlKey = normalizeEvidenceUrlKey(evidence.url);
@@ -305,27 +348,52 @@ export function planPersistence(
         urlKey,
       };
       const uniqueKey = `${item.candidate.fingerprint}\u0000${evidence.type}\u0000${urlKey}`;
-      if (candidateEvidenceSeen.has(uniqueKey)) {
-        evidenceUnchanged.push(identity);
+      const planned = plannedEvidenceByKey.get(uniqueKey);
+      if (planned) {
+        duplicateEvidenceObservations += 1;
+        if (planned.kind === "create") {
+          planned.value.row = applyEvidenceObservationToInsert(
+            planned.value.row,
+            evidence,
+            now,
+          );
+          planned.value.observationCount += 1;
+          planned.value.seenCountIncrement += 1;
+        } else {
+          planned.value.payload = applyEvidenceObservationToUpdate(
+            planned.value.payload,
+            evidence,
+            now,
+          );
+          planned.value.observationCount += 1;
+          planned.value.seenCountIncrement += 1;
+        }
         continue;
       }
-      candidateEvidenceSeen.add(uniqueKey);
       uniqueEvidenceKeys.add(uniqueKey);
 
       const existingEvidenceRow = candidateId
         ? evidenceByIdentity.get(evidenceKey(candidateId, evidence.type, urlKey))
         : undefined;
       if (existingEvidenceRow) {
-        evidenceUpdates.push({
+        const update: EvidenceUpdate = {
           ...identity,
           id: existingEvidenceRow.id,
           payload: evidenceInputToUpdate(existingEvidenceRow, evidence, now),
-        });
+          observationCount: 1,
+          seenCountIncrement: 1,
+        };
+        evidenceUpdates.push(update);
+        plannedEvidenceByKey.set(uniqueKey, { kind: "update", value: update });
       } else {
-        evidenceCreates.push({
+        const create: EvidenceCreate = {
           ...identity,
           row: evidenceInputToInsert(candidateId, evidence, now),
-        });
+          observationCount: 1,
+          seenCountIncrement: 1,
+        };
+        evidenceCreates.push(create);
+        plannedEvidenceByKey.set(uniqueKey, { kind: "create", value: create });
       }
     }
   }
@@ -344,6 +412,7 @@ export function planPersistence(
       duplicateIncomingCandidates: incomingWriteSet.length - normalized.length,
       incomingEvidence,
       uniqueEvidence: uniqueEvidenceKeys.size,
+      duplicateEvidenceObservations,
     },
   };
 }

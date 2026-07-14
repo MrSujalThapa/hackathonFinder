@@ -154,6 +154,8 @@ describe("persistence shadow comparison", () => {
             type: "official_page" as const,
             url_key: "https://toronto.example/",
           },
+          observationCount: 1,
+          seenCountIncrement: 1,
         },
       ],
       evidenceUpdates: [],
@@ -165,6 +167,7 @@ describe("persistence shadow comparison", () => {
         duplicateIncomingCandidates: 0,
         incomingEvidence: 1,
         uniqueEvidence: 1,
+        duplicateEvidenceObservations: 0,
       },
     };
 
@@ -205,6 +208,7 @@ describe("persistence shadow comparison", () => {
         duplicateIncomingCandidates: 0,
         incomingEvidence: 1,
         uniqueEvidence: 1,
+        duplicateEvidenceObservations: 0,
       },
     };
 
