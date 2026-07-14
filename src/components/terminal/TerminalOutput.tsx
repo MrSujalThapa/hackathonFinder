@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { TerminalLine } from "@/lib/terminal/types";
 
 type TerminalOutputProps = {
@@ -8,6 +8,7 @@ type TerminalOutputProps = {
   live?: boolean;
   /** Restored scroll position when switching sessions. */
   scrollTop?: number;
+  scrollToBottomSignal?: number;
   onScrollTopChange?: (scrollTop: number) => void;
 };
 
@@ -40,30 +41,52 @@ export function TerminalOutput({
   lines,
   live = false,
   scrollTop = 0,
+  scrollToBottomSignal = 0,
   onScrollTopChange,
 }: TerminalOutputProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const initialScrollRef = useRef(scrollTop);
+  const nearBottomRef = useRef(true);
+  const previousLineCountRef = useRef(lines.length);
   const onScrollTopChangeRef = useRef(onScrollTopChange);
+  const [showJump, setShowJump] = useState(false);
   onScrollTopChangeRef.current = onScrollTopChange;
 
-  useEffect(() => {
+  const scrollToBottom = useCallback(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    scroller.scrollTop = initialScrollRef.current;
+    scroller.scrollTop = scroller.scrollHeight;
+    nearBottomRef.current = true;
+    setShowJump(false);
+    onScrollTopChangeRef.current?.(scroller.scrollTop);
   }, []);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    const nearBottom =
-      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
-    // Stick to bottom only when the user is already near it (or first paint).
-    if (nearBottom) {
-      bottomRef.current?.scrollIntoView({ block: "end" });
+    scroller.scrollTop = initialScrollRef.current;
+    nearBottomRef.current =
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 80;
+  }, []);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const lineCountChanged = previousLineCountRef.current !== lines.length;
+    previousLineCountRef.current = lines.length;
+    if (!lineCountChanged) return;
+    if (nearBottomRef.current) {
+      scrollToBottom();
+    } else {
+      setShowJump(true);
     }
-  }, [lines, live]);
+  }, [lines.length, live, scrollToBottom]);
+
+  useEffect(() => {
+    if (scrollToBottomSignal === 0) return;
+    scrollToBottom();
+  }, [scrollToBottom, scrollToBottomSignal]);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -72,6 +95,9 @@ export function TerminalOutput({
     const onScroll = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
+        nearBottomRef.current =
+          scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 80;
+        if (nearBottomRef.current) setShowJump(false);
         onScrollTopChangeRef.current?.(scroller.scrollTop);
       });
     };
@@ -109,6 +135,15 @@ export function TerminalOutput({
       )}
       {live ? (
         <span className="mac-terminal__cursor" aria-hidden />
+      ) : null}
+      {showJump ? (
+        <button
+          type="button"
+          className="mac-terminal__jump hf-focus"
+          onClick={scrollToBottom}
+        >
+          Jump to latest
+        </button>
       ) : null}
       <div ref={bottomRef} />
     </div>

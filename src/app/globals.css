@@ -522,6 +522,7 @@ body {
    Does not alter blueprint color tokens. */
 .mac-terminal-page {
   min-height: 0;
+  overflow: hidden;
 }
 
 .mac-terminal {
@@ -761,6 +762,7 @@ body {
 }
 
 .mac-terminal__scrollback {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -770,6 +772,28 @@ body {
   user-select: text;
   -webkit-user-select: text;
   cursor: text;
+}
+
+.mac-terminal__jump {
+  position: sticky;
+  bottom: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: block;
+  width: fit-content;
+  margin: 0.75rem auto 0;
+  border: 1px solid color-mix(in oklab, var(--mac-term-prompt) 45%, transparent);
+  border-radius: 9999px;
+  background: color-mix(in oklab, #000 62%, var(--mac-term-body));
+  padding: 0.35rem 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.7rem;
+  color: var(--mac-term-prompt);
+  box-shadow: 0 0 0 1px color-mix(in oklab, #000 45%, transparent);
+}
+
+.mac-terminal__jump:hover {
+  color: var(--mac-term-fg);
 }
 
 .mac-terminal__lines {

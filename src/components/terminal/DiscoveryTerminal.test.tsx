@@ -73,4 +73,53 @@ describe("terminal UI components", () => {
     assert.equal(again, true);
     cleanup();
   });
+
+  it("shows Jump to latest when output arrives while scrolled up", async () => {
+    const React = await import("react");
+    const { render, screen, cleanup, fireEvent } = await import(
+      "@testing-library/react"
+    );
+    const { TerminalOutput } = await import(
+      "@/components/terminal/TerminalOutput"
+    );
+
+    const initialLines = Array.from({ length: 20 }, (_value, index) => ({
+      id: `line-${index}`,
+      kind: "system" as const,
+      text: `Line ${index}`,
+    }));
+    const { rerender } = render(
+      React.createElement(TerminalOutput, { lines: initialLines }),
+    );
+    const scroller = screen.getByLabelText("Discovery console output");
+    Object.defineProperty(scroller, "scrollHeight", {
+      configurable: true,
+      value: 2000,
+    });
+    Object.defineProperty(scroller, "clientHeight", {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value: 200,
+    });
+    fireEvent.scroll(scroller);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    rerender(
+      React.createElement(TerminalOutput, {
+        lines: [
+          ...initialLines,
+          { id: "line-new", kind: "system" as const, text: "New output" },
+        ],
+      }),
+    );
+
+    assert.ok(screen.getByRole("button", { name: /jump to latest/i }));
+    fireEvent.click(screen.getByRole("button", { name: /jump to latest/i }));
+    assert.equal((scroller as HTMLElement).scrollTop, 2000);
+    cleanup();
+  });
 });

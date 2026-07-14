@@ -98,6 +98,7 @@ export function DiscoveryTerminal() {
   const [sourcesLoading, setSourcesLoading] = useState(false);
   const [sourcesError, setSourcesError] = useState<string | null>(null);
   const [railCollapsed, setRailCollapsed] = useState(true);
+  const [scrollToBottomSignal, setScrollToBottomSignal] = useState(0);
 
   /** Session currently owning the live EventSource (not always activeId). */
   const streamingSessionIdRef = useRef<string | null>(null);
@@ -680,6 +681,7 @@ export function DiscoveryTerminal() {
     const parsed = parseTerminalCommand(raw);
 
     if (parsed.kind === "empty") return;
+    setScrollToBottomSignal((value) => value + 1);
 
     if (parsed.kind !== "rejected" && parsed.kind !== "clear") {
       patchSession(sessionId, (s) => {
@@ -1134,7 +1136,7 @@ export function DiscoveryTerminal() {
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row lg:items-stretch">
         <MacTerminalChrome
-          className="flex min-h-[min(82dvh,52rem)] flex-1 flex-col lg:min-h-[min(88dvh,58rem)]"
+          className="flex h-[min(82dvh,52rem)] min-h-0 flex-1 flex-col lg:h-[min(88dvh,58rem)]"
           title={`hackfinder — ${active.title} — 120×40`}
           status={live ? `running · ${windowStatus}` : windowStatus}
         >
@@ -1158,6 +1160,7 @@ export function DiscoveryTerminal() {
             lines={active.lines}
             live={live}
             scrollTop={active.scrollTop}
+            scrollToBottomSignal={scrollToBottomSignal}
             onScrollTopChange={(top) => {
               liveScrollTopRef.current = top;
             }}
