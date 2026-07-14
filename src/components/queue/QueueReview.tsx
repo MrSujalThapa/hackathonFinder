@@ -27,6 +27,12 @@ export function QueueReview() {
     return queue.sourceOptions;
   }, [queue.sourceOptions]);
 
+  useEffect(() => {
+    if (sourceFilter && sources.length > 0 && !sources.includes(sourceFilter)) {
+      setSourceFilter("");
+    }
+  }, [sourceFilter, sources]);
+
   const filtered = useMemo(() => {
     if (!sourceFilter) return queue.candidates;
     return queue.candidates.filter(

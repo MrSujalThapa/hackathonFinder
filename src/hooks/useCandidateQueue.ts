@@ -108,6 +108,7 @@ export function useCandidateQueue(sourceFilter?: string) {
   const loadingMoreRef = useRef(false);
   const totalRef = useRef(0);
   const sourceFilterRef = useRef<string | undefined>(sourceFilter);
+  const requestSeqRef = useRef(0);
 
   useEffect(() => {
     sourceFilterRef.current = sourceFilter;
@@ -174,6 +175,7 @@ export function useCandidateQueue(sourceFilter?: string) {
 
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || exhaustedRef.current) return;
+    const requestSeq = requestSeqRef.current;
     loadingMoreRef.current = true;
     setState((prev) => ({ ...prev, loadingMore: true }));
     try {
@@ -184,29 +186,38 @@ export function useCandidateQueue(sourceFilter?: string) {
           sort: "score",
           source: sourceFilterRef.current,
           cursor: cursorRef.current ?? undefined,
+          requestPurpose: "queue_pagination",
         }),
       );
+      if (requestSeq !== requestSeqRef.current) return;
       cursorRef.current = page.nextCursor;
       exhaustedRef.current = !page.nextCursor;
       mergeFetchedCandidates(page.candidates, page.total);
       void refreshSourceOptions();
     } catch (error) {
+      if (requestSeq !== requestSeqRef.current) return;
       setState((prev) => ({
         ...prev,
         loadingMore: false,
         error:
-          error instanceof CandidatesApiError
-            ? error.message
-            : error instanceof Error
+          candidatesRef.current.length > 0
+            ? prev.error
+            : error instanceof CandidatesApiError
               ? error.message
-              : "Failed to load more queue candidates",
+              : error instanceof Error
+                ? error.message
+                : "Failed to load more queue candidates",
       }));
     } finally {
-      loadingMoreRef.current = false;
+      if (requestSeq === requestSeqRef.current) {
+        loadingMoreRef.current = false;
+      }
     }
   }, [mergeFetchedCandidates, refreshSourceOptions]);
 
   const load = useCallback(async () => {
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
     setState((prev) => ({ ...prev, loading: true, error: null }));
     try {
       cursorRef.current = null;
@@ -215,15 +226,17 @@ export function useCandidateQueue(sourceFilter?: string) {
       const firstPage = await timedAsync("queue.initial_fetch", async () => {
         const [page, sources] = await Promise.all([
           fetchCandidates({
-          statuses: [...QUEUE_STATUSES],
-          limit: QUEUE_BATCH_SIZE,
-          sort: "score",
+            statuses: [...QUEUE_STATUSES],
+            limit: QUEUE_BATCH_SIZE,
+            sort: "score",
             source: sourceFilterRef.current,
+            requestPurpose: "queue_initial",
           }),
           fetchCandidateSources().catch(() => ({ sources: [] })),
         ]);
         return { page, sources };
       });
+      if (requestSeq !== requestSeqRef.current) return;
       cursorRef.current = firstPage.page.nextCursor;
       exhaustedRef.current = !firstPage.page.nextCursor;
       const seen = seenRef.current;
@@ -245,6 +258,7 @@ export function useCandidateQueue(sourceFilter?: string) {
         hasMore: !exhaustedRef.current,
       });
     } catch (error) {
+      if (requestSeq !== requestSeqRef.current) return;
       setState((prev) => ({
         ...prev,
         loading: false,

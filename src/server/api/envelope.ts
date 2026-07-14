@@ -55,6 +55,12 @@ export const listCandidatesQuerySchema = z.object({
   source: z.string().min(1).refine(isValidDiscoverySourceId, "Invalid source id").optional(),
   sort: z.enum(["score", "found_at", "name"]).optional().default("score"),
   q: z.string().optional(),
+  requestPurpose: z
+    .string()
+    .trim()
+    .max(64)
+    .regex(/^[a-z0-9_-]+$/i, "Invalid request purpose")
+    .optional(),
 });
 
 export const candidateIdSchema = z.string().uuid("Invalid candidate id");
@@ -65,6 +71,7 @@ export const decisionBodySchema = z.object({
 
 export type ApiErrorCode =
   | "VALIDATION_ERROR"
+  | "CANDIDATE_QUERY_FAILED"
   | "CANDIDATE_NOT_FOUND"
   | "INTERNAL_ERROR"
   | "MOCK_MODE_REQUIRED"

@@ -48,6 +48,7 @@ export async function fetchCandidates(params: {
   q?: string;
   sort?: string;
   cursor?: string;
+  requestPurpose?: string;
 }): Promise<ListCandidatesResponse> {
   return timedAsync("client.list_fetch", async () => {
     const search = new URLSearchParams();
@@ -57,7 +58,16 @@ export async function fetchCandidates(params: {
     if (params.source) search.set("source", params.source);
     if (params.q) search.set("q", params.q);
     if (params.sort) search.set("sort", params.sort);
-    if (params.cursor) search.set("cursor", params.cursor);
+    if (
+      typeof params.cursor === "string" &&
+      params.cursor.length > 0 &&
+      params.cursor !== "undefined" &&
+      params.cursor !== "null" &&
+      params.cursor !== "[object Object]"
+    ) {
+      search.set("cursor", params.cursor);
+    }
+    if (params.requestPurpose) search.set("requestPurpose", params.requestPurpose);
 
     const response = await fetch(`/api/candidates?${search.toString()}`, {
       cache: "no-store",

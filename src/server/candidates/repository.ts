@@ -37,8 +37,8 @@ function decodeCursor(cursor: string): { score?: number; foundAt: string; id: st
   return { foundAt, id };
 }
 
-function encodeCursor(row: { score: number; found_at: string; id: string }): string {
-  return Buffer.from(`${row.score}|${row.found_at}|${row.id}`, "utf8").toString("base64url");
+function encodeCursor(row: { score: number | null; found_at: string; id: string }): string {
+  return Buffer.from(`${row.score ?? 0}|${row.found_at}|${row.id}`, "utf8").toString("base64url");
 }
 
 /** Columns required for CandidateCard mapping — avoids pulling description/fingerprint blobs. */
@@ -139,7 +139,13 @@ export async function listCandidates(
   const { data, error, count } = await query;
 
   if (error) {
-    throw new Error(`Failed to list candidates: ${error.message}`);
+    const queryError = new Error(`Failed to list candidates: ${error.message}`);
+    queryError.name = "CandidateQueryError";
+    Object.assign(queryError, {
+      dbCode: error.code,
+      dbMessage: error.message,
+    });
+    throw queryError;
   }
 
   type CandidateRow = Database["public"]["Tables"]["candidates"]["Row"];
