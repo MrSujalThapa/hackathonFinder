@@ -36,6 +36,7 @@ import {
 } from "@/server/customSources/repository";
 import type { CustomSource } from "@/server/customSources/types";
 import { createDiscoveryPerformanceTracker } from "@/discovery/performance";
+import type { IncomingCandidateWrite } from "@/discovery/persistence/persistencePlan";
 
 export type DiscoveryRunMode = "auto" | "agent" | "deterministic";
 
@@ -66,6 +67,7 @@ export type RunDiscoveryInput = {
   runId?: string;
   queueWaitMs?: number;
   jobStartOverheadMs?: number;
+  onAcceptedWriteSet?: (writeSet: IncomingCandidateWrite[]) => void;
 };
 
 export type DiscoveryRunResult = {
@@ -569,6 +571,7 @@ export async function runDiscovery(
       emitPlansAsEvents: Boolean(input.eventSink),
       customSources: customSelection.customSources,
       performanceTracker,
+      onAcceptedWriteSet: input.onAcceptedWriteSet,
     };
 
     const summary = await executeDiscoveryPipeline(

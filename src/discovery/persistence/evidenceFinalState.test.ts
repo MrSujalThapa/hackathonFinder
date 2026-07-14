@@ -4,6 +4,7 @@ import type { AddEvidenceInput, UpsertCandidateInput } from "@/core/candidates/t
 import type { CandidateRow, EvidenceRow, IncomingCandidateWrite, PersistencePlan } from "@/discovery/persistence/persistencePlan";
 import {
   compareEvidenceFinalStates,
+  evidenceRowsToStateMap,
   simulateBatchEvidenceFinalState,
   simulateV1EvidenceFinalState,
 } from "@/discovery/persistence/evidenceFinalState";
@@ -280,5 +281,30 @@ describe("evidence final-state simulation", () => {
     assert.equal(comparison.parity, "fail");
     assert.equal(comparison.seenCountParity, "fail");
     assert.ok(comparison.differences.every((diff) => !String(diff.identityHash).includes("example")));
+  });
+
+  it("normalizes equivalent database timestamp encodings for final-state comparison", () => {
+    const comparison = compareEvidenceFinalStates({
+      v1: simulateV1EvidenceFinalState(
+        [write([evidence({ foundAt: "2026-07-14T12:00:00.000Z" })])],
+        [candidateRow()],
+        [evidenceRow({ last_seen_at: "2026-07-14T11:00:00+00:00" })],
+        { now: NOW },
+      ),
+      batch: evidenceRowsToStateMap([
+        evidenceRow({
+          last_seen_at: "2026-07-14T12:00:00+00:00",
+          seen_count: 6,
+          agent_run_id: "run-a",
+          title: "First",
+          snippet: "One",
+          raw: { n: 1 },
+          url: "https://example.test/event?utm_source=noise#top",
+        }),
+      ]),
+      batchMutationCount: 1,
+    });
+
+    assert.equal(comparison.parity, "pass");
   });
 });

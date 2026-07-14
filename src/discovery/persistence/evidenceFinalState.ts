@@ -79,13 +79,18 @@ function rowToState(row: EvidenceRow): SimulatedEvidenceState {
       title: row.title,
       snippet: row.snippet,
       raw: row.raw,
-      foundAt: row.found_at,
-      firstSeenAt: row.first_seen_at ?? row.found_at,
-      lastSeenAt: row.last_seen_at ?? row.found_at,
+      foundAt: normalizeTimestamp(row.found_at),
+      firstSeenAt: normalizeTimestamp(row.first_seen_at ?? row.found_at),
+      lastSeenAt: normalizeTimestamp(row.last_seen_at ?? row.found_at),
       seenCount: row.seen_count ?? 1,
       agentRunId: row.agent_run_id ?? null,
     },
   };
+}
+
+function normalizeTimestamp(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
 function applyObservation(
@@ -262,6 +267,17 @@ export function simulateBatchEvidenceFinalState(
     if (existing) {
       states.set(key, applyUpdate(existing, update));
     }
+  }
+  return states;
+}
+
+export function evidenceRowsToStateMap(
+  rows: EvidenceRow[],
+): Map<string, SimulatedEvidenceState> {
+  const states = new Map<string, SimulatedEvidenceState>();
+  for (const row of rows) {
+    const state = rowToState(row);
+    states.set(stateKey(state.identity.candidateRef, state.identity.type, state.identity.urlKey), state);
   }
   return states;
 }

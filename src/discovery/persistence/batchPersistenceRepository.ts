@@ -1,10 +1,10 @@
 import type { AddActionInput } from "@/core/candidates/types";
+import { performance } from "node:perf_hooks";
 import type { Database } from "@/lib/supabase/database.types";
 import { createServiceSupabaseClient } from "@/lib/supabase/createServiceClient";
 import type {
   CandidateInsert,
   CandidateRow,
-  CandidateUpdate,
   EvidenceCreate,
   EvidenceRow,
   EvidenceUpdate,
@@ -12,8 +12,13 @@ import type {
 } from "@/discovery/persistence/persistencePlan";
 
 type CandidateActionInsert = Database["public"]["Tables"]["candidate_actions"]["Insert"];
-type CandidateUpdateRow = { id: string } & CandidateUpdate["payload"];
-type EvidenceUpdateRow = { id: string } & EvidenceUpdate["payload"];
+type CandidateUpdateRow = CandidateInsert & { id: string };
+type EvidenceUpdateRow = EvidenceUpdate["payload"] & {
+  id: string;
+  candidate_id: string;
+  type: EvidenceUpdate["type"];
+  url_key: string;
+};
 
 export type BatchPersistenceMetrics = {
   databaseCalls: number;
@@ -52,6 +57,14 @@ export type BatchPersistenceWriteResult = {
   updatedEvidence: EvidenceRow[];
   createdActions: unknown[];
   metrics: BatchPersistenceMetrics;
+  timings: {
+    candidateCreatesMs: number;
+    candidateUpdatesMs: number;
+    evidenceCreatesMs: number;
+    evidenceUpdatesMs: number;
+    actionsMs: number;
+    totalMs: number;
+  };
 };
 
 const DEFAULT_CHUNK_SIZES: BatchPersistenceChunkSizes = {
@@ -130,7 +143,9 @@ export class BatchPersistenceRepository {
   }
 
   async writePlan(plan: PersistencePlan): Promise<BatchPersistenceWriteResult> {
+    const totalStartedAt = performance.now();
     const metrics = emptyMetrics();
+    const candidateCreatesStartedAt = performance.now();
     const createdCandidates = await this.writeChunked(
       "candidateInsert",
       plan.candidateCreates.map((item) => item.row),
@@ -138,13 +153,22 @@ export class BatchPersistenceRepository {
       (rows) => this.adapter.insertCandidates(rows),
       metrics,
     );
+    const candidateCreatesMs = Math.round(performance.now() - candidateCreatesStartedAt);
+    const candidateUpdatesStartedAt = performance.now();
     const updatedCandidates = await this.writeChunked(
       "candidateUpdate",
-      plan.candidateUpdates.map((item) => ({ id: item.id, ...item.payload })),
+      plan.candidateUpdates.map((item) => ({
+        ...item.existing,
+        ...item.payload,
+        id: item.id,
+        fingerprint: item.fingerprint,
+      })),
       this.chunkSizes.candidateWrite,
       (rows) => this.adapter.upsertCandidateUpdates(rows),
       metrics,
     );
+    const candidateUpdatesMs = Math.round(performance.now() - candidateUpdatesStartedAt);
+    const evidenceCreatesStartedAt = performance.now();
     const createdEvidence = await this.writeChunked(
       "evidenceInsert",
       plan.evidenceCreates.map((item) => item.row),
@@ -152,13 +176,23 @@ export class BatchPersistenceRepository {
       (rows) => this.adapter.insertEvidence(rows),
       metrics,
     );
+    const evidenceCreatesMs = Math.round(performance.now() - evidenceCreatesStartedAt);
+    const evidenceUpdatesStartedAt = performance.now();
     const updatedEvidence = await this.writeChunked(
       "evidenceUpdate",
-      plan.evidenceUpdates.map((item) => ({ id: item.id, ...item.payload })),
+      plan.evidenceUpdates.map((item) => ({
+        id: item.id,
+        candidate_id: item.candidateId ?? "__pending_candidate_id__",
+        type: item.type,
+        url_key: item.urlKey,
+        ...item.payload,
+      })),
       this.chunkSizes.evidenceWrite,
       (rows) => this.adapter.upsertEvidenceUpdates(rows),
       metrics,
     );
+    const evidenceUpdatesMs = Math.round(performance.now() - evidenceUpdatesStartedAt);
+    const actionsStartedAt = performance.now();
     const createdActions = await this.writeChunked(
       "actionInsert",
       plan.actionsToCreate.map((item) => actionRow(item.candidateId, item.action)),
@@ -166,6 +200,7 @@ export class BatchPersistenceRepository {
       (rows) => this.adapter.insertActions(rows),
       metrics,
     );
+    const actionsMs = Math.round(performance.now() - actionsStartedAt);
 
     return {
       createdCandidates,
@@ -174,6 +209,14 @@ export class BatchPersistenceRepository {
       updatedEvidence,
       createdActions,
       metrics,
+      timings: {
+        candidateCreatesMs,
+        candidateUpdatesMs,
+        evidenceCreatesMs,
+        evidenceUpdatesMs,
+        actionsMs,
+        totalMs: Math.round(performance.now() - totalStartedAt),
+      },
     };
   }
 

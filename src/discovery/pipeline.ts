@@ -52,9 +52,11 @@ import type {
 import {
   finalizePersistenceShadow,
   isPersistenceBatchShadowEnabled,
+  acceptedCandidatesToWriteSet,
   preparePersistenceShadow,
   type PersistenceShadowState,
 } from "@/discovery/persistence/persistenceShadow";
+import type { IncomingCandidateWrite } from "@/discovery/persistence/persistencePlan";
 
 const SUPABASE_ENV_MESSAGE =
   "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in .env.local, or run with --dry-run.";
@@ -79,6 +81,7 @@ export type DiscoveryPipelineOptions = {
   emitPlansAsEvents?: boolean;
   customSources?: CustomSource[];
   performanceTracker?: DiscoveryPerformanceTracker;
+  onAcceptedWriteSet?: (writeSet: IncomingCandidateWrite[]) => void;
 };
 
 function initSourceStats(sources: DiscoverySourceId[]): Map<DiscoverySourceId, SourceRunStats> {
@@ -820,6 +823,12 @@ export async function executeDiscoveryPipeline(
     summary.rejected = rejected.length;
     summary.rejectedCandidates = rejected;
     summary.needsReview = accepted.filter((item) => item.status === "NEEDS_REVIEW").length;
+    options.onAcceptedWriteSet?.(
+      acceptedCandidatesToWriteSet(accepted, {
+        now,
+        agentRunId,
+      }),
+    );
 
     assertNotCancelled(options.cancellationSignal);
     await emitter.emit("persistence_started", dryRun ? "Dry-run persistence…" : "Persisting candidates…");
