@@ -27,14 +27,11 @@ import { mergeCrossSourceEvents } from "@/core/mergeEvents";
 import { evaluateEligibility, scoreHackathonEvent } from "@/core/score";
 import { verifyHackathonEvent } from "@/core/verify";
 import { sourceAuthority } from "@/core/dedupe";
-import { addEvidence, upsertCandidateByFingerprint } from "@/server/candidates/repository";
 import { completeAgentRun, createAgentRun } from "@/server/agent/runs";
 import {
   buildAcceptedSummary,
   deadlineStateFor,
   emptySummary,
-  eventEvidenceToAddInput,
-  eventToUpsertInput,
 } from "@/agent/summary";
 import { formatSearchPlan, planSearchQueries } from "@/agent/planSearchQueries";
 import { formatXPlan, planXQueries } from "@/agent/planXQueries";
@@ -47,7 +44,6 @@ import { collectCustomSource } from "@/collectors/customSource";
 import type { CustomSource } from "@/server/customSources/types";
 import type {
   DiscoveryPerformanceTracker,
-  PersistenceTiming,
 } from "@/discovery/performance";
 import {
   finalizePersistenceShadow,
@@ -57,6 +53,10 @@ import {
   type PersistenceShadowState,
 } from "@/discovery/persistence/persistenceShadow";
 import type { IncomingCandidateWrite } from "@/discovery/persistence/persistencePlan";
+import {
+  createPersistenceStrategy,
+  selectPersistenceStrategyFromEnv,
+} from "@/discovery/persistence/strategies";
 
 const SUPABASE_ENV_MESSAGE =
   "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in .env.local, or run with --dry-run.";
@@ -830,8 +830,24 @@ export async function executeDiscoveryPipeline(
       }),
     );
 
+    const strategySelection = selectPersistenceStrategyFromEnv();
+    if (strategySelection.warning) {
+      summary.warnings.push(strategySelection.warning);
+    }
+    const persistenceStrategy = createPersistenceStrategy(strategySelection);
+
     assertNotCancelled(options.cancellationSignal);
-    await emitter.emit("persistence_started", dryRun ? "Dry-run persistence…" : "Persisting candidates…");
+    await emitter.emit(
+      "persistence_started",
+      `[persistence] Strategy: ${
+        persistenceStrategy.name === "batch" ? "batch (experimental)" : "v1"
+      }`,
+    );
+    if (dryRun) {
+      await emitter.emit("persistence_started", "Dry-run persistence…");
+    } else {
+      await emitter.emit("persistence_started", "Persisting candidates…");
+    }
 
     let persistenceShadowState: PersistenceShadowState | undefined;
     if (!dryRun && isPersistenceBatchShadowEnabled()) {
@@ -849,111 +865,38 @@ export async function executeDiscoveryPipeline(
       }
     }
 
-    const seenFingerprints = new Set<string>();
     const persistenceStartedAtMs = performanceTracker?.now();
-    const persistenceTiming: PersistenceTiming = {
-      skipped: dryRun,
-      totalMs: 0,
-      candidateMs: 0,
-      evidenceMs: 0,
-      completionMs: 0,
-      acceptedCandidates: accepted.length,
-      candidateLookups: 0,
-      candidateInserts: 0,
-      candidateUpdates: 0,
-      candidateFailures: 0,
-      evidenceLookups: 0,
-      evidenceInserts: 0,
-      evidenceUpdates: 0,
-      evidenceFailures: 0,
-      databaseCalls: 0,
-    };
-
-    for (const item of accepted) {
-      assertNotCancelled(options.cancellationSignal);
-      const verification = verifyHackathonEvent(item.event, { now });
-      const upsertInput = eventToUpsertInput(
-        item.event,
-        item.score,
-        verification,
-        item.status,
+    const persistenceResult = await persistenceStrategy.persist({
+      accepted,
+      dryRun,
+      now,
+      agentRunId,
+      performanceTracker,
+      assertNotCancelled: () => assertNotCancelled(options.cancellationSignal),
+    });
+    const persistenceTiming = persistenceResult.timing;
+    summary.created += persistenceResult.created;
+    summary.updated += persistenceResult.updated;
+    summary.wouldCreate += persistenceResult.wouldCreate;
+    summary.wouldUpdate += persistenceResult.wouldUpdate;
+    summary.stored += persistenceResult.stored;
+    summary.duplicatesUpdated += persistenceResult.duplicatesUpdated;
+    summary.evidenceWritten += persistenceResult.evidenceWritten;
+    summary.wouldAttachEvidence += persistenceResult.wouldAttachEvidence;
+    summary.storageFailures += persistenceResult.storageFailures;
+    summary.warnings.push(...persistenceResult.warnings);
+    summary.errors.push(...persistenceResult.errors);
+    if (persistenceResult.strategy === "batch" && persistenceResult.postWriteParity) {
+      await emitter.emit(
+        "persistence_started",
+        `[persistence] Post-write parity: ${persistenceResult.postWriteParity}`,
       );
-      item.fingerprint = upsertInput.fingerprint;
-
-      if (dryRun) {
-        if (seenFingerprints.has(upsertInput.fingerprint)) {
-          summary.wouldUpdate += 1;
-          summary.duplicatesUpdated += 1;
-        } else {
-          seenFingerprints.add(upsertInput.fingerprint);
-          summary.wouldCreate += 1;
-          summary.stored += 1;
-        }
-        summary.wouldAttachEvidence += item.event.evidence.length;
-        continue;
-      }
-
-      try {
-        const candidateStartedAtMs = performanceTracker?.now();
-        persistenceTiming.candidateLookups += 1;
-        persistenceTiming.databaseCalls += 1;
-        const result = await upsertCandidateByFingerprint(upsertInput);
-        if (candidateStartedAtMs != null) {
-          persistenceTiming.candidateMs += performanceTracker!.now() - candidateStartedAtMs;
-        }
-        if (result.isNew) {
-          persistenceTiming.candidateInserts += 1;
-          summary.created += 1;
-          summary.stored += 1;
-        } else {
-          persistenceTiming.candidateUpdates += 1;
-          summary.updated += 1;
-          summary.duplicatesUpdated += 1;
-        }
-
-        for (const evidence of item.event.evidence) {
-          try {
-            const evidenceStartedAtMs = performanceTracker?.now();
-            persistenceTiming.evidenceLookups += 1;
-            persistenceTiming.databaseCalls += 1;
-            const savedEvidence = await addEvidence(result.candidate.id, {
-              ...eventEvidenceToAddInput(evidence),
-              agentRunId,
-            });
-            if (evidenceStartedAtMs != null) {
-              persistenceTiming.evidenceMs += performanceTracker!.now() - evidenceStartedAtMs;
-            }
-            if ((savedEvidence.seenCount ?? 1) > 1) {
-              persistenceTiming.evidenceUpdates += 1;
-            } else {
-              persistenceTiming.evidenceInserts += 1;
-            }
-            summary.evidenceWritten += 1;
-          } catch (error) {
-            persistenceTiming.evidenceFailures += 1;
-            summary.storageFailures += 1;
-            summary.warnings.push(
-              `Evidence write failed for ${item.event.name}: ${
-                error instanceof Error ? error.message : "unknown error"
-              }`,
-            );
-          }
-        }
-      } catch (error) {
-        persistenceTiming.candidateFailures += 1;
-        summary.storageFailures += 1;
-        summary.errors.push(
-          `Upsert failed for ${item.event.name}: ${
-            error instanceof Error ? error.message : "unknown error"
-          }`,
-        );
-      }
     }
     if (performanceTracker && persistenceStartedAtMs != null) {
       persistenceTiming.totalMs = performanceTracker.now() - persistenceStartedAtMs;
       performanceTracker.recordStage("persistence", persistenceStartedAtMs, performanceTracker.now(), {
         itemCount: accepted.length,
-        metadata: { dryRun },
+        metadata: { dryRun, strategy: persistenceResult.strategy },
       });
       performanceTracker.setPersistence(persistenceTiming);
     }

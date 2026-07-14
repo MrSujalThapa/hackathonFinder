@@ -24,20 +24,31 @@ export type CollectorTiming = {
 
 export type PersistenceTiming = {
   skipped: boolean;
+  strategy?: "v1" | "batch";
   totalMs: number;
+  planningMs?: number;
   candidateMs: number;
   evidenceMs: number;
+  actionMs?: number;
   completionMs: number;
   acceptedCandidates: number;
+  evidenceObservations?: number;
+  evidenceMutations?: number;
+  actionsWritten?: number;
   candidateLookups: number;
   candidateInserts: number;
   candidateUpdates: number;
+  candidateUnchanged?: number;
   candidateFailures: number;
   evidenceLookups: number;
   evidenceInserts: number;
   evidenceUpdates: number;
   evidenceFailures: number;
   databaseCalls: number;
+  retries?: number;
+  splitBatches?: number;
+  postWriteVerificationMs?: number;
+  postWriteParity?: "pass" | "fail" | "skipped";
 };
 
 export type DiscoveryPerformanceSummary = {
@@ -172,9 +183,15 @@ export class DiscoveryPerformanceTracker {
     this.summary.persistence = {
       ...timing,
       totalMs: roundMs(timing.totalMs),
+      planningMs: timing.planningMs != null ? roundMs(timing.planningMs) : undefined,
       candidateMs: roundMs(timing.candidateMs),
       evidenceMs: roundMs(timing.evidenceMs),
+      actionMs: timing.actionMs != null ? roundMs(timing.actionMs) : undefined,
       completionMs: roundMs(timing.completionMs),
+      postWriteVerificationMs:
+        timing.postWriteVerificationMs != null
+          ? roundMs(timing.postWriteVerificationMs)
+          : undefined,
     };
   }
 
@@ -248,10 +265,46 @@ export function formatPerformanceSummary(summary: DiscoveryPerformanceSummary): 
       lines.push(line("persistence", "skipped (dry run)"));
     } else {
       lines.push(line("persistence", formatSeconds(summary.persistence.totalMs)));
+      if (summary.persistence.strategy) {
+        lines.push(line("strategy", summary.persistence.strategy, 4));
+      }
+      lines.push(line("candidates entering", String(summary.persistence.acceptedCandidates), 4));
+      lines.push(line("created", String(summary.persistence.candidateInserts), 4));
+      lines.push(line("updated", String(summary.persistence.candidateUpdates), 4));
+      if (summary.persistence.candidateUnchanged != null) {
+        lines.push(line("unchanged", String(summary.persistence.candidateUnchanged), 4));
+      }
+      if (summary.persistence.evidenceObservations != null) {
+        lines.push(line("evidence observations", String(summary.persistence.evidenceObservations), 4));
+      }
+      if (summary.persistence.evidenceMutations != null) {
+        lines.push(line("evidence mutations", String(summary.persistence.evidenceMutations), 4));
+      }
+      if (summary.persistence.actionsWritten != null) {
+        lines.push(line("actions", String(summary.persistence.actionsWritten), 4));
+      }
       lines.push(line("candidates", formatSeconds(summary.persistence.candidateMs), 4));
+      if (summary.persistence.planningMs != null) {
+        lines.push(line("planning", formatSeconds(summary.persistence.planningMs), 4));
+      }
       lines.push(line("evidence", formatSeconds(summary.persistence.evidenceMs), 4));
+      if (summary.persistence.actionMs != null) {
+        lines.push(line("actions", formatSeconds(summary.persistence.actionMs), 4));
+      }
+      if (summary.persistence.postWriteVerificationMs != null) {
+        lines.push(line("post-write verify", formatSeconds(summary.persistence.postWriteVerificationMs), 4));
+      }
+      if (summary.persistence.postWriteParity) {
+        lines.push(line("post-write parity", summary.persistence.postWriteParity, 4));
+      }
       lines.push(line("completion state", formatSeconds(summary.persistence.completionMs), 4));
       lines.push(line("database calls", String(summary.persistence.databaseCalls), 4));
+      if (summary.persistence.retries != null) {
+        lines.push(line("retries", String(summary.persistence.retries), 4));
+      }
+      if (summary.persistence.splitBatches != null) {
+        lines.push(line("split batches", String(summary.persistence.splitBatches), 4));
+      }
     }
   }
   if (summary.completionMs != null) {

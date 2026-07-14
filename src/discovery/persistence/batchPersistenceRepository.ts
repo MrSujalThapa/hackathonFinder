@@ -57,6 +57,7 @@ export type BatchPersistenceWriteResult = {
   updatedEvidence: EvidenceRow[];
   createdActions: unknown[];
   metrics: BatchPersistenceMetrics;
+  progress: BatchPersistenceWriteProgress;
   timings: {
     candidateCreatesMs: number;
     candidateUpdatesMs: number;
@@ -66,6 +67,25 @@ export type BatchPersistenceWriteResult = {
     totalMs: number;
   };
 };
+
+export type BatchPersistenceWriteProgress = {
+  writesStarted: boolean;
+  candidateWritesCompleted: boolean;
+  evidenceWritesCompleted: boolean;
+  actionWritesCompleted: boolean;
+};
+
+export class BatchPersistenceWriteError extends Error {
+  constructor(
+    message: string,
+    readonly progress: BatchPersistenceWriteProgress,
+    readonly partialResult: Omit<BatchPersistenceWriteResult, "progress">,
+    readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = "BatchPersistenceWriteError";
+  }
+}
 
 const DEFAULT_CHUNK_SIZES: BatchPersistenceChunkSizes = {
   candidateLookup: 250,
@@ -145,62 +165,122 @@ export class BatchPersistenceRepository {
   async writePlan(plan: PersistencePlan): Promise<BatchPersistenceWriteResult> {
     const totalStartedAt = performance.now();
     const metrics = emptyMetrics();
-    const candidateCreatesStartedAt = performance.now();
-    const createdCandidates = await this.writeChunked(
-      "candidateInsert",
-      plan.candidateCreates.map((item) => item.row),
-      this.chunkSizes.candidateWrite,
-      (rows) => this.adapter.insertCandidates(rows),
-      metrics,
-    );
-    const candidateCreatesMs = Math.round(performance.now() - candidateCreatesStartedAt);
-    const candidateUpdatesStartedAt = performance.now();
-    const updatedCandidates = await this.writeChunked(
-      "candidateUpdate",
-      plan.candidateUpdates.map((item) => ({
-        ...item.existing,
-        ...item.payload,
-        id: item.id,
-        fingerprint: item.fingerprint,
-      })),
-      this.chunkSizes.candidateWrite,
-      (rows) => this.adapter.upsertCandidateUpdates(rows),
-      metrics,
-    );
-    const candidateUpdatesMs = Math.round(performance.now() - candidateUpdatesStartedAt);
-    const evidenceCreatesStartedAt = performance.now();
-    const createdEvidence = await this.writeChunked(
-      "evidenceInsert",
-      plan.evidenceCreates.map((item) => item.row),
-      this.chunkSizes.evidenceWrite,
-      (rows) => this.adapter.insertEvidence(rows),
-      metrics,
-    );
-    const evidenceCreatesMs = Math.round(performance.now() - evidenceCreatesStartedAt);
-    const evidenceUpdatesStartedAt = performance.now();
-    const updatedEvidence = await this.writeChunked(
-      "evidenceUpdate",
-      plan.evidenceUpdates.map((item) => ({
-        id: item.id,
-        candidate_id: item.candidateId ?? "__pending_candidate_id__",
-        type: item.type,
-        url_key: item.urlKey,
-        ...item.payload,
-      })),
-      this.chunkSizes.evidenceWrite,
-      (rows) => this.adapter.upsertEvidenceUpdates(rows),
-      metrics,
-    );
-    const evidenceUpdatesMs = Math.round(performance.now() - evidenceUpdatesStartedAt);
-    const actionsStartedAt = performance.now();
-    const createdActions = await this.writeChunked(
-      "actionInsert",
-      plan.actionsToCreate.map((item) => actionRow(item.candidateId, item.action)),
-      this.chunkSizes.actionWrite,
-      (rows) => this.adapter.insertActions(rows),
-      metrics,
-    );
-    const actionsMs = Math.round(performance.now() - actionsStartedAt);
+    const progress: BatchPersistenceWriteProgress = {
+      writesStarted: false,
+      candidateWritesCompleted: false,
+      evidenceWritesCompleted: false,
+      actionWritesCompleted: false,
+    };
+    let createdCandidates: CandidateRow[] = [];
+    let updatedCandidates: CandidateRow[] = [];
+    let createdEvidence: EvidenceRow[] = [];
+    let updatedEvidence: EvidenceRow[] = [];
+    let createdActions: unknown[] = [];
+    let candidateCreatesMs = 0;
+    let candidateUpdatesMs = 0;
+    let evidenceCreatesMs = 0;
+    let evidenceUpdatesMs = 0;
+    let actionsMs = 0;
+
+    const fail = (error: unknown): never => {
+      throw new BatchPersistenceWriteError(
+        error instanceof Error ? error.message : "Batch persistence write failed",
+        { ...progress },
+        {
+          createdCandidates,
+          updatedCandidates,
+          createdEvidence,
+          updatedEvidence,
+          createdActions,
+          metrics: { ...metrics, chunks: { ...metrics.chunks } },
+          timings: {
+            candidateCreatesMs,
+            candidateUpdatesMs,
+            evidenceCreatesMs,
+            evidenceUpdatesMs,
+            actionsMs,
+            totalMs: Math.round(performance.now() - totalStartedAt),
+          },
+        },
+        error,
+      );
+    };
+
+    try {
+      progress.writesStarted = this.estimateWriteCalls(plan) > 0;
+      const candidateCreatesStartedAt = performance.now();
+      createdCandidates = await this.writeChunked(
+        "candidateInsert",
+        plan.candidateCreates.map((item) => item.row),
+        this.chunkSizes.candidateWrite,
+        (rows) => this.adapter.insertCandidates(rows),
+        metrics,
+      );
+      candidateCreatesMs = Math.round(performance.now() - candidateCreatesStartedAt);
+      const candidateUpdatesStartedAt = performance.now();
+      updatedCandidates = await this.writeChunked(
+        "candidateUpdate",
+        plan.candidateUpdates.map((item) => ({
+          ...item.existing,
+          ...item.payload,
+          id: item.id,
+          fingerprint: item.fingerprint,
+        })),
+        this.chunkSizes.candidateWrite,
+        (rows) => this.adapter.upsertCandidateUpdates(rows),
+        metrics,
+      );
+      candidateUpdatesMs = Math.round(performance.now() - candidateUpdatesStartedAt);
+      progress.candidateWritesCompleted = true;
+
+      const createdCandidateIdByFingerprint = new Map(
+        createdCandidates.map((candidate) => [candidate.fingerprint, candidate.id]),
+      );
+      const evidenceCreatesStartedAt = performance.now();
+      createdEvidence = await this.writeChunked(
+        "evidenceInsert",
+        plan.evidenceCreates.map((item) => ({
+          ...item.row,
+          candidate_id:
+            item.candidateId ??
+            createdCandidateIdByFingerprint.get(item.candidateFingerprint) ??
+            item.row.candidate_id,
+        })),
+        this.chunkSizes.evidenceWrite,
+        (rows) => this.adapter.insertEvidence(rows),
+        metrics,
+      );
+      evidenceCreatesMs = Math.round(performance.now() - evidenceCreatesStartedAt);
+      const evidenceUpdatesStartedAt = performance.now();
+      updatedEvidence = await this.writeChunked(
+        "evidenceUpdate",
+        plan.evidenceUpdates.map((item) => ({
+          id: item.id,
+          candidate_id: item.candidateId ?? "__pending_candidate_id__",
+          type: item.type,
+          url_key: item.urlKey,
+          ...item.payload,
+        })),
+        this.chunkSizes.evidenceWrite,
+        (rows) => this.adapter.upsertEvidenceUpdates(rows),
+        metrics,
+      );
+      evidenceUpdatesMs = Math.round(performance.now() - evidenceUpdatesStartedAt);
+      progress.evidenceWritesCompleted = true;
+
+      const actionsStartedAt = performance.now();
+      createdActions = await this.writeChunked(
+        "actionInsert",
+        plan.actionsToCreate.map((item) => actionRow(item.candidateId, item.action)),
+        this.chunkSizes.actionWrite,
+        (rows) => this.adapter.insertActions(rows),
+        metrics,
+      );
+      actionsMs = Math.round(performance.now() - actionsStartedAt);
+      progress.actionWritesCompleted = true;
+    } catch (error) {
+      fail(error);
+    }
 
     return {
       createdCandidates,
@@ -209,6 +289,7 @@ export class BatchPersistenceRepository {
       updatedEvidence,
       createdActions,
       metrics,
+      progress,
       timings: {
         candidateCreatesMs,
         candidateUpdatesMs,

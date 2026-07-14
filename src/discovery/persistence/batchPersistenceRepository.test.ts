@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  BatchPersistenceWriteError,
   BatchPersistenceRepository,
   type BatchPersistenceAdapter,
 } from "@/discovery/persistence/batchPersistenceRepository";
@@ -293,5 +294,99 @@ describe("BatchPersistenceRepository", () => {
     );
 
     assert.equal(result.createdCandidates[0]?.fingerprint, "fp");
+  });
+
+  it("maps newly created candidate IDs into evidence creates", async () => {
+    const evidenceCandidateIds: string[] = [];
+    const repo = new BatchPersistenceRepository(
+      adapter({
+        async insertCandidates(rows) {
+          return rows.map((row) => candidate(`created-${row.fingerprint}`, row.fingerprint));
+        },
+        async insertEvidence(rows) {
+          evidenceCandidateIds.push(...rows.map((row) => row.candidate_id));
+          return rows.map((row, index) => evidence(`created-e-${index}`, row.candidate_id));
+        },
+      }),
+    );
+
+    await repo.writePlan(
+      emptyPlan({
+        candidateCreates: [
+          {
+            fingerprint: "fp-new",
+            sourceInput: { fingerprint: "fp-new", name: "New", source: "mlh" },
+            row: { fingerprint: "fp-new", name: "New", source: "mlh" },
+          },
+        ],
+        evidenceCreates: [
+          {
+            candidateFingerprint: "fp-new",
+            type: "official_page",
+            urlKey: "https://example.test/",
+            row: {
+              candidate_id: "__pending_candidate_id__",
+              type: "official_page",
+              url_key: "https://example.test/",
+            },
+            observationCount: 1,
+            seenCountIncrement: 1,
+          },
+        ],
+      }),
+    );
+
+    assert.deepEqual(evidenceCandidateIds, ["created-fp-new"]);
+  });
+
+  it("reports partial progress without retrying through V1 when evidence writes fail", async () => {
+    const repo = new BatchPersistenceRepository(
+      adapter({
+        async insertCandidates(rows) {
+          return rows.map((row) => candidate(`created-${row.fingerprint}`, row.fingerprint));
+        },
+        async insertEvidence() {
+          throw new Error("evidence failed");
+        },
+      }),
+    );
+
+    await assert.rejects(
+      () =>
+        repo.writePlan(
+          emptyPlan({
+            candidateCreates: [
+              {
+                fingerprint: "fp-new",
+                sourceInput: { fingerprint: "fp-new", name: "New", source: "mlh" },
+                row: { fingerprint: "fp-new", name: "New", source: "mlh" },
+              },
+            ],
+            evidenceCreates: [
+              {
+                candidateFingerprint: "fp-new",
+                type: "official_page",
+                urlKey: "https://example.test/",
+                row: {
+                  candidate_id: "__pending_candidate_id__",
+                  type: "official_page",
+                  url_key: "https://example.test/",
+                },
+                observationCount: 1,
+                seenCountIncrement: 1,
+              },
+            ],
+          }),
+        ),
+      (error) => {
+        assert.ok(error instanceof BatchPersistenceWriteError);
+        assert.equal(error.progress.writesStarted, true);
+        assert.equal(error.progress.candidateWritesCompleted, true);
+        assert.equal(error.progress.evidenceWritesCompleted, false);
+        assert.equal(error.progress.actionWritesCompleted, false);
+        assert.equal(error.partialResult.createdCandidates.length, 1);
+        return true;
+      },
+    );
   });
 });
