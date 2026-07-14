@@ -11,6 +11,7 @@ import { hasSupabaseConfig, getServerEnv } from "@/config/env";
 import type {
   AcceptedCandidate,
   AgentRunSummary,
+  DiscoverySourceId,
   DiscoveryPreferences,
   RejectedCandidate,
   ScoringResult,
@@ -70,8 +71,8 @@ export type DiscoveryPipelineOptions = {
   customSources?: CustomSource[];
 };
 
-function initSourceStats(sources: SourceName[]): Map<SourceName, SourceRunStats> {
-  const stats = new Map<SourceName, SourceRunStats>();
+function initSourceStats(sources: DiscoverySourceId[]): Map<DiscoverySourceId, SourceRunStats> {
+  const stats = new Map<DiscoverySourceId, SourceRunStats>();
   for (const source of sources) {
     stats.set(source, {
       source,
@@ -185,7 +186,10 @@ export async function executeDiscoveryPipeline(
   const runId = options.runId ?? randomUUID();
   const emitter = createEventEmitter(runId, options.eventSink);
   const summary = emptySummary(preferences.rawCommand, preferences, dryRun);
-  const sourceStats = initSourceStats(preferences.sources);
+  const customSourceIds = (options.customSources ?? []).map(
+    (source) => `custom:${source.slug}` as const,
+  );
+  const sourceStats = initSourceStats([...preferences.sources, ...customSourceIds]);
   const allowMockWrites = options.allowMockWrites === true;
   const runtimeConfig = readDiscoveryRuntimeConfig();
   const sourceTimeoutMs = options.sourceTimeoutMs ?? DEFAULT_COLLECTOR_TIMEOUT_MS;
@@ -327,7 +331,26 @@ export async function executeDiscoveryPipeline(
 
     assertNotCancelled(options.cancellationSignal);
 
-    const aggregation = aggregateCollectorResults(collectorResults);
+    const customResults = [];
+    for (const customSource of options.customSources ?? []) {
+      assertNotCancelled(options.cancellationSignal);
+      const customId = `custom:${customSource.slug}` as const;
+      await emitter.emit("source_started", "Starting...", { source: customId });
+      const customResult = await collectCustomSource(customSource, {
+        timeoutMs: effectiveSourceTimeout,
+        logger: (message) => {
+          const unprefixed = message.replace(new RegExp(`^\\[custom:${customSource.slug}\\]\\s*`), "");
+          void emitter.emit("source_progress", unprefixed, {
+            source: customId,
+            metadata: { message: unprefixed },
+          });
+        },
+        persistHealth: !dryRun,
+      });
+      customResults.push({ ...customResult, source: customId });
+    }
+
+    const aggregation = aggregateCollectorResults([...collectorResults, ...customResults]);
     collectorResults.splice(0, collectorResults.length, ...aggregation.results);
     summary.warnings.push(...aggregation.warnings);
 
@@ -347,56 +370,6 @@ export async function executeDiscoveryPipeline(
     );
 
     let leads = aggregation.leads;
-    for (const customSource of options.customSources ?? []) {
-      assertNotCancelled(options.cancellationSignal);
-      await emitter.emit("source_started", "Opening listing page...", {
-        source: `custom:${customSource.slug}`,
-      });
-      const customResult = await collectCustomSource(customSource, {
-        timeoutMs: effectiveSourceTimeout,
-        logger: (message) => {
-          void emitter.emit("source_progress", message, {
-            source: `custom:${customSource.slug}`,
-          });
-        },
-        persistHealth: !dryRun,
-      });
-      leads.push(...customResult.leads);
-      summary.warnings.push(
-        ...customResult.warnings.map((warning) => `[custom:${customSource.slug}] ${warning}`),
-      );
-      summary.errors.push(
-        ...customResult.errors.map((error) => `[custom:${customSource.slug}] ${error}`),
-      );
-      if (customResult.status === "completed") {
-        await emitter.emit(
-          "source_completed",
-          `${customResult.leads.length} leads found`,
-          {
-            source: `custom:${customSource.slug}`,
-            metadata: {
-              leadsFound: customResult.leads.length,
-              durationMs: customResult.durationMs,
-              diagnostics: customResult.diagnostics,
-            },
-          },
-        );
-      } else {
-        await emitter.emit(
-          customResult.status === "failed" ? "source_degraded" : "source_degraded",
-          customResult.errors[0] ?? customResult.warnings[0] ?? "Custom source degraded",
-          {
-            source: `custom:${customSource.slug}`,
-            level: "warning",
-            metadata: {
-              leadsFound: customResult.leads.length,
-              durationMs: customResult.durationMs,
-              diagnostics: customResult.diagnostics,
-            },
-          },
-        );
-      }
-    }
     summary.rawLeads = leads.length;
 
     for (const result of collectorResults) {

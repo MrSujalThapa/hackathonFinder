@@ -1,4 +1,4 @@
-import type { DiscoveryPreferences, RawLead, SourceName } from "@/core/discovery/types";
+import type { DiscoveryPreferences, DiscoverySourceId, RawLead, SourceName } from "@/core/discovery/types";
 
 export type CollectorInput = {
   preferences: DiscoveryPreferences;
@@ -22,7 +22,7 @@ export type CollectorDiagnostics = {
 };
 
 export type CollectorResult = {
-  source: SourceName;
+  source: DiscoverySourceId;
   leads: RawLead[];
   status: CollectorStatus;
   diagnostics: CollectorDiagnostics;
@@ -43,7 +43,7 @@ export const DEFAULT_COLLECTOR_TIMEOUT_MS = 15_000;
 /** Default live sources after Phase 7 broader discovery. */
 export const REAL_DEFAULT_SOURCES: SourceName[] = ["hacklist", "mlh", "luma", "web"];
 
-export function emptyCollectorResult(source: SourceName, startedAt = Date.now()): CollectorResult {
+export function emptyCollectorResult(source: DiscoverySourceId, startedAt = Date.now()): CollectorResult {
   return {
     source,
     leads: [],

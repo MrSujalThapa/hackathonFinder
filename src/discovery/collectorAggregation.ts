@@ -3,10 +3,10 @@ import type {
   CollectorResult,
   CollectorStatus,
 } from "@/collectors/types";
-import type { RawLead, SourceName } from "@/core/discovery/types";
+import type { DiscoverySourceId, RawLead, SourceName } from "@/core/discovery/types";
 
 export type SourceReturnAccounting = {
-  source: SourceName;
+  source: DiscoverySourceId;
   status: CollectorStatus;
   discovered: number;
   returned: number;
@@ -40,8 +40,11 @@ const SOURCE_NAMES = new Set<SourceName>([
   "mock",
 ]);
 
-function isSourceName(value: unknown): value is SourceName {
-  return typeof value === "string" && SOURCE_NAMES.has(value as SourceName);
+function isSourceId(value: unknown): value is DiscoverySourceId {
+  return (
+    typeof value === "string" &&
+    (SOURCE_NAMES.has(value as SourceName) || /^custom:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value))
+  );
 }
 
 function asNumber(value: unknown, fallback = 0): number {
@@ -70,7 +73,7 @@ export function normalizeCollectorResult(value: unknown): CollectorResult {
   }
 
   const result = value as Partial<CollectorResult>;
-  if (!isSourceName(result.source)) {
+  if (!isSourceId(result.source)) {
     throw new Error("Collector returned a malformed result without a valid source.");
   }
   if (!Array.isArray(result.leads)) {

@@ -65,6 +65,16 @@ describe("collector aggregation", () => {
     );
   });
 
+  it("accepts custom source ids in collector accounting", () => {
+    const custom = emptyCollectorResult("custom:hackathonmap");
+    custom.leads = [{ ...lead("map"), source: "web" }];
+    custom.diagnostics.discovered = 1;
+
+    const aggregation = aggregateCollectorResults([custom]);
+    assert.equal(aggregation.sourceReturns[0]?.source, "custom:hackathonmap");
+    assert.equal(aggregation.returnedTotal, 1);
+  });
+
   it("warns when discovered cards return zero leads", () => {
     const devpost = emptyCollectorResult("devpost");
     devpost.status = "degraded";

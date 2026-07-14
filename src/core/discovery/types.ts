@@ -11,6 +11,8 @@ export type SourceName =
   | "x"
   | "mock";
 
+export type DiscoverySourceId = SourceName | `custom:${string}`;
+
 export type RawLead = {
   id: string;
   source: SourceName;
@@ -233,7 +235,7 @@ export type AgentRunObservability = {
 };
 
 export type SourceRunStats = {
-  source: SourceName;
+  source: DiscoverySourceId;
   leadsFound: number;
   queueReady: number;
   needsReview: number;
@@ -254,9 +256,9 @@ export type SourceOutcome =
   | "degraded";
 
 export type SourceAccounting = {
-  executedSources: SourceName[];
-  skippedSources: SourceName[];
-  failedSources: SourceName[];
-  degradedSources: SourceName[];
-  authRequiredSources: SourceName[];
+  executedSources: DiscoverySourceId[];
+  skippedSources: DiscoverySourceId[];
+  failedSources: DiscoverySourceId[];
+  degradedSources: DiscoverySourceId[];
+  authRequiredSources: DiscoverySourceId[];
 };

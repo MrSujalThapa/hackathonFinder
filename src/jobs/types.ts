@@ -1,5 +1,5 @@
 import type { DiscoveryEvent } from "@/discovery/events";
-import type { SourceName } from "@/core/discovery/types";
+import type { DiscoverySourceId, SourceName } from "@/core/discovery/types";
 
 export const DISCOVERY_JOB_STATUSES = [
   "queued",
@@ -20,7 +20,7 @@ export type DiscoveryJob = {
   command: string;
   status: DiscoveryJobStatus;
   requestedSources: SourceName[];
-  effectiveSources: SourceName[];
+  effectiveSources: DiscoverySourceId[];
   mode: "auto" | "agent" | "deterministic";
   dryRun: boolean;
   allSources: boolean;

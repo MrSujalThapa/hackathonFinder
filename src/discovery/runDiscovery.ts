@@ -6,6 +6,7 @@ import { planDiscoveryWithLlm } from "@/agent/llm/planWithLlm";
 import { runLoop } from "@/agent/runtime/runLoop";
 import type {
   AgentRunSummary,
+  DiscoverySourceId,
   DiscoveryPreferences,
   ReviewPolicy,
   SourceName,
@@ -67,9 +68,16 @@ export type RunDiscoveryInput = {
 export type DiscoveryRunResult = {
   runId: string;
   summary: AgentRunSummary;
-  effectiveSources: SourceName[];
+  effectiveSources: DiscoverySourceId[];
   skippedSources: Array<{ source: SourceName; reason: string }>;
   cancelled: boolean;
+};
+
+type DiscoveryCommandFlags = {
+  query: string;
+  includeCustomSites: boolean;
+  sourceNames?: string[];
+  reviewPolicy?: ReviewPolicy;
 };
 
 function commandMentionsSources(command: string): boolean {
@@ -87,41 +95,49 @@ const BUILTIN_SOURCE_NAMES = new Set<SourceName>([
   "mock",
 ]);
 
-function parseSourcesFlagFromCommand(command: string): string[] | undefined {
-  const match = command.match(/--sources=([^\s]+)/i);
-  if (!match?.[1]) return undefined;
-  return match[1].split(",").map((part) => part.trim().toLowerCase()).filter(Boolean);
-}
+function parseDiscoveryCommandFlags(command: string): DiscoveryCommandFlags {
+  const parts = command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+  const queryParts: string[] = [];
+  const sourceNames: string[] = [];
+  let includeCustomSites = false;
+  let reviewPolicy: ReviewPolicy | undefined;
 
-function commandIncludesCustomSites(command: string): boolean {
-  return /\b--include-custom-sites\b/i.test(command);
-}
+  for (const part of parts) {
+    const lower = part.toLowerCase();
+    if (lower === "--include-custom-sites") {
+      includeCustomSites = true;
+      continue;
+    }
+    if (lower.startsWith("--sources=")) {
+      const value = part.slice("--sources=".length).replace(/^["']|["']$/g, "");
+      sourceNames.push(...value.split(",").map((item) => item.trim().toLowerCase()).filter(Boolean));
+      continue;
+    }
+    if (lower.startsWith("--review-policy=")) {
+      const value = part.slice("--review-policy=".length).replace(/^["']|["']$/g, "").toLowerCase();
+      if (value === "broad" || value === "balanced" || value === "strict") reviewPolicy = value;
+      continue;
+    }
+    queryParts.push(part);
+  }
 
-function customSourceMatches(source: CustomSource, preferences: DiscoveryPreferences): boolean {
-  const locationScope = source.locationScope.toLowerCase();
-  const locations = preferences.locations.map((location) => location.toLowerCase());
-  const topics = preferences.themes.map((theme) => theme.toLowerCase());
-  const locationOk =
-    locationScope === "global" ||
-    locations.some((location) => location.includes(locationScope) || locationScope.includes(location));
-  const topicOk =
-    source.topicScope.length === 0 ||
-    source.topicScope.some((topic) =>
-      topics.some((pref) => pref.includes(topic) || topic.includes(pref)),
-    );
-  return locationOk && topicOk;
+  return {
+    query: queryParts.join(" ").trim(),
+    includeCustomSites,
+    sourceNames: sourceNames.length > 0 ? [...new Set(sourceNames)] : undefined,
+    reviewPolicy,
+  };
 }
 
 async function selectCustomSourcesForRun(
-  command: string,
-  preferences: DiscoveryPreferences,
+  flags: DiscoveryCommandFlags,
 ): Promise<{
   customSources: CustomSource[];
   builtInFromFlag?: SourceName[];
   explicitSourceFlag: boolean;
   warnings: string[];
 }> {
-  const fromFlag = parseSourcesFlagFromCommand(command);
+  const fromFlag = flags.sourceNames;
   const warnings: string[] = [];
   const explicitSourceFlag = fromFlag !== undefined;
   const builtInFromFlag = fromFlag?.filter((source): source is SourceName =>
@@ -146,14 +162,14 @@ async function selectCustomSourcesForRun(
     customSources.push(custom);
   }
 
-  if (commandIncludesCustomSites(command)) {
+  if (flags.includeCustomSites) {
     const all = await listCustomSources({ enabledOnly: true }).catch((error) => {
       warnings.push(error instanceof Error ? error.message : "Failed to list custom sources");
       return [];
     });
     for (const custom of all) {
       if (customSources.some((existing) => existing.id === custom.id)) continue;
-      if (customSourceMatches(custom, preferences)) customSources.push(custom);
+      customSources.push(custom);
     }
   }
 
@@ -246,12 +262,14 @@ export async function runDiscovery(
   const emitter = createEventEmitter(runId, input.eventSink);
 
   const hakku = await getHakkuConnectionStatus();
-  const parsed = parseCommand(input.command);
-  const customSelection = await selectCustomSourcesForRun(input.command, parsed);
+  const commandFlags = parseDiscoveryCommandFlags(input.command);
+  const plannerCommand = commandFlags.query || input.command;
+  const parsed = parseCommand(plannerCommand);
+  const customSelection = await selectCustomSourcesForRun(commandFlags);
   const withCli = applyCliOptions(parsed, {
     sources: input.sources ?? customSelection.builtInFromFlag,
     maxResults: input.maxResults,
-    reviewPolicy: input.reviewPolicy,
+    reviewPolicy: input.reviewPolicy ?? commandFlags.reviewPolicy,
   });
 
   const requestedSources: SourceName[] | undefined =
@@ -259,7 +277,7 @@ export async function runDiscovery(
       ? input.sources
       : customSelection.explicitSourceFlag
         ? customSelection.builtInFromFlag ?? []
-      : commandMentionsSources(input.command)
+      : commandMentionsSources(plannerCommand)
         ? withCli.sources
         : undefined;
 
@@ -298,6 +316,10 @@ export async function runDiscovery(
   const plannedSourceLabels = [
     ...selection.effectiveSources,
     ...customSelection.customSources.map((source) => `custom:${source.slug}`),
+  ];
+  const plannedSourceDisplayLabels = [
+    ...selection.effectiveSources,
+    ...customSelection.customSources.map((source) => source.name || `custom:${source.slug}`),
   ];
 
   await emitter.emit(
@@ -358,7 +380,7 @@ export async function runDiscovery(
     if (agentMode.useAgent || input.showAgentPlan || input.showAgentTrace) {
       await emitter.emit("planning_started", "Interpreting request…");
 
-      const intent = parseIntent(input.command);
+      const intent = parseIntent(plannerCommand);
       const plannerResult =
         agentMode.useAgent && intent.kind === "discover_hackathons"
           ? await planDiscoveryWithLlm(effectivePreferences, {
@@ -402,7 +424,9 @@ export async function runDiscovery(
               .replace(/[^a-z0-9]+/g, "-")
               .replace(/^-|-$/g, "")
               .slice(0, 40) || "command"}`,
-            summary: `LLM plan discovery across ${effectivePreferences.sources.join(", ")}.`,
+            summary: `LLM plan discovery across ${
+              plannedSourceDisplayLabels.join(", ") || "(none)"
+            }.`,
             warnings: plannerResult.plan.warnings,
             toolCalls: plannerResult.toolCalls,
           }
@@ -413,10 +437,18 @@ export async function runDiscovery(
             maxResults: input.maxResults,
           });
 
-      await emitter.emit("planning_completed", deterministicPlan.summary, {
+      const planningSummary =
+        plannedSourceDisplayLabels.length > 0
+          ? `Planning discovery across ${plannedSourceDisplayLabels.join(", ")}.`
+          : deterministicPlan.summary;
+
+      await emitter.emit("planning_completed", planningSummary, {
         metadata: {
           planId: deterministicPlan.id,
-          sources: effectivePreferences.sources,
+          sources: [
+            ...effectivePreferences.sources,
+            ...customSelection.customSources.map((source) => `custom:${source.slug}`),
+          ],
           toolCalls: deterministicPlan.toolCalls.map((call) => call.name),
         },
       });
@@ -518,7 +550,7 @@ export async function runDiscovery(
     return {
       runId,
       summary,
-      effectiveSources: effectivePreferences.sources,
+      effectiveSources: plannedSourceLabels as DiscoverySourceId[],
       skippedSources: selection.skipped,
       cancelled: false,
     };
@@ -527,7 +559,7 @@ export async function runDiscovery(
       return {
         runId,
         summary: emptyCancelledSummary(input.command, effectivePreferences, dryRun, warnings),
-        effectiveSources: effectivePreferences.sources,
+        effectiveSources: plannedSourceLabels as DiscoverySourceId[],
         skippedSources: selection.skipped,
         cancelled: true,
       };
