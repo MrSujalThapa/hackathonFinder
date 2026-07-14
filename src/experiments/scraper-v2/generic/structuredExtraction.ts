@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { acquireGenericArtifacts } from "@/experiments/scraper-v2/generic/acquisition";
 import { runGenericDomExtraction } from "@/experiments/scraper-v2/generic/domExtraction";
+import { validateEventIntent } from "@/experiments/scraper-v2/generic/eventIntentValidation";
 import { inferGenericEventSchema } from "@/experiments/scraper-v2/generic/fieldInference";
 import { normalizeGenericRecords } from "@/experiments/scraper-v2/generic/normalization";
 import { inferGenericPagination } from "@/experiments/scraper-v2/generic/pagination";
@@ -12,7 +13,9 @@ import {
 import type {
   AcquiredArtifact,
   CandidateRecordSet,
+  EventIntentValidation,
   GenericStructuredExtractionResult,
+  InferredEventSchema,
   SourceExperiment,
 } from "@/experiments/scraper-v2/generic/types";
 
@@ -27,14 +30,37 @@ function summarizeRecordSet(recordSet: CandidateRecordSet): Omit<CandidateRecord
   };
 }
 
-function selectRecordSet(discovery: RecordDiscoveryResult): CandidateRecordSet | undefined {
-  return discovery.recordSets.find(
-    (recordSet) =>
-      recordSet.confidence >= 0.5 &&
-      recordSet.eventScore >= 0.35 &&
-      recordSet.records.length >= 2 &&
-      recordSet.duplicateRate <= 0.45,
-  );
+function selectRecordSet(
+  discovery: RecordDiscoveryResult,
+  validations?: EventIntentValidation[],
+): CandidateRecordSet | undefined {
+  const validationById = new Map(validations?.map((validation) => [validation.recordSetId, validation]));
+  const candidates = discovery.recordSets
+    .filter((recordSet) => {
+      const validation = validationById.get(recordSet.recordSetId);
+      if (validation) {
+        return (
+          (validation.classification === "healthy" || validation.classification === "usable") &&
+          validation.eventIntentScore >= 0.58 &&
+          validation.identityScore >= 0.5 &&
+          recordSet.records.length >= 2
+        );
+      }
+      return (
+        recordSet.confidence >= 0.5 &&
+        recordSet.eventScore >= 0.35 &&
+        recordSet.records.length >= 2 &&
+        recordSet.duplicateRate <= 0.45
+      );
+    })
+    .sort((left, right) => {
+      const leftValidation = validationById.get(left.recordSetId);
+      const rightValidation = validationById.get(right.recordSetId);
+      const leftScore = (leftValidation?.eventIntentScore ?? left.confidence) + (leftValidation?.identityScore ?? 0) * 0.25;
+      const rightScore = (rightValidation?.eventIntentScore ?? right.confidence) + (rightValidation?.identityScore ?? 0) * 0.25;
+      return rightScore - leftScore;
+    });
+  return candidates[0];
 }
 
 function staticArtifactsSufficient(artifacts: AcquiredArtifact[]): boolean {
@@ -92,9 +118,16 @@ export async function runGenericStructuredExtraction(
   const discovery = discoverGenericRecordSets(acquisition.artifacts);
   timings.recordSetDiscoveryMs = ms(discoveryStartedAt);
 
-  const selected = selectRecordSet(discovery);
   const schemaStartedAt = performance.now();
-  const schema = selected ? inferGenericEventSchema(selected) : undefined;
+  const schemaByRecordSet = new Map<string, InferredEventSchema>();
+  for (const recordSet of discovery.recordSets) {
+    schemaByRecordSet.set(recordSet.recordSetId, inferGenericEventSchema(recordSet));
+  }
+  const eventIntentValidations = discovery.recordSets.map((recordSet) =>
+    validateEventIntent({ recordSet, schema: schemaByRecordSet.get(recordSet.recordSetId) }),
+  );
+  const selected = selectRecordSet(discovery, eventIntentValidations);
+  const schema = selected ? schemaByRecordSet.get(selected.recordSetId) : undefined;
   timings.fieldInferenceMs = ms(schemaStartedAt);
 
   const normalizationStartedAt = performance.now();
@@ -146,6 +179,7 @@ export async function runGenericStructuredExtraction(
     acquisition: acquisition.diagnostics,
     candidateRecordSets: discovery.recordSets.slice(0, 12).map(summarizeRecordSet),
     ...(selected ? { selectedRecordSet: summarizeRecordSet(selected) } : {}),
+    eventIntentValidations,
     ...(schema ? { schema } : {}),
     leads,
     strategySelected,

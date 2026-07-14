@@ -9,6 +9,38 @@ export type SourceExperiment = {
   expectedMinimumEventCount?: number;
 };
 
+export type CrawlIntentInput = {
+  query: string;
+  requestedCount?: number;
+  dateHorizonStart?: string;
+  dateHorizonEnd?: string;
+  latencyPreference?: "fast" | "balanced" | "coverage";
+};
+
+export type CrawlIntent = {
+  normalizedQuery: string;
+  targetCountHint?: number;
+  dateHorizonStart?: string;
+  dateHorizonEnd?: string;
+  prioritizeLatency: boolean;
+  prioritizeCoverage: boolean;
+};
+
+export type DiscoveryBudget = {
+  profile: "quick" | "standard" | "deep" | "exhaustive";
+  targetAcceptedEvents: number;
+  maxRawRecords: number;
+  maxSources: number;
+  maxPagesPerSource: number;
+  maxRequestsPerSource: number;
+  maxDetailPagesPerSource: number;
+  maxDurationMs: number;
+  dateHorizonStart?: string;
+  dateHorizonEnd?: string;
+  prioritizeLatency: boolean;
+  prioritizeCoverage: boolean;
+};
+
 export type AcquisitionMode = "static" | "browser";
 
 export type AcquiredArtifactKind =
@@ -222,6 +254,75 @@ export type PaginationInference = {
   stopReason: "not_attempted" | "no_signal" | "page_cap" | "repeated_cursor" | "no_growth";
 };
 
+export type EventIntentClassification = "healthy" | "usable" | "ambiguous" | "rejected";
+
+export type EventIntentValidation = {
+  recordSetId: string;
+  eventIntentScore: number;
+  identityScore: number;
+  schemaTrustScore: number;
+  classification: EventIntentClassification;
+  reasons: string[];
+  metrics: {
+    inspectedRecords: number;
+    uniqueTitleRatio: number;
+    uniqueUrlRatio: number;
+    stableIdentityRatio: number;
+    dateSignalRatio: number;
+    genericTitleRatio: number;
+    listingUrlReuseRatio: number;
+  };
+};
+
+export type DateCoverageSummary = {
+  earliestEventDate?: string;
+  latestEventDate?: string;
+  earliestDeadline?: string;
+  latestDeadline?: string;
+  openRegistrationRate: number;
+  expiredOrClosedRate: number;
+  inHorizonEvents: number;
+  validEvents: number;
+  rawRecords: number;
+  dateProgression: "forward" | "backward" | "flat" | "unknown";
+  horizonCovered: boolean;
+};
+
+export type CandidateAction = {
+  elementId: string;
+  role?: string;
+  accessibleName?: string;
+  href?: string;
+  disabled: boolean;
+  context: "pagination" | "listing" | "filter" | "detail" | "navigation" | "unknown";
+  proposedEffect:
+    | "next_page"
+    | "load_more"
+    | "infinite_scroll"
+    | "change_sort"
+    | "change_filter"
+    | "open_detail"
+    | "unknown";
+  confidence: number;
+};
+
+export type ClassifiedFailure = {
+  stage: string;
+  classification:
+    | "timeout"
+    | "rate_limited"
+    | "blocked"
+    | "network_transient"
+    | "unsafe_redirect"
+    | "payload_too_large"
+    | "schema_rejected"
+    | "low_precision"
+    | "cancelled"
+    | "unknown";
+  message: string;
+  retryable: boolean;
+};
+
 export type ExtractionQualityReport = {
   discoveredRecords: number;
   normalizedLeads: number;
@@ -256,6 +357,7 @@ export type GenericStructuredExtractionResult = {
   acquisition: AcquisitionDiagnostics;
   candidateRecordSets: Array<Omit<CandidateRecordSet, "records"> & { records: number }>;
   selectedRecordSet?: Omit<CandidateRecordSet, "records"> & { records: number };
+  eventIntentValidations: EventIntentValidation[];
   schema?: InferredEventSchema;
   leads: GenericShadowLead[];
   strategySelected: "structured" | "dom" | "none";
