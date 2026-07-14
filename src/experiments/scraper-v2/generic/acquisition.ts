@@ -307,6 +307,26 @@ export async function acquireGenericArtifacts(
     },
   });
   if (!response.ok) {
+    const browserFallback = await observeBrowserArtifacts(experiment, 0).catch(() => undefined);
+    if (browserFallback && browserFallback.artifacts.length > 0) {
+      return {
+        artifacts: browserFallback.artifacts,
+        diagnostics: {
+          finalUrl: experiment.inputUrl,
+          attemptedLayers: [...attemptedLayers, "browser observation"],
+          skippedLayers: [
+            "static structured parsing skipped because static response was not OK",
+            "general repeated-DOM inference not implemented in Phase 3B",
+          ],
+          requestsMade: 1 + browserFallback.requestsMade,
+          browserPages: browserFallback.browserPages,
+          bytesInspected: browserFallback.artifacts.reduce((total, artifact) => total + artifact.byteSize, 0),
+          blockedReason: undefined,
+          rssLinks: [],
+          sitemapLinks: [],
+        },
+      };
+    }
     return {
       artifacts: [],
       diagnostics: {
