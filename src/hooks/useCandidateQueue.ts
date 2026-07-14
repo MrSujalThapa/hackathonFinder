@@ -42,6 +42,7 @@ type QueueState = {
   outgoingId: string | null;
   loadingMore: boolean;
   sourceOptions: string[];
+  sourceMetadata: Record<string, { id: string; label: string; kind: "custom" }>;
   hasMore: boolean;
 };
 
@@ -98,6 +99,7 @@ export function useCandidateQueue(sourceFilter?: string) {
     outgoingId: null,
     loadingMore: false,
     sourceOptions: [],
+    sourceMetadata: {},
     hasMore: false,
   });
   const seenRef = useRef<Set<string>>(new Set());
@@ -167,7 +169,13 @@ export function useCandidateQueue(sourceFilter?: string) {
   const refreshSourceOptions = useCallback(async () => {
     try {
       const sources = await fetchCandidateSources();
-      setState((prev) => ({ ...prev, sourceOptions: sources.sources }));
+      setState((prev) => ({
+        ...prev,
+        sourceOptions: sources.sources,
+        sourceMetadata: Object.fromEntries(
+          (sources.sourceMetadata ?? []).map((item) => [item.id, item]),
+        ),
+      }));
     } catch {
       // Source options are secondary to queue actions; keep the last known list.
     }
@@ -232,7 +240,7 @@ export function useCandidateQueue(sourceFilter?: string) {
             source: sourceFilterRef.current,
             requestPurpose: "queue_initial",
           }),
-          fetchCandidateSources().catch(() => ({ sources: [] })),
+          fetchCandidateSources().catch(() => ({ sources: [], sourceMetadata: [] })),
         ]);
         return { page, sources };
       });
@@ -255,6 +263,9 @@ export function useCandidateQueue(sourceFilter?: string) {
         outgoingId: null,
         loadingMore: false,
         sourceOptions: firstPage.sources.sources,
+        sourceMetadata: Object.fromEntries(
+          (firstPage.sources.sourceMetadata ?? []).map((item) => [item.id, item]),
+        ),
         hasMore: !exhaustedRef.current,
       });
     } catch (error) {

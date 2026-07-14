@@ -1,8 +1,8 @@
 import type {
   DiscoveryMode,
+  DiscoverySourceId,
   HackathonEvent,
   HackathonEvidence,
-  SourceName,
 } from "@/core/discovery/types";
 import {
   createCandidateFingerprint,
@@ -67,7 +67,10 @@ export function mergeSourceIds(
   return merged;
 }
 
-function pickPrimarySource(existing: SourceName, incoming: SourceName): SourceName {
+function pickPrimarySource(
+  existing: DiscoverySourceId,
+  incoming: DiscoverySourceId,
+): DiscoverySourceId {
   return sourceAuthority(incoming) > sourceAuthority(existing) ? incoming : existing;
 }
 

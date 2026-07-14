@@ -267,6 +267,7 @@ const SOURCE_AUTHORITY: Record<string, number> = {
 };
 
 export function sourceAuthority(source: string): number {
+  if (/^custom:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(source)) return 60;
   return SOURCE_AUTHORITY[source] ?? 30;
 }
 

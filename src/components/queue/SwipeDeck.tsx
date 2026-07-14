@@ -26,6 +26,7 @@ const TAP_SLOP_PX = 10;
 type SwipeDeckProps = {
   candidate: CandidateCard;
   upcoming?: CandidateCard | null;
+  sourceLabels?: Record<string, string>;
   /** When true, blocks interaction on the *current* card only. */
   busy?: boolean;
   onDecision: (
@@ -37,6 +38,7 @@ type SwipeDeckProps = {
 export function SwipeDeck({
   candidate,
   upcoming = null,
+  sourceLabels,
   busy = false,
   onDecision,
 }: SwipeDeckProps) {
@@ -316,7 +318,11 @@ export function SwipeDeck({
           className="pointer-events-none absolute inset-0 z-0 scale-[0.97] opacity-35"
         >
           <div className="origin-top">
-            <CandidateCardView candidate={upcoming} busy />
+            <CandidateCardView
+              candidate={upcoming}
+              sourceLabels={sourceLabels}
+              busy
+            />
           </div>
         </div>
       ) : null}
@@ -345,6 +351,7 @@ export function SwipeDeck({
 
         <CandidateCardView
           candidate={candidate}
+          sourceLabels={sourceLabels}
           onToggleDetails={openDetails}
           busy={cardBusy}
         />

@@ -47,4 +47,9 @@ describe("candidate format helpers", () => {
   it("title-cases unknown source labels", () => {
     assert.equal(formatSourceLabel("web_search"), "Web Search");
   });
+
+  it("formats known custom source labels", () => {
+    assert.equal(formatSourceLabel("custom:hackathonmap"), "Hackathon Map");
+    assert.equal(formatSourceLabel("custom:hackathonradar"), "Hackathon Radar");
+  });
 });

@@ -17,6 +17,12 @@ export type CollectorDiagnostics = {
   enriched: number;
   partial: number;
   dropped: number;
+  detectedUnits?: number;
+  candidateUnits?: number;
+  normalizedLeads?: number;
+  rejectedDuringParsing?: number;
+  pagesTraversed?: number;
+  extractionStrategy?: string;
   stopReason?: string;
   safeMessage?: string;
 };

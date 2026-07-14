@@ -115,6 +115,16 @@ describe("selectDiscoverySources", () => {
     assert.deepEqual(result.effectiveSources, ["mlh", "web"]);
   });
 
+  it("runs no built-ins for an explicit custom-only selection", () => {
+    const result = selectDiscoverySources({
+      requestedSources: [],
+      enabledSources: ["mlh", "web", "hacklist", "devpost", "luma"],
+      hakkuConnected: false,
+    });
+    assert.deepEqual(result.effectiveSources, []);
+    assert.equal(result.effectiveSources.some((source) => source === "web"), false);
+  });
+
   it("skips disabled sources", () => {
     const result = selectDiscoverySources({
       requestedSources: ["mlh", "hacklist"],

@@ -38,6 +38,11 @@ export type ListCandidatesResponse = {
 
 export type CandidateSourcesResponse = {
   sources: string[];
+  sourceMetadata?: Array<{
+    id: string;
+    label: string;
+    kind: "custom";
+  }>;
 };
 
 export async function fetchCandidates(params: {

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { detectCustomPageShape, parseCustomSourceHtml } from "@/collectors/customSource";
+import {
+  detectCustomPageShape,
+  extractCustomSourceHtml,
+  parseCustomSourceHtml,
+} from "@/collectors/customSource";
 import type { CustomSource } from "@/server/customSources/types";
 
 function source(overrides: Partial<CustomSource> = {}): CustomSource {
@@ -36,7 +40,7 @@ describe("parseCustomSourceHtml", () => {
       source(),
     );
     assert.equal(leads.length, 1);
-    assert.equal(leads[0]?.source, "web");
+    assert.equal(leads[0]?.source, "custom:hacker-calendar");
     assert.equal(leads[0]?.metadata?.attribution, "custom:hacker-calendar");
     assert.ok((leads[0]?.metadata?.sourceIds as Record<string, unknown>)["custom:hacker-calendar"]);
   });
@@ -78,6 +82,7 @@ describe("parseCustomSourceHtml", () => {
       source({ slug: "hackathonmap", listingUrl: "https://hackathonmap.com/" }),
     );
     assert.equal(leads.length, 1);
+    assert.equal(leads[0]?.source, "custom:hackathonmap");
     assert.equal(leads[0]?.title, "Agentic AI Innovation Challenge 2026");
     assert.equal(leads[0]?.url, "https://challenge.example.com/");
     assert.equal(leads[0]?.metadata?.discoveryMode, "custom_static_event_sections");
@@ -137,6 +142,7 @@ describe("parseCustomSourceHtml", () => {
       source({ slug: "hackathonradar", listingUrl: "https://www.hackathonradar.com/database", mode: "playwright" }),
     );
     assert.equal(leads.length, 2);
+    assert.equal(leads[0]?.source, "custom:hackathonradar");
     assert.equal(leads[0]?.metadata?.discoveryMode, "custom_data_table");
     assert.equal(leads[0]?.url, "https://rns-hackoverflow-2.devfolio.co/");
     assert.equal(leads[0]?.metadata?.startDateRaw, "16/07/2026");
@@ -158,5 +164,25 @@ describe("parseCustomSourceHtml", () => {
     const shape = detectCustomPageShape(html, custom);
     assert.equal(shape.primaryStrategy, "data_table");
     assert.deepEqual(shape.evidence.headers, ["Title", "Start Date", "Website"]);
+  });
+
+  it("flags parser under-extraction when many rows produce too few leads", () => {
+    const rows = Array.from({ length: 10 }, (_value, index) => (
+      `<tr><td>Visible Hackathon ${index}</td><td>20/07/2026</td><td></td></tr>`
+    )).join("");
+    const html = `<table>
+      <tr><th>Title</th><th>Start Date</th><th>Website</th></tr>
+      ${rows}
+    </table>
+    <article><a href="https://one.example.com"><h2>One Parsed Hackathon</h2></a><p>Hackathon event 2026</p></article>`;
+    const result = extractCustomSourceHtml(
+      html,
+      source({ slug: "hackathonradar", selectors: { strategy: "cards" } }),
+    );
+
+    assert.equal(result.listings.length, 1);
+    assert.equal(result.diagnostics.detectedUnits, 10);
+    assert.equal(result.diagnostics.normalizedLeads, 1);
+    assert.equal(result.diagnostics.underExtracted, true);
   });
 });

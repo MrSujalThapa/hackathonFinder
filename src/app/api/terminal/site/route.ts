@@ -163,10 +163,29 @@ export async function POST(request: Request): Promise<Response> {
         const checked = await getCustomSource(site.slug);
         const healthy = result.status === "completed";
         const safeMessage = result.diagnostics.safeMessage;
+        const diagnostics = result.diagnostics;
+        const diagnosticLines = [
+          diagnostics.detectedUnits != null
+            ? line("info", `[custom:${site.slug}] detected units      ${diagnostics.detectedUnits}`)
+            : null,
+          diagnostics.normalizedLeads != null
+            ? line("info", `[custom:${site.slug}] normalized leads    ${diagnostics.normalizedLeads}`)
+            : null,
+          diagnostics.rejectedDuringParsing != null
+            ? line("info", `[custom:${site.slug}] parser rejected     ${diagnostics.rejectedDuringParsing}`)
+            : null,
+          diagnostics.pagesTraversed != null
+            ? line("info", `[custom:${site.slug}] pages traversed     ${diagnostics.pagesTraversed}`)
+            : null,
+          diagnostics.extractionStrategy
+            ? line("info", `[custom:${site.slug}] extraction strategy  ${diagnostics.extractionStrategy}`)
+            : null,
+        ].filter((item): item is ReturnType<typeof line> => Boolean(item));
         return ok({
           site: checked ?? site,
           lines: [
             ...progressLines,
+            ...diagnosticLines,
             line(
               healthy ? "success" : "warning",
               healthy

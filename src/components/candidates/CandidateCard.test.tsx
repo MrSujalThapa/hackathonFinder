@@ -79,7 +79,7 @@ describe("CandidateCardView", () => {
 
     assert.ok(screen.getByText("Sparse Summit"));
     assert.ok(screen.getByText("No reliable description available"));
-    assert.ok(screen.getByText("Date unclear"));
+    assert.ok(screen.getAllByText("Date unclear").length >= 1);
     assert.ok(screen.getAllByText(/Needs official link/i).length >= 1);
     cleanup();
   });
@@ -113,6 +113,32 @@ describe("CandidateCardView", () => {
     assert.equal(onApprove.mock.callCount(), 1);
     assert.equal(onReject.mock.callCount(), 1);
     assert.equal(onSave.mock.callCount(), 1);
+    cleanup();
+  });
+
+  it("renders all source provenance badges with custom labels", async () => {
+    const React = await import("react");
+    const { render, screen, cleanup } = await import("@testing-library/react");
+    const { CandidateCardView } = await import(
+      "@/components/candidates/CandidateCard"
+    );
+
+    render(
+      React.createElement(CandidateCardView, {
+        candidate: {
+          ...PREVIEW_CANDIDATE,
+          source: "custom:hackathonmap",
+          sourceIds: {
+            "custom:hackathonmap": "map-1",
+            devpost: "devpost-1",
+          },
+        },
+        sourceLabels: { "custom:hackathonmap": "Hackathon Map" },
+      }),
+    );
+
+    assert.ok(screen.getByText("Hackathon Map"));
+    assert.ok(screen.getByText("Devpost"));
     cleanup();
   });
 });

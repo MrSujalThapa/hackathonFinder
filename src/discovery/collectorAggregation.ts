@@ -95,6 +95,12 @@ export function normalizeCollectorResult(value: unknown): CollectorResult {
     enriched: asNumber(result.diagnostics?.enriched),
     partial: asNumber(result.diagnostics?.partial),
     dropped: asNumber(result.diagnostics?.dropped),
+    detectedUnits: result.diagnostics?.detectedUnits,
+    candidateUnits: result.diagnostics?.candidateUnits,
+    normalizedLeads: result.diagnostics?.normalizedLeads,
+    rejectedDuringParsing: result.diagnostics?.rejectedDuringParsing,
+    pagesTraversed: result.diagnostics?.pagesTraversed,
+    extractionStrategy: result.diagnostics?.extractionStrategy,
     stopReason: result.diagnostics?.stopReason,
     safeMessage: result.diagnostics?.safeMessage,
   };

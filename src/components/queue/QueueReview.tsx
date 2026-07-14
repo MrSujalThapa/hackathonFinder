@@ -119,7 +119,7 @@ export function QueueReview() {
               <option value="">All sources</option>
               {sources.map((source) => (
                 <option key={source} value={source}>
-                  {formatSourceLabel(source)}
+                  {queue.sourceMetadata[source]?.label ?? formatSourceLabel(source)}
                 </option>
               ))}
             </select>
@@ -215,6 +215,9 @@ export function QueueReview() {
               key={visibleCurrent.id}
               candidate={visibleCurrent}
               upcoming={visibleUpcoming}
+              sourceLabels={Object.fromEntries(
+                Object.entries(queue.sourceMetadata).map(([id, item]) => [id, item.label]),
+              )}
               busy={queue.isPending(visibleCurrent.id)}
               onDecision={queue.decide}
             />

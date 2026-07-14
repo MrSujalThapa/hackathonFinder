@@ -15,7 +15,7 @@ export type DiscoverySourceId = SourceName | `custom:${string}`;
 
 export type RawLead = {
   id: string;
-  source: SourceName;
+  source: DiscoverySourceId;
   title?: string;
   url?: string;
   text?: string;
@@ -40,7 +40,7 @@ export type HackathonEvidence = {
 
 export type HackathonEvent = {
   name: string;
-  source: SourceName;
+  source: DiscoverySourceId;
   officialUrl?: string;
   applyUrl?: string;
   socialUrl?: string;
@@ -91,7 +91,7 @@ export type VerificationResult = {
 
 export type RejectedCandidate = {
   name: string;
-  source: SourceName;
+  source: DiscoverySourceId;
   stage: "verification" | "scoring";
   reason: string;
 };

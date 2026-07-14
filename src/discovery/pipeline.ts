@@ -15,7 +15,6 @@ import type {
   DiscoveryPreferences,
   RejectedCandidate,
   ScoringResult,
-  SourceName,
   SourceRunStats,
 } from "@/core/discovery/types";
 import {
@@ -515,14 +514,14 @@ export async function executeDiscoveryPipeline(
     const accepted: AcceptedCandidate[] = [];
     const rejected: RejectedCandidate[] = [];
 
-    const markQueued = (source: SourceName, status: "NEW" | "NEEDS_REVIEW") => {
+    const markQueued = (source: DiscoverySourceId, status: "NEW" | "NEEDS_REVIEW") => {
       const stats = sourceStats.get(source);
       if (!stats) return;
       stats.accepted += 1;
       stats.queueReady += 1;
       if (status === "NEEDS_REVIEW") stats.needsReview += 1;
     };
-    const markInvalidRejected = (source: SourceName) => {
+    const markInvalidRejected = (source: DiscoverySourceId) => {
       const stats = sourceStats.get(source);
       if (!stats) return;
       stats.rejected += 1;

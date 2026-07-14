@@ -343,6 +343,19 @@ export async function runDiscovery(
     },
   });
 
+  if (customSelection.explicitSourceFlag) {
+    await emitter.emit(
+      "source_progress",
+      `Explicit selection: ${plannedSourceLabels.join(", ") || "(none)"}`,
+      {
+        source: "sources",
+        metadata: {
+          explicitSelection: plannedSourceLabels,
+        },
+      },
+    );
+  }
+
   for (const skipped of selection.skipped) {
     await emitter.emit("source_degraded", `Skipped - ${skipped.reason}`, {
       source: skipped.source,

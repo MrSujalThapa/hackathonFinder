@@ -76,7 +76,13 @@ export function hostnameFromUrl(url: string | null): string | null {
 export function formatSourceLabel(source: string): string {
   const normalized = source.toLowerCase();
   if (/^custom:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalized)) {
-    return source.slice("custom:".length)
+    const slug = source.slice("custom:".length);
+    const knownCustomLabels: Record<string, string> = {
+      hackathonmap: "Hackathon Map",
+      hackathonradar: "Hackathon Radar",
+    };
+    if (knownCustomLabels[slug]) return knownCustomLabels[slug];
+    return slug
       .split(/[-_]+/)
       .filter(Boolean)
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())

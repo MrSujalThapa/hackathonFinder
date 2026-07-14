@@ -49,6 +49,11 @@ type ExtractionDiagnostics = {
   strategy: ExtractionStrategy;
   candidates: number;
   valid: number;
+  detectedUnits: number;
+  candidateUnits: number;
+  normalizedLeads: number;
+  rejectedDuringParsing: number;
+  underExtracted: boolean;
   tables: number;
   dataRows: number;
   eventSections: number;
@@ -83,6 +88,11 @@ const EMPTY_DIAGNOSTICS: ExtractionDiagnostics = {
   strategy: "card_grid",
   candidates: 0,
   valid: 0,
+  detectedUnits: 0,
+  candidateUnits: 0,
+  normalizedLeads: 0,
+  rejectedDuringParsing: 0,
+  underExtracted: false,
   tables: 0,
   dataRows: 0,
   eventSections: 0,
@@ -135,19 +145,39 @@ function dedupeListings(listings: ParsedListing[], maxItems: number): ParsedList
   return out;
 }
 
+function extractionQuality(
+  detectedUnits: number,
+  normalizedLeads: number,
+): Pick<
+  ExtractionDiagnostics,
+  "detectedUnits" | "candidateUnits" | "normalizedLeads" | "rejectedDuringParsing" | "underExtracted"
+> {
+  const safeDetected = Math.max(0, detectedUnits);
+  const safeNormalized = Math.max(0, normalizedLeads);
+  const ratio = safeDetected === 0 ? 1 : safeNormalized / safeDetected;
+  return {
+    detectedUnits: safeDetected,
+    candidateUnits: safeDetected,
+    normalizedLeads: safeNormalized,
+    rejectedDuringParsing: Math.max(0, safeDetected - safeNormalized),
+    underExtracted: safeDetected >= 5 && ratio < 0.4,
+  };
+}
+
 function listingToLead(source: CustomSource, listing: ParsedListing): RawLead {
   const url = listing.officialUrl ?? listing.url;
+  const sourceId = `custom:${source.slug}` as const;
   const key = slugify(`${source.slug}-${listingKey(listing)}`);
   return {
     id: `custom-${source.slug}-${key}`,
-    source: "web",
+    source: sourceId,
     title: listing.title,
     url,
     text: listing.text,
     links: uniqueUrls([url, listing.listingUrl ?? source.listingUrl], source.listingUrl),
     postedAt: new Date().toISOString(),
     metadata: {
-      attribution: `custom:${source.slug}`,
+      attribution: sourceId,
       provenance: "custom_site",
       discoveryMode: listing.discoveryMode,
       listingUrl: listing.listingUrl ?? source.listingUrl,
@@ -161,7 +191,7 @@ function listingToLead(source: CustomSource, listing: ParsedListing): RawLead {
       sponsors: listing.sponsors,
       metadataCompleteness: listing.text.length > 160 ? "partial" : "low",
       reviewReasons: listing.reviewReasons,
-      sourceIds: { [`custom:${source.slug}`]: normalizeUrlForDedupe(url) },
+      sourceIds: { [sourceId]: normalizeUrlForDedupe(url) },
     },
   };
 }
@@ -383,6 +413,10 @@ export function extractCustomSourceHtml(
   const cardListings = parseCardsFromHtml(html, source, baseUrl);
   const headers = $("table").first().find("th").toArray().map((node) => cleanText($(node).text()));
   const hiddenCountText = cleanText($("body").text()).match(/\b\d+\s+more\s+upcoming\s+hackathons\s+hidden\b/i)?.[0];
+  const tableCount = $("table, [role='table'], [role='grid']").length;
+  const dataRowCount = Math.max(0, $("table tbody tr, table tr, [role='row']").length - (headers.length > 0 ? 1 : 0));
+  const eventSectionCount = $("#hackathon-items-root > [id^='hackathon-'], .hackathon-item").length;
+  const cardCandidateCount = $("article, li, .card, [class*='card'], [class*='event'], section").length;
 
   const override = strategyOverride(source);
   let strategy: ExtractionStrategy = "card_grid";
@@ -397,22 +431,34 @@ export function extractCustomSourceHtml(
     strategy = "card_grid";
     listings = cardListings;
   }
+  const normalizedListings = dedupeListings(listings, source.maxItems);
+  const detectedUnits = Math.max(
+    dataRowCount,
+    eventSectionCount,
+    strategy === "card_grid" ? cardCandidateCount : 0,
+    tableListings.length,
+    sectionListings.length,
+    cardListings.length,
+  );
+  const quality = extractionQuality(detectedUnits, normalizedListings.length);
 
   const diagnostics: ExtractionDiagnostics = {
     ...EMPTY_DIAGNOSTICS,
     strategy,
     candidates: tableListings.length + sectionListings.length + cardListings.length,
-    valid: listings.length,
-    tables: $("table, [role='table'], [role='grid']").length,
-    dataRows: $("table tbody tr, table tr").length,
-    eventSections: $("#hackathon-items-root > [id^='hackathon-'], .hackathon-item").length,
-    cardCandidates: $("article, li, .card, [class*='card'], [class*='event'], section").length,
+    valid: normalizedListings.length,
+    ...quality,
+    tables: tableCount,
+    dataRows: dataRowCount,
+    eventSections: eventSectionCount,
+    cardCandidates: cardCandidateCount,
     headers,
     subscriptionLimited: Boolean(hiddenCountText),
     hiddenCountText,
     parserFailures:
-      listings.length === 0
+      normalizedListings.length === 0 || quality.underExtracted
         ? [
+            quality.underExtracted ? "parser under-extracted visible repeated units" : "",
             tableListings.length === 0 ? "table extraction matched 0 valid rows" : "",
             sectionListings.length === 0 ? "repeated event section extraction matched 0 valid rows" : "",
             cardListings.length === 0 ? "card extraction matched 0 valid rows" : "",
@@ -421,7 +467,7 @@ export function extractCustomSourceHtml(
   };
 
   return {
-    listings: dedupeListings(listings, source.maxItems),
+    listings: normalizedListings,
     diagnostics,
   };
 }
@@ -608,6 +654,16 @@ function isTimeoutMessage(message: string): boolean {
   return /timed out|timeout|AbortError/i.test(message);
 }
 
+function qualityMessage(source: CustomSource, diagnostics: ExtractionDiagnostics): string {
+  if (diagnostics.underExtracted) {
+    return `[custom:${source.slug}] Parser under-extracted the directory`;
+  }
+  if (diagnostics.detectedUnits >= 5 && diagnostics.normalizedLeads === 0) {
+    return `[custom:${source.slug}] Parser failed to normalize visible rows`;
+  }
+  return `[custom:${source.slug}] Extraction completed`;
+}
+
 export async function collectCustomSource(
   source: CustomSource,
   options: {
@@ -617,7 +673,8 @@ export async function collectCustomSource(
   } = {},
 ): Promise<CollectorResult> {
   const startedAt = Date.now();
-  const result = emptyCollectorResult("web", startedAt);
+  const customId = `custom:${source.slug}` as const;
+  const result = emptyCollectorResult(customId, startedAt);
   const requestedTimeoutMs = options.timeoutMs ?? 20_000;
   const mode = source.mode;
   options.logger?.(`[custom:${source.slug}] Starting ${mode} discovery...`);
@@ -645,8 +702,16 @@ export async function collectCustomSource(
       });
       options.logger?.(`[custom:${source.slug}] Static HTML loaded`);
       extracted = extractCustomSourceHtml(html, source);
-      if (mode === "auto" && extracted.listings.length === 0 && shouldTryPlaywrightFallback(html)) {
-        options.logger?.(`[custom:${source.slug}] Static parser found 0 usable events`);
+      if (
+        mode === "auto" &&
+        shouldTryPlaywrightFallback(html) &&
+        (extracted.listings.length === 0 || extracted.diagnostics.underExtracted)
+      ) {
+        options.logger?.(
+          extracted.diagnostics.underExtracted
+            ? `[custom:${source.slug}] Static parser under-extracted visible units`
+            : `[custom:${source.slug}] Static parser found 0 usable events`,
+        );
         options.logger?.(`[custom:${source.slug}] Trying Playwright fallback...`);
         usedPlaywright = true;
         extracted = await collectRenderedListings(source, Math.min(requestedTimeoutMs, PLAYWRIGHT_CHECK_TIMEOUT_MS), options.logger);
@@ -654,11 +719,16 @@ export async function collectCustomSource(
     }
 
     options.logger?.(`[custom:${source.slug}] Shape: ${extracted.diagnostics.strategy.replace(/_/g, " ")}`);
+    options.logger?.(`[custom:${source.slug}] ${extracted.diagnostics.detectedUnits} visible rows`);
+    options.logger?.(`[custom:${source.slug}] ${extracted.diagnostics.normalizedLeads} rows normalized`);
     if (extracted.diagnostics.tables > 0) {
       options.logger?.(`[custom:${source.slug}] ${extracted.diagnostics.tables} data table detected`);
     }
     if (extracted.diagnostics.eventSections > 0) {
       options.logger?.(`[custom:${source.slug}] ${extracted.diagnostics.eventSections} event-like sections detected`);
+    }
+    if (extracted.diagnostics.underExtracted) {
+      options.logger?.(qualityMessage(source, extracted.diagnostics));
     }
 
     if (extracted.listings.length === 0) {
@@ -674,6 +744,12 @@ export async function collectCustomSource(
         enriched: 0,
         partial: 0,
         dropped: extracted.diagnostics.candidates,
+        detectedUnits: extracted.diagnostics.detectedUnits,
+        candidateUnits: extracted.diagnostics.candidateUnits,
+        normalizedLeads: extracted.diagnostics.normalizedLeads,
+        rejectedDuringParsing: extracted.diagnostics.rejectedDuringParsing,
+        pagesTraversed: "pagesVisited" in extracted ? extracted.pagesVisited : 1,
+        extractionStrategy: extracted.diagnostics.strategy,
         stopReason: "parser_failure",
         safeMessage: message,
       };
@@ -693,7 +769,10 @@ export async function collectCustomSource(
       leads = await enrichDetails(source, leads, requestedTimeoutMs);
     }
     result.leads = leads;
-    result.status = "completed";
+    result.status = extracted.diagnostics.underExtracted ? "degraded" : "completed";
+    if (extracted.diagnostics.underExtracted) {
+      result.warnings.push("Parser under-extracted the directory");
+    }
     const pagesVisited = "pagesVisited" in extracted ? extracted.pagesVisited : 1;
     result.metrics = {
       pagesFetched: pagesVisited,
@@ -712,9 +791,19 @@ export async function collectCustomSource(
       enriched: result.metrics.detailPagesOpened,
       partial: result.leads.filter((lead) => (lead.metadata?.reviewReasons as unknown[] | undefined)?.length).length,
       dropped: Math.max(0, extracted.diagnostics.candidates - result.leads.length),
-      stopReason: "stopReason" in extracted ? extracted.stopReason : undefined,
+      detectedUnits: extracted.diagnostics.detectedUnits,
+      candidateUnits: extracted.diagnostics.candidateUnits,
+      normalizedLeads: extracted.diagnostics.normalizedLeads,
+      rejectedDuringParsing: extracted.diagnostics.rejectedDuringParsing,
+      pagesTraversed: pagesVisited,
+      extractionStrategy: extracted.diagnostics.strategy,
+      stopReason: extracted.diagnostics.underExtracted
+        ? "under_extraction"
+        : "stopReason" in extracted ? extracted.stopReason : undefined,
       safeMessage: extracted.diagnostics.subscriptionLimited
         ? "Additional subscription-limited rows were not accessed"
+        : extracted.diagnostics.underExtracted
+          ? "Parser under-extracted the directory"
         : undefined,
     };
     options.logger?.(`[custom:${source.slug}] ${result.leads.length} public leads extractable`);
@@ -723,8 +812,10 @@ export async function collectCustomSource(
     }
     if (options.persistHealth) {
       await updateCustomSourceHealth(source.slug, {
-        status: "healthy",
-        lastErrorSafe: null,
+        status: result.status === "degraded" ? "degraded" : "healthy",
+        lastErrorSafe: result.status === "degraded"
+          ? "Parser under-extracted the directory"
+          : null,
       }).catch(() => undefined);
     }
   } catch (error) {

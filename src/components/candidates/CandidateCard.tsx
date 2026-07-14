@@ -18,6 +18,7 @@ type CandidateCardProps = {
   onReject?: () => void;
   onSave?: () => void;
   busy?: boolean;
+  sourceLabels?: Record<string, string>;
   className?: string;
   style?: React.CSSProperties;
 };
@@ -30,6 +31,7 @@ export function CandidateCardView({
   onReject,
   onSave,
   busy = false,
+  sourceLabels,
   className = "",
   style,
 }: CandidateCardProps) {
@@ -51,7 +53,7 @@ export function CandidateCardView({
     >
       <span className="hf-corner-tr" aria-hidden="true" />
       <span className="hf-corner-bl" aria-hidden="true" />
-      <CandidateHero candidate={candidate} />
+      <CandidateHero candidate={candidate} sourceLabels={sourceLabels} />
 
       <div className="flex flex-1 flex-col gap-3 px-5 pb-3 pt-3">
         <div className="flex items-start justify-between gap-3">
