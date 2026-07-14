@@ -9,7 +9,7 @@ import type { SourceExperiment } from "@/experiments/scraper-v2/generic/types";
 
 loadLocalEnv();
 
-const TRACE_DIR = path.join(".local-audits", "traces", "phase-3b");
+const DEFAULT_TRACE_DIR = path.join(".local-audits", "traces", "phase-4");
 
 function argValue(name: string): string | undefined {
   const prefix = `${name}=`;
@@ -58,11 +58,12 @@ function experimentFromArgs(): SourceExperiment {
 
 async function main(): Promise<void> {
   const experiment = experimentFromArgs();
+  const traceDir = argValue("--trace-dir") ?? DEFAULT_TRACE_DIR;
   const result = await runGenericStructuredExtraction(experiment);
   const lines = formatGenericStructuredExtractionResult(result);
   console.log(lines.join("\n"));
 
-  await mkdir(TRACE_DIR, { recursive: true });
+  await mkdir(traceDir, { recursive: true });
   const trace = [
     `# Generic Structured Extraction Trace`,
     "",
@@ -88,6 +89,20 @@ async function main(): Promise<void> {
     JSON.stringify(result.schema ?? null, null, 2),
     "```",
     "",
+    "## DOM Inference",
+    "",
+    "| Rank | Artifact | Parent | Units | Confidence | Title Unique | URL Unique | Date Coverage | Reasons |",
+    "| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+    ...(result.dom?.repeatedUnitSets.slice(0, 12).map((set, index) =>
+      `| ${index + 1} | ${set.artifactId} | ${set.parentNodeId} | ${set.diagnostics.unitCount} | ${set.confidence} | ${set.diagnostics.uniqueTitleRatio} | ${set.diagnostics.uniqueUrlRatio} | ${set.diagnostics.dateCoverage} | ${set.rejectionReasons.join("; ")} |`,
+    ) ?? []),
+    "",
+    "## DOM Schema",
+    "",
+    "```json",
+    JSON.stringify(result.dom?.schema ?? null, null, 2),
+    "```",
+    "",
     "## Quality",
     "",
     "```json",
@@ -99,7 +114,7 @@ async function main(): Promise<void> {
     ...result.leads.slice(0, 20).map((lead) => `- ${lead.title}${lead.canonicalUrl ? ` (${lead.canonicalUrl})` : ""}`),
     "",
   ].join("\n");
-  await writeFile(path.join(TRACE_DIR, traceNameForUrl(result.inputUrl)), trace, "utf8");
+  await writeFile(path.join(traceDir, traceNameForUrl(result.inputUrl)), trace, "utf8");
 }
 
 main().catch((error) => {

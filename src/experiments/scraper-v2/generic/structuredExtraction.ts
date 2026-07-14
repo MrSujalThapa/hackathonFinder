@@ -1,5 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { acquireGenericArtifacts } from "@/experiments/scraper-v2/generic/acquisition";
+import { runGenericDomExtraction } from "@/experiments/scraper-v2/generic/domExtraction";
 import { inferGenericEventSchema } from "@/experiments/scraper-v2/generic/fieldInference";
 import { normalizeGenericRecords } from "@/experiments/scraper-v2/generic/normalization";
 import { inferGenericPagination } from "@/experiments/scraper-v2/generic/pagination";
@@ -62,8 +63,20 @@ export async function runGenericStructuredExtraction(
   timings.fieldInferenceMs = ms(schemaStartedAt);
 
   const normalizationStartedAt = performance.now();
-  const leads = selected && schema ? normalizeGenericRecords(selected, schema, experiment) : [];
+  const structuredLeads = selected && schema ? normalizeGenericRecords(selected, schema, experiment) : [];
   timings.normalizationMs = ms(normalizationStartedAt);
+
+  const domStartedAt = performance.now();
+  const dom = runGenericDomExtraction(acquisition.artifacts, experiment);
+  timings.domInferenceMs = ms(domStartedAt);
+
+  const strategySelected =
+    dom.leads.length > 0 && (structuredLeads.length === 0 || dom.leads.length > structuredLeads.length)
+      ? "dom"
+      : structuredLeads.length > 0
+        ? "structured"
+        : "none";
+  const leads = strategySelected === "dom" ? dom.leads : structuredLeads;
 
   const paginationStartedAt = performance.now();
   const pagination = inferGenericPagination(selected);
@@ -71,11 +84,11 @@ export async function runGenericStructuredExtraction(
 
   const qualityStartedAt = performance.now();
   const quality = evaluateGenericExtractionQuality({
-    discoveredRecords: selected?.records.length ?? 0,
+    discoveredRecords: strategySelected === "dom" ? dom.availableRecords ?? dom.leads.length : selected?.records.length ?? 0,
     leads,
     experiment,
     blockedReason: acquisition.diagnostics.blockedReason,
-    schemaRejected: schema?.rejected,
+    schemaRejected: strategySelected === "dom" ? dom.stopReason === "schema_rejected" : schema?.rejected,
   });
   timings.qualityEvaluationMs = ms(qualityStartedAt);
   timings.totalMs = ms(totalStartedAt);
@@ -98,6 +111,8 @@ export async function runGenericStructuredExtraction(
     ...(selected ? { selectedRecordSet: summarizeRecordSet(selected) } : {}),
     ...(schema ? { schema } : {}),
     leads,
+    strategySelected,
+    dom,
     pagination,
     quality,
     timings,
@@ -134,6 +149,9 @@ export function formatGenericStructuredExtractionResult(
   lines.push(`  selected artifact         ${result.selectedRecordSet?.artifactKind ?? "none"}`);
   lines.push(`  selected path             ${result.selectedRecordSet?.path ?? "none"}`);
   lines.push(`  selected records          ${result.selectedRecordSet?.records ?? 0}`);
+  lines.push(`  strategy selected         ${result.strategySelected}`);
+  lines.push(`  DOM unit sets             ${result.dom?.repeatedUnitSets.length ?? 0}`);
+  lines.push(`  DOM selected units        ${result.dom?.selectedUnitSet?.diagnostics.unitCount ?? 0}`);
   lines.push(`  field inference           ${seconds(result.timings.fieldInferenceMs)}`);
   lines.push(`  normalized leads          ${result.quality.normalizedLeads}`);
   lines.push(`  valid events              ${result.quality.validEventLeads}`);

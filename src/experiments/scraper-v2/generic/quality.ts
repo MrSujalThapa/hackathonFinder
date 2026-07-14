@@ -58,11 +58,19 @@ export function evaluateGenericExtractionQuality(input: {
     ? normalizeRatio(validEventLeads / input.experiment.expectedMinimumEventCount)
     : undefined;
 
-  let classification: ExtractionQualityReport["classification"] = "healthy";
+  let classification: ExtractionQualityReport["classification"] = "healthy_complete";
   if (input.blockedReason) classification = "blocked";
   else if (validEventLeads === 0) classification = "failed";
-  else if (degradedReasons.length > 0) classification = "degraded";
-  else if (validEventLeads < 5 || estimatedPrecision < 0.9) classification = "usable";
+  else if (estimatedPrecision < 0.9) classification = "degraded_low_precision";
+  else if (degradedReasons.some((reason) => /under-extracted|records discovered but none/i.test(reason))) {
+    classification = "degraded_under_extraction";
+  } else if (estimatedRecall !== undefined && estimatedRecall < 0.8) {
+    classification = "usable_partial";
+  } else if (input.experiment.expectedMinimumEventCount && validEventLeads >= input.experiment.expectedMinimumEventCount) {
+    classification = "healthy_bounded";
+  } else if (validEventLeads < 5) {
+    classification = "usable_partial";
+  }
 
   return {
     discoveredRecords: input.discoveredRecords,
