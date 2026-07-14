@@ -1,3 +1,5 @@
+import type { DiscoveryPerformanceSummary } from "@/discovery/performance";
+
 export type DiscoveryMode = "online" | "in-person" | "hybrid" | "unknown";
 export type ReviewPolicy = "broad" | "balanced" | "strict";
 
@@ -207,6 +209,7 @@ export type AgentRunSummary = {
   sourceStats: SourceRunStats[];
   sourceAccounting: SourceAccounting;
   agent?: AgentRunObservability;
+  performance?: DiscoveryPerformanceSummary;
   warnings: string[];
   errors: string[];
 };

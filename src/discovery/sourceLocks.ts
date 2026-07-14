@@ -13,6 +13,8 @@ import { emptyCollectorResult, type CollectorResult } from "@/collectors/types";
 import type { DiscoveryEventSink } from "@/discovery/events";
 import { createEventEmitter } from "@/discovery/events";
 import { resolveHakkuProfileName } from "@/lib/browser/profilePaths";
+import type { CollectorTiming } from "@/discovery/performance";
+import { performance } from "node:perf_hooks";
 
 export class SourceLockTimeoutError extends Error {
   readonly source: SourceName;
@@ -67,6 +69,7 @@ export type CollectWithSourceLocksOptions = {
   lockWaitTimeoutMs?: number;
   /** Override public pool size (tests / config). */
   publicConcurrency?: number;
+  onCollectorTiming?: (timing: CollectorTiming) => void;
 };
 
 const DEFAULT_PUBLIC_CONCURRENCY = 3;
@@ -274,6 +277,7 @@ export async function collectWithSourceLocks(
   const results = await Promise.all(
     sources.map(async (source) => {
       const startedAt = Date.now();
+      const submittedAtMs = performance.now();
       let release: (() => void) | undefined;
       try {
         release = await acquireSourceLock({
@@ -307,7 +311,28 @@ export async function collectWithSourceLocks(
           },
         });
 
-        return await collectOne(source);
+        const acquiredAtMs = performance.now();
+        const result = await collectOne(source);
+        const endedAtMs = performance.now();
+        options.onCollectorTiming?.({
+          source,
+          waitMs: acquiredAtMs - submittedAtMs,
+          executionMs: endedAtMs - acquiredAtMs,
+          totalMs: endedAtMs - submittedAtMs,
+          rawLeadCount: result.diagnostics.discovered,
+          returnedLeadCount: result.leads.length,
+          outcome: result.status,
+          diagnostics: {
+            ...result.metrics,
+            discovered: result.diagnostics.discovered,
+            returned: result.diagnostics.returned,
+            pagesTraversed: result.diagnostics.pagesTraversed ?? 0,
+            detectedUnits: result.diagnostics.detectedUnits ?? 0,
+            candidateUnits: result.diagnostics.candidateUnits ?? 0,
+            normalizedLeads: result.diagnostics.normalizedLeads ?? 0,
+          },
+        });
+        return result;
       } catch (error) {
         if (error instanceof SourceLockTimeoutError) {
           await emitter.emit("source_degraded", error.message, {
@@ -315,7 +340,18 @@ export async function collectWithSourceLocks(
             level: "warning",
             metadata: { lock: "timeout", lockKey: sourceLockKey(source) },
           });
-          return degradedLockResult(source, startedAt, error.message);
+          const result = degradedLockResult(source, startedAt, error.message);
+          const endedAtMs = performance.now();
+          options.onCollectorTiming?.({
+            source,
+            waitMs: endedAtMs - submittedAtMs,
+            executionMs: 0,
+            totalMs: endedAtMs - submittedAtMs,
+            rawLeadCount: 0,
+            returnedLeadCount: 0,
+            outcome: "timed out",
+          });
+          return result;
         }
         if (error instanceof SourceLockCancelledError) {
           if (options.cancellationSignal?.aborted) {
@@ -323,12 +359,33 @@ export async function collectWithSourceLocks(
             cancelled.name = "DiscoveryCancelledError";
             throw cancelled;
           }
-          return degradedLockResult(source, startedAt, error.message);
+          const result = degradedLockResult(source, startedAt, error.message);
+          const endedAtMs = performance.now();
+          options.onCollectorTiming?.({
+            source,
+            waitMs: endedAtMs - submittedAtMs,
+            executionMs: 0,
+            totalMs: endedAtMs - submittedAtMs,
+            rawLeadCount: 0,
+            returnedLeadCount: 0,
+            outcome: "degraded",
+          });
+          return result;
         }
         const result = emptyCollectorResult(source, startedAt);
         result.errors.push(
           error instanceof Error ? error.message : `Collector ${source} failed`,
         );
+        const endedAtMs = performance.now();
+        options.onCollectorTiming?.({
+          source,
+          waitMs: 0,
+          executionMs: endedAtMs - submittedAtMs,
+          totalMs: endedAtMs - submittedAtMs,
+          rawLeadCount: 0,
+          returnedLeadCount: 0,
+          outcome: "failed",
+        });
         return result;
       } finally {
         release?.();

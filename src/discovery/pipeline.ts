@@ -45,6 +45,10 @@ import {
 import { aggregateCollectorResults } from "@/discovery/collectorAggregation";
 import { collectCustomSource } from "@/collectors/customSource";
 import type { CustomSource } from "@/server/customSources/types";
+import type {
+  DiscoveryPerformanceTracker,
+  PersistenceTiming,
+} from "@/discovery/performance";
 
 const SUPABASE_ENV_MESSAGE =
   "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in .env.local, or run with --dry-run.";
@@ -68,6 +72,7 @@ export type DiscoveryPipelineOptions = {
   /** When true, search/X plan text is emitted as events instead of console.log. */
   emitPlansAsEvents?: boolean;
   customSources?: CustomSource[];
+  performanceTracker?: DiscoveryPerformanceTracker;
 };
 
 function initSourceStats(sources: DiscoverySourceId[]): Map<DiscoverySourceId, SourceRunStats> {
@@ -230,6 +235,7 @@ export async function executeDiscoveryPipeline(
   const totalTimeoutMs = options.totalTimeoutMs ?? runtimeConfig.jobTimeoutMs;
   const effectiveSourceTimeout = Math.min(sourceTimeoutMs, totalTimeoutMs);
   const now = options.now ?? new Date();
+  const performanceTracker = options.performanceTracker;
   summary.verbose = options.verbose === true;
   summary.agent = options.agentObservability;
 
@@ -267,6 +273,7 @@ export async function executeDiscoveryPipeline(
     summary.durationMs = Date.now() - startedAt;
     summary.sourceStats = [...sourceStats.values()];
     summary.sourceAccounting = sourceAccountingFromStats(summary.sourceStats);
+    summary.performance = performanceTracker?.finalize();
     await emitter.emit("run_completed", "Dry-run plan only; collectors were not executed.", {
       metadata: { dryRunPlan: true },
     });
@@ -310,6 +317,7 @@ export async function executeDiscoveryPipeline(
       dryRun,
       requestId: agentRunId ?? runId,
     };
+    const collectionStartedAtMs = performanceTracker?.now();
     const collectorPromise = collectWithSourceLocks(
       preferences.sources,
       async (source) => {
@@ -343,6 +351,7 @@ export async function executeDiscoveryPipeline(
         cancellationSignal: options.cancellationSignal,
         lockWaitTimeoutMs: runtimeConfig.sourceLockWaitMs,
         publicConcurrency: runtimeConfig.publicSourceConcurrency,
+        onCollectorTiming: (timing) => performanceTracker?.recordCollector(timing),
       },
     );
 
@@ -361,9 +370,11 @@ export async function executeDiscoveryPipeline(
     assertNotCancelled(options.cancellationSignal);
 
     const customResults = [];
+    const customCollectionStartedAtMs = performanceTracker?.now();
     for (const customSource of options.customSources ?? []) {
       assertNotCancelled(options.cancellationSignal);
       const customId = `custom:${customSource.slug}` as const;
+      const customStartedAtMs = performanceTracker?.now();
       await emitter.emit("source_started", "Starting...", { source: customId });
       const customResult = await collectCustomSource(customSource, {
         timeoutMs: effectiveSourceTimeout,
@@ -376,7 +387,42 @@ export async function executeDiscoveryPipeline(
         },
         persistHealth: !dryRun,
       });
+      const customEndedAtMs = performanceTracker?.now();
+      if (customStartedAtMs != null && customEndedAtMs != null) {
+        performanceTracker?.recordCollector({
+          source: customId,
+          waitMs: 0,
+          executionMs: customEndedAtMs - customStartedAtMs,
+          totalMs: customEndedAtMs - customStartedAtMs,
+          rawLeadCount: customResult.diagnostics.discovered,
+          returnedLeadCount: customResult.leads.length,
+          outcome: customResult.status,
+          diagnostics: {
+            discovered: customResult.diagnostics.discovered,
+            returned: customResult.diagnostics.returned,
+            detectedUnits: customResult.diagnostics.detectedUnits ?? 0,
+            candidateUnits: customResult.diagnostics.candidateUnits ?? 0,
+            normalizedLeads: customResult.diagnostics.normalizedLeads ?? 0,
+          },
+        });
+      }
       customResults.push({ ...customResult, source: customId });
+    }
+    if (customCollectionStartedAtMs != null && (options.customSources?.length ?? 0) > 0) {
+      performanceTracker?.recordStage(
+        "customSourceCollection",
+        customCollectionStartedAtMs,
+        performanceTracker.now(),
+        { itemCount: options.customSources?.length ?? 0 },
+      );
+    }
+    if (collectionStartedAtMs != null) {
+      performanceTracker?.recordStage(
+        "collection",
+        collectionStartedAtMs,
+        performanceTracker.now(),
+        { itemCount: collectorResults.length + customResults.length },
+      );
     }
 
     const aggregation = aggregateCollectorResults([...collectorResults, ...customResults]);
@@ -502,11 +548,22 @@ export async function executeDiscoveryPipeline(
     assertNotCancelled(options.cancellationSignal);
     await emitter.emit("enrichment_started", "Enriching promising leads…");
 
-    const enrichment = await enrichPromisingLeads(leads, {
-      timeoutMs: Math.min(10_000, effectiveSourceTimeout),
-      maxPages: 15,
-      concurrency: 4,
-    });
+    const enrichment = performanceTracker
+      ? await performanceTracker.measure(
+          "enrichment",
+          () =>
+            enrichPromisingLeads(leads, {
+              timeoutMs: Math.min(10_000, effectiveSourceTimeout),
+              maxPages: 15,
+              concurrency: 4,
+            }),
+          { itemCount: leads.length },
+        )
+      : await enrichPromisingLeads(leads, {
+          timeoutMs: Math.min(10_000, effectiveSourceTimeout),
+          maxPages: 15,
+          concurrency: 4,
+        });
     leads = enrichment.leads;
     summary.enriched = enrichment.enrichedCount;
     summary.warnings.push(...enrichment.warnings.map((warning) => `[enrich] ${warning}`));
@@ -522,8 +579,20 @@ export async function executeDiscoveryPipeline(
     assertNotCancelled(options.cancellationSignal);
     await emitter.emit("verification_started", `${leads.length} raw leads`);
 
-    const extracted = extractHackathonEvents(leads, { now });
-    const merged = mergeCrossSourceEvents(extracted);
+    const extracted = performanceTracker
+      ? performanceTracker.measureSync(
+          "extraction",
+          () => extractHackathonEvents(leads, { now }),
+          { itemCount: leads.length },
+        )
+      : extractHackathonEvents(leads, { now });
+    const merged = performanceTracker
+      ? performanceTracker.measureSync(
+          "dedupe",
+          () => mergeCrossSourceEvents(extracted),
+          { itemCount: extracted.length },
+        )
+      : mergeCrossSourceEvents(extracted);
     summary.extracted = extracted.length;
     summary.uniqueLeads = merged.events.length;
     summary.crossSourceMerges = merged.mergeCount;
@@ -559,6 +628,7 @@ export async function executeDiscoveryPipeline(
     };
     const broadReview = isBroadReview(preferences);
 
+    const verificationStartedAtMs = performanceTracker?.now();
     for (const event of merged.events) {
       assertNotCancelled(options.cancellationSignal);
       try {
@@ -731,6 +801,14 @@ export async function executeDiscoveryPipeline(
         );
       }
     }
+    if (verificationStartedAtMs != null) {
+      performanceTracker?.recordStage(
+        "verification",
+        verificationStartedAtMs,
+        performanceTracker.now(),
+        { itemCount: merged.events.length },
+      );
+    }
 
     summary.accepted = accepted.length;
     summary.rejected = rejected.length;
@@ -741,6 +819,24 @@ export async function executeDiscoveryPipeline(
     await emitter.emit("persistence_started", dryRun ? "Dry-run persistence…" : "Persisting candidates…");
 
     const seenFingerprints = new Set<string>();
+    const persistenceStartedAtMs = performanceTracker?.now();
+    const persistenceTiming: PersistenceTiming = {
+      skipped: dryRun,
+      totalMs: 0,
+      candidateMs: 0,
+      evidenceMs: 0,
+      completionMs: 0,
+      acceptedCandidates: accepted.length,
+      candidateLookups: 0,
+      candidateInserts: 0,
+      candidateUpdates: 0,
+      candidateFailures: 0,
+      evidenceLookups: 0,
+      evidenceInserts: 0,
+      evidenceUpdates: 0,
+      evidenceFailures: 0,
+      databaseCalls: 0,
+    };
 
     for (const item of accepted) {
       assertNotCancelled(options.cancellationSignal);
@@ -767,23 +863,43 @@ export async function executeDiscoveryPipeline(
       }
 
       try {
+        const candidateStartedAtMs = performanceTracker?.now();
+        persistenceTiming.candidateLookups += 1;
+        persistenceTiming.databaseCalls += 1;
         const result = await upsertCandidateByFingerprint(upsertInput);
+        if (candidateStartedAtMs != null) {
+          persistenceTiming.candidateMs += performanceTracker!.now() - candidateStartedAtMs;
+        }
         if (result.isNew) {
+          persistenceTiming.candidateInserts += 1;
           summary.created += 1;
           summary.stored += 1;
         } else {
+          persistenceTiming.candidateUpdates += 1;
           summary.updated += 1;
           summary.duplicatesUpdated += 1;
         }
 
         for (const evidence of item.event.evidence) {
           try {
-            await addEvidence(result.candidate.id, {
+            const evidenceStartedAtMs = performanceTracker?.now();
+            persistenceTiming.evidenceLookups += 1;
+            persistenceTiming.databaseCalls += 1;
+            const savedEvidence = await addEvidence(result.candidate.id, {
               ...eventEvidenceToAddInput(evidence),
               agentRunId,
             });
+            if (evidenceStartedAtMs != null) {
+              persistenceTiming.evidenceMs += performanceTracker!.now() - evidenceStartedAtMs;
+            }
+            if ((savedEvidence.seenCount ?? 1) > 1) {
+              persistenceTiming.evidenceUpdates += 1;
+            } else {
+              persistenceTiming.evidenceInserts += 1;
+            }
             summary.evidenceWritten += 1;
           } catch (error) {
+            persistenceTiming.evidenceFailures += 1;
             summary.storageFailures += 1;
             summary.warnings.push(
               `Evidence write failed for ${item.event.name}: ${
@@ -793,6 +909,7 @@ export async function executeDiscoveryPipeline(
           }
         }
       } catch (error) {
+        persistenceTiming.candidateFailures += 1;
         summary.storageFailures += 1;
         summary.errors.push(
           `Upsert failed for ${item.event.name}: ${
@@ -801,12 +918,21 @@ export async function executeDiscoveryPipeline(
         );
       }
     }
+    if (performanceTracker && persistenceStartedAtMs != null) {
+      persistenceTiming.totalMs = performanceTracker.now() - persistenceStartedAtMs;
+      performanceTracker.recordStage("persistence", persistenceStartedAtMs, performanceTracker.now(), {
+        itemCount: accepted.length,
+        metadata: { dryRun },
+      });
+      performanceTracker.setPersistence(persistenceTiming);
+    }
 
     summary.acceptedCandidates = buildAcceptedSummary(accepted);
     summary.sourceStats = [...sourceStats.values()];
     summary.sourceAccounting = sourceAccountingFromStats(summary.sourceStats);
     summary.durationMs = Date.now() - startedAt;
 
+    const completionStartedAtMs = performanceTracker?.now();
     if (agentRunId) {
       const runStatus =
         summary.errors.length > 0
@@ -815,6 +941,14 @@ export async function executeDiscoveryPipeline(
             : "FAILED"
           : "COMPLETED";
       await completeAgentRun(agentRunId, summary, runStatus);
+    }
+    if (completionStartedAtMs != null) {
+      const completionMs = performanceTracker!.now() - completionStartedAtMs;
+      if (performanceTracker && persistenceTiming && !dryRun) {
+        persistenceTiming.completionMs = completionMs;
+        performanceTracker.setPersistence(persistenceTiming);
+      }
+      performanceTracker?.recordStage("completion", completionStartedAtMs, performanceTracker.now());
     }
 
     const created = dryRun ? summary.wouldCreate : summary.created;
@@ -840,21 +974,24 @@ export async function executeDiscoveryPipeline(
             leadsFound: stats.leadsFound,
             outcome: stats.outcome,
           })),
+          performance: performanceTracker?.finalize(),
         },
       },
     );
 
+    summary.performance = performanceTracker?.finalize();
     return summary;
   } catch (error) {
     summary.errors.push(error instanceof Error ? error.message : "Discovery run failed");
     summary.sourceStats = [...sourceStats.values()];
     summary.sourceAccounting = sourceAccountingFromStats(summary.sourceStats);
     summary.durationMs = Date.now() - startedAt;
+    summary.performance = performanceTracker?.finalize();
 
     if (isDiscoveryCancelledError(error)) {
       await emitter.emit("run_cancelled", "Discovery run cancelled", {
         level: "warning",
-        metadata: { durationMs: summary.durationMs },
+        metadata: { durationMs: summary.durationMs, performance: summary.performance },
       });
     } else {
       await emitter.emit(
@@ -862,7 +999,7 @@ export async function executeDiscoveryPipeline(
         error instanceof Error ? error.message : "Discovery run failed",
         {
           level: "error",
-          metadata: { durationMs: summary.durationMs },
+          metadata: { durationMs: summary.durationMs, performance: summary.performance },
         },
       );
     }

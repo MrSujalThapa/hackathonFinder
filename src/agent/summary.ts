@@ -16,6 +16,7 @@ import type { EvidenceType } from "@/lib/supabase/database.types";
 import type { AddEvidenceInput } from "@/core/candidates/types";
 import { normalizeDatePart } from "@/core/dedupe";
 import { deterministicCandidateSummary } from "@/core/candidateSummary";
+import { formatPerformanceSummary } from "@/discovery/performance";
 
 export function mapEvidenceType(type: HackathonEvidence["type"]): EvidenceType {
   switch (type) {
@@ -354,6 +355,13 @@ export function printAgentSummary(summary: AgentRunSummary): void {
     console.log("Errors:");
     for (const error of summary.errors) {
       console.log(`- ${error}`);
+    }
+    console.log("");
+  }
+
+  if (summary.performance) {
+    for (const line of formatPerformanceSummary(summary.performance)) {
+      console.log(line);
     }
     console.log("");
   }

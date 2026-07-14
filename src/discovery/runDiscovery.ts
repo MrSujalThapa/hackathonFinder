@@ -35,6 +35,7 @@ import {
   listCustomSources,
 } from "@/server/customSources/repository";
 import type { CustomSource } from "@/server/customSources/types";
+import { createDiscoveryPerformanceTracker } from "@/discovery/performance";
 
 export type DiscoveryRunMode = "auto" | "agent" | "deterministic";
 
@@ -63,6 +64,8 @@ export type RunDiscoveryInput = {
   showAgentPlan?: boolean;
   showAgentTrace?: boolean;
   runId?: string;
+  queueWaitMs?: number;
+  jobStartOverheadMs?: number;
 };
 
 export type DiscoveryRunResult = {
@@ -260,17 +263,29 @@ export async function runDiscovery(
   const dryRun = input.dryRun === true || input.dryRunPlan === true;
   const mode: DiscoveryRunMode = input.mode ?? "auto";
   const emitter = createEventEmitter(runId, input.eventSink);
-
-  const hakku = await getHakkuConnectionStatus();
-  const commandFlags = parseDiscoveryCommandFlags(input.command);
-  const plannerCommand = commandFlags.query || input.command;
-  const parsed = parseCommand(plannerCommand);
-  const customSelection = await selectCustomSourcesForRun(commandFlags);
-  const withCli = applyCliOptions(parsed, {
-    sources: input.sources ?? customSelection.builtInFromFlag,
-    maxResults: input.maxResults,
-    reviewPolicy: input.reviewPolicy ?? commandFlags.reviewPolicy,
+  const performanceTracker = createDiscoveryPerformanceTracker({
+    queueWaitMs: input.queueWaitMs,
+    jobStartOverheadMs: input.jobStartOverheadMs,
   });
+
+  const { hakku, plannerCommand, withCli, customSelection } =
+    await performanceTracker.measure("commandParsing", async () => {
+      const nextHakku = await getHakkuConnectionStatus();
+      const nextCommandFlags = parseDiscoveryCommandFlags(input.command);
+      const nextPlannerCommand = nextCommandFlags.query || input.command;
+      const parsed = parseCommand(nextPlannerCommand);
+      const nextCustomSelection = await selectCustomSourcesForRun(nextCommandFlags);
+      return {
+        hakku: nextHakku,
+        plannerCommand: nextPlannerCommand,
+        customSelection: nextCustomSelection,
+        withCli: applyCliOptions(parsed, {
+          sources: input.sources ?? nextCustomSelection.builtInFromFlag,
+          maxResults: input.maxResults,
+          reviewPolicy: input.reviewPolicy ?? nextCommandFlags.reviewPolicy,
+        }),
+      };
+    });
 
   const requestedSources: SourceName[] | undefined =
     input.sources && input.sources.length > 0
@@ -284,17 +299,19 @@ export async function runDiscovery(
   const enabledFromSettings =
     input.enabledSources ?? (getEnabledSources() as SourceName[]);
 
-  const selection = selectDiscoverySources({
-    requestedSources,
-    allSources: input.allSources,
-    enabledSources: enabledFromSettings,
-    availability: input.availability,
-    hakkuConnected: hakku.connected,
-    allowMock:
-      input.allowMockWrites === true ||
-      dryRun ||
-      requestedSources?.includes("mock") === true,
-  });
+  const selection = performanceTracker.measureSync("sourcePlan", () =>
+    selectDiscoverySources({
+      requestedSources,
+      allSources: input.allSources,
+      enabledSources: enabledFromSettings,
+      availability: input.availability,
+      hakkuConnected: hakku.connected,
+      allowMock:
+        input.allowMockWrites === true ||
+        dryRun ||
+        requestedSources?.includes("mock") === true,
+    }),
+  );
 
   let effectivePreferences: DiscoveryPreferences = {
     ...withCli,
@@ -391,129 +408,131 @@ export async function runDiscovery(
     }
 
     if (agentMode.useAgent || input.showAgentPlan || input.showAgentTrace) {
-      await emitter.emit("planning_started", "Interpreting request…");
+      await performanceTracker.measure("planning", async () => {
+        await emitter.emit("planning_started", "Interpreting request…");
 
-      const intent = parseIntent(plannerCommand);
-      const plannerResult =
-        agentMode.useAgent && intent.kind === "discover_hackathons"
-          ? await planDiscoveryWithLlm(effectivePreferences, {
+        const intent = parseIntent(plannerCommand);
+        const plannerResult =
+          agentMode.useAgent && intent.kind === "discover_hackathons"
+            ? await planDiscoveryWithLlm(effectivePreferences, {
+                dryRunCollectors: true,
+                sourceTimeoutMs: input.sourceTimeoutMs,
+                maxResults: input.maxResults,
+              })
+            : null;
+
+        if (plannerResult) {
+          const reconciledPlan = reconcileSourcePlan({
+            effectiveSources: selection.effectiveSources,
+            plannerSources: plannerResult.plan.selectedSources,
+            plannerIntents: plannerResult.plan.sourceIntents.map((intent) => ({
+              source: intent.source,
+              enabled: intent.enabled,
+              query: intent.query ?? undefined,
+              reason: intent.reason,
+            })),
+            availabilityBySource: selection.availabilityBySource,
+          });
+          effectivePreferences = {
+            ...plannerResult.preferences,
+            sources: reconciledPlan.sources,
+          };
+          warnings.push(...reconciledPlan.warnings);
+          agentLlmCalls = plannerResult.llmCalls;
+          planningCalls = plannerResult.planningCalls;
+          plannerLatencyMs = plannerResult.latencyMs;
+          plannerSucceeded = !plannerResult.fallbackUsed;
+          tokenUsage = plannerResult.usage;
+          fallbackUsed = plannerResult.fallbackUsed;
+          if (plannerResult.warning) warnings.push(plannerResult.warning);
+          warnings.push(...plannerResult.plan.warnings);
+        }
+
+        const deterministicPlan = plannerResult
+          ? {
+              id: `llm-${intent.rawCommand
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/^-|-$/g, "")
+                .slice(0, 40) || "command"}`,
+              summary: `LLM plan discovery across ${
+                plannedSourceDisplayLabels.join(", ") || "(none)"
+              }.`,
+              warnings: plannerResult.plan.warnings,
+              toolCalls: plannerResult.toolCalls,
+            }
+          : planDiscovery(intent, {
+              dryRunPlan: true,
               dryRunCollectors: true,
               sourceTimeoutMs: input.sourceTimeoutMs,
               maxResults: input.maxResults,
-            })
-          : null;
+            });
 
-      if (plannerResult) {
-        const reconciledPlan = reconcileSourcePlan({
-          effectiveSources: selection.effectiveSources,
-          plannerSources: plannerResult.plan.selectedSources,
-          plannerIntents: plannerResult.plan.sourceIntents.map((intent) => ({
-            source: intent.source,
-            enabled: intent.enabled,
-            query: intent.query ?? undefined,
-            reason: intent.reason,
-          })),
-          availabilityBySource: selection.availabilityBySource,
+        const planningSummary =
+          plannedSourceDisplayLabels.length > 0
+            ? `Planning discovery across ${plannedSourceDisplayLabels.join(", ")}.`
+            : deterministicPlan.summary;
+
+        await emitter.emit("planning_completed", planningSummary, {
+          metadata: {
+            planId: deterministicPlan.id,
+            sources: [
+              ...effectivePreferences.sources,
+              ...customSelection.customSources.map((source) => `custom:${source.slug}`),
+            ],
+            toolCalls: deterministicPlan.toolCalls.map((call) => call.name),
+          },
         });
-        effectivePreferences = {
-          ...plannerResult.preferences,
-          sources: reconciledPlan.sources,
-        };
-        warnings.push(...reconciledPlan.warnings);
-        agentLlmCalls = plannerResult.llmCalls;
-        planningCalls = plannerResult.planningCalls;
-        plannerLatencyMs = plannerResult.latencyMs;
-        plannerSucceeded = !plannerResult.fallbackUsed;
-        tokenUsage = plannerResult.usage;
-        fallbackUsed = plannerResult.fallbackUsed;
-        if (plannerResult.warning) warnings.push(plannerResult.warning);
-        warnings.push(...plannerResult.plan.warnings);
-      }
 
-      const deterministicPlan = plannerResult
-        ? {
-            id: `llm-${intent.rawCommand
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, "-")
-              .replace(/^-|-$/g, "")
-              .slice(0, 40) || "command"}`,
-            summary: `LLM plan discovery across ${
-              plannedSourceDisplayLabels.join(", ") || "(none)"
-            }.`,
-            warnings: plannerResult.plan.warnings,
-            toolCalls: plannerResult.toolCalls,
-          }
-        : planDiscovery(intent, {
-            dryRunPlan: true,
-            dryRunCollectors: true,
-            sourceTimeoutMs: input.sourceTimeoutMs,
-            maxResults: input.maxResults,
-          });
-
-      const planningSummary =
-        plannedSourceDisplayLabels.length > 0
-          ? `Planning discovery across ${plannedSourceDisplayLabels.join(", ")}.`
-          : deterministicPlan.summary;
-
-      await emitter.emit("planning_completed", planningSummary, {
-        metadata: {
-          planId: deterministicPlan.id,
-          sources: [
+        await emitter.emit(
+          "source_progress",
+          `Planned: ${[
             ...effectivePreferences.sources,
             ...customSelection.customSources.map((source) => `custom:${source.slug}`),
-          ],
-          toolCalls: deterministicPlan.toolCalls.map((call) => call.name),
-        },
-      });
-
-      await emitter.emit(
-        "source_progress",
-        `Planned: ${[
-          ...effectivePreferences.sources,
-          ...customSelection.customSources.map((source) => `custom:${source.slug}`),
-        ].join(", ")}`,
-        {
-          source: "sources",
-          metadata: {
-            plannedSources: effectivePreferences.sources,
-            customSources: customSelection.customSources.map((source) => source.slug),
+          ].join(", ")}`,
+          {
+            source: "sources",
+            metadata: {
+              plannedSources: effectivePreferences.sources,
+              customSources: customSelection.customSources.map((source) => source.slug),
+            },
           },
-        },
-      );
+        );
 
-      const loop = await runLoop({
-        plan: {
-          id: deterministicPlan.id,
-          description: deterministicPlan.summary,
-          toolCalls: deterministicPlan.toolCalls.map((call) => ({
-            id: call.id,
-            name: call.name,
-            args: call.args ?? {},
-          })),
-        },
-        limits: {
-          maxLoops: 3,
-          maxToolCalls: input.maxAgentCalls ?? 12,
-          maxElapsedMs: 10_000,
-          perToolTimeoutMs: 5_000,
-        },
-      });
+        const loop = await runLoop({
+          plan: {
+            id: deterministicPlan.id,
+            description: deterministicPlan.summary,
+            toolCalls: deterministicPlan.toolCalls.map((call) => ({
+              id: call.id,
+              name: call.name,
+              args: call.args ?? {},
+            })),
+          },
+          limits: {
+            maxLoops: 3,
+            maxToolCalls: input.maxAgentCalls ?? 12,
+            maxElapsedMs: 10_000,
+            perToolTimeoutMs: 5_000,
+          },
+        });
 
-      if (input.showAgentTrace && input.eventSink) {
-        for (const event of loop.runtime.trace) {
-          await emitter.emit(
-            "source_progress",
-            `#${event.sequence} ${event.type}${event.toolName ? ` ${event.toolName}` : ""}${event.message ? `: ${event.message}` : ""}`,
-            { metadata: { agentTrace: true } },
-          );
+        if (input.showAgentTrace && input.eventSink) {
+          for (const event of loop.runtime.trace) {
+            await emitter.emit(
+              "source_progress",
+              `#${event.sequence} ${event.type}${event.toolName ? ` ${event.toolName}` : ""}${event.message ? `: ${event.message}` : ""}`,
+              { metadata: { agentTrace: true } },
+            );
+          }
         }
-      }
 
-      if (loop.stopReason) warnings.push(`Agent planning stopped: ${loop.stopReason}`);
-      agentToolCalls = loop.runtime.toolCallCount;
-      agentStopReason =
-        loop.stopReason ??
-        (plannerResult ? plannerResult.plan.stopReason : agentStopReason);
+        if (loop.stopReason) warnings.push(`Agent planning stopped: ${loop.stopReason}`);
+        agentToolCalls = loop.runtime.toolCallCount;
+        agentStopReason =
+          loop.stopReason ??
+          (plannerResult ? plannerResult.plan.stopReason : agentStopReason);
+      });
     }
 
     const agentObservability: AgentRunSummary["agent"] = {
@@ -549,6 +568,7 @@ export async function runDiscovery(
       cancellationSignal: input.cancellationSignal,
       emitPlansAsEvents: Boolean(input.eventSink),
       customSources: customSelection.customSources,
+      performanceTracker,
     };
 
     const summary = await executeDiscoveryPipeline(
@@ -571,7 +591,13 @@ export async function runDiscovery(
     if (isDiscoveryCancelledError(error)) {
       return {
         runId,
-        summary: emptyCancelledSummary(input.command, effectivePreferences, dryRun, warnings),
+        summary: emptyCancelledSummary(
+          input.command,
+          effectivePreferences,
+          dryRun,
+          warnings,
+          performanceTracker.finalize(),
+        ),
         effectiveSources: plannedSourceLabels as DiscoverySourceId[],
         skippedSources: selection.skipped,
         cancelled: true,
@@ -586,6 +612,7 @@ function emptyCancelledSummary(
   preferences: DiscoveryPreferences,
   dryRun: boolean,
   warnings: string[],
+  performance?: AgentRunSummary["performance"],
 ): AgentRunSummary {
   return {
     rawCommand: command,
@@ -621,6 +648,7 @@ function emptyCancelledSummary(
       degradedSources: [],
       authRequiredSources: [],
     },
+    performance,
     warnings,
     errors: ["Discovery run cancelled"],
   };

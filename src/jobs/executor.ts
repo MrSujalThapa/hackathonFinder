@@ -160,6 +160,11 @@ export async function executeDiscoveryJob(
   };
 
   try {
+    const executionStartedAt = Date.now();
+    const createdAtMs = Date.parse(job.createdAt);
+    const queueWaitMs = Number.isFinite(createdAtMs)
+      ? Math.max(0, executionStartedAt - createdAtMs)
+      : undefined;
     const result = await runDiscovery({
       command: job.command,
       mode: job.mode,
@@ -173,6 +178,8 @@ export async function executeDiscoveryJob(
       runId: job.id,
       eventSink,
       cancellationSignal: abort.signal,
+      queueWaitMs,
+      jobStartOverheadMs: Math.max(0, Date.now() - executionStartedAt),
     });
 
     if (result.cancelled) {
@@ -227,6 +234,7 @@ export async function executeDiscoveryJob(
         sourceStats: summary.sourceStats,
         sourceAccounting: summary.sourceAccounting,
         agent: summary.agent ?? null,
+        performance: summary.performance ?? null,
       },
     }, terminal);
     await detachTerminalActiveJob();
