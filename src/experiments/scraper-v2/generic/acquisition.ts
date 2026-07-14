@@ -358,11 +358,18 @@ export async function acquireGenericArtifacts(
   attemptedLayers.push("framework state");
   if (!staticArtifactsSufficient(artifacts)) {
     attemptedLayers.push("browser observation");
-    const observed = await observeBrowserArtifacts(experiment, artifacts.length);
-    artifacts = artifacts.concat(observed.artifacts).slice(0, experiment.maxRequests);
-    requestsMade += observed.requestsMade;
-    browserPages += observed.browserPages;
-    if (observed.skippedReason) skippedLayers.push(observed.skippedReason);
+    const observed = await observeBrowserArtifacts(experiment, artifacts.length).catch((error) => {
+      skippedLayers.push(
+        `browser observation failed: ${error instanceof Error ? error.message.split("\n")[0] : "unknown error"}`,
+      );
+      return undefined;
+    });
+    if (observed) {
+      artifacts = artifacts.concat(observed.artifacts).slice(0, experiment.maxRequests);
+      requestsMade += observed.requestsMade;
+      browserPages += observed.browserPages;
+      if (observed.skippedReason) skippedLayers.push(observed.skippedReason);
+    }
   } else {
     skippedLayers.push("browser observation skipped because static artifacts were sufficient");
   }
