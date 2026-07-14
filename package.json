@@ -31,7 +31,8 @@
     "source:status": "tsx scripts/source-browser.ts status",
     "source:disconnect": "tsx scripts/source-browser.ts disconnect",
     "check:sources": "tsx scripts/check-sources.ts",
-    "check:source": "tsx scripts/check-source.ts"
+    "check:source": "tsx scripts/check-source.ts",
+    "experiment:devfolio-structured": "tsx src/experiments/devfolioStructuredShadow.ts"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
