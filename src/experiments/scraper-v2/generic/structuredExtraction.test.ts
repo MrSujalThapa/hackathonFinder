@@ -3,6 +3,9 @@ import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
 
 import { shouldCaptureNetworkResponse } from "@/experiments/scraper-v2/generic/acquisition";
+import { buildDomRepresentations } from "@/experiments/scraper-v2/generic/domRepresentation";
+import { detectRepeatedDomUnitSets } from "@/experiments/scraper-v2/generic/domRepeatedUnits";
+import { inferDomSchemaAndLeads } from "@/experiments/scraper-v2/generic/domSchema";
 import { inferGenericEventSchema } from "@/experiments/scraper-v2/generic/fieldInference";
 import { normalizeGenericRecords } from "@/experiments/scraper-v2/generic/normalization";
 import { inferGenericPagination } from "@/experiments/scraper-v2/generic/pagination";
@@ -37,6 +40,27 @@ function artifact(payload: unknown): AcquiredArtifact {
     timingMs: 1,
   };
 }
+
+function htmlArtifact(html: string): AcquiredArtifact {
+  return {
+    artifactId: "html:fixture",
+    kind: "html",
+    sourceUrl: experiment.inputUrl,
+    payload: { title: "Fixture", bodyTextLength: html.length, html },
+    byteSize: html.length,
+    acquisitionMode: "static",
+    timingMs: 1,
+  };
+}
+
+const repeatedCardsHtml = `
+  <main>
+    <section>
+      <article class="event-card"><a href="/alpha-hack"><h2>Alpha Hack</h2></a><p>Aug 10, 2026</p><p>Toronto, Canada</p></article>
+      <article class="event-card"><a href="/beta-build"><h2>Beta Build</h2></a><p>Sep 11, 2026</p><p>Online</p></article>
+      <article class="event-card"><a href="/gamma-jam"><h2>Gamma Jam</h2></a><p>Oct 12, 2026</p><p>Hybrid</p></article>
+    </section>
+  </main>`;
 
 const eventRecords = [
   {
@@ -220,7 +244,7 @@ describe("generic structured extraction", () => {
     assert.equal(quality.obviousNonEvents, 0);
     assert.ok(quality.titleCompleteness > 0.9);
     assert.ok(quality.urlCompleteness > 0.9);
-    assert.ok(["healthy", "usable"].includes(quality.classification));
+    assert.ok(["healthy_complete", "healthy_bounded", "usable_partial"].includes(quality.classification));
   });
 
   it("rejects private/auth and mutation network responses", () => {
@@ -234,6 +258,43 @@ describe("generic structured extraction", () => {
     assert.equal(shouldCaptureNetworkResponse(response("GET"), experiment.allowedOrigins), true);
     assert.equal(shouldCaptureNetworkResponse(response("POST"), experiment.allowedOrigins), false);
     assert.equal(shouldCaptureNetworkResponse(response("GET", "https://private.example/api"), experiment.allowedOrigins), false);
+  });
+
+  it("detects repeated sibling DOM event cards and generates a declarative schema", () => {
+    const [representation] = buildDomRepresentations([htmlArtifact(repeatedCardsHtml)]);
+    assert.ok(representation);
+    const unitSets = detectRepeatedDomUnitSets([representation]);
+    const selected = unitSets[0];
+    assert.ok(selected);
+    assert.equal(selected.diagnostics.unitCount, 3);
+    assert.ok(selected.confidence >= 0.5);
+
+    const inferred = inferDomSchemaAndLeads({ representation, unitSet: selected, experiment });
+    assert.ok(inferred.schema);
+    assert.equal(inferred.schema.version, 1);
+    assert.equal(inferred.leads.length, 3);
+    assert.deepEqual(inferred.leads.map((lead) => lead.title), ["Alpha Hack", "Beta Build", "Gamma Jam"]);
+  });
+
+  it("prefers nested repeated records over a whole section wrapper", () => {
+    const nested = `<main><section class="open-list">${repeatedCardsHtml}${repeatedCardsHtml}</section></main>`;
+    const [representation] = buildDomRepresentations([htmlArtifact(nested)]);
+    assert.ok(representation);
+    const [selected] = detectRepeatedDomUnitSets([representation]);
+    assert.ok(selected);
+    const unit = representation.nodes.find((node) => node.nodeId === selected.unitNodeIds[0]);
+    assert.equal(unit?.tag, "article");
+  });
+
+  it("rejects navigation, footer, sponsor, and status-tab DOM groups", () => {
+    const html = `
+      <nav><a href="/open">Open</a><a href="/past">Past</a><a href="/organize">Organize</a></nav>
+      <footer><a href="/privacy">Privacy</a><a href="/terms">Terms</a></footer>
+      <section class="sponsors"><div><img alt="A" /></div><div><img alt="B" /></div></section>
+      <div class="tabs"><button>Open</button><button>Past</button><button>Upcoming</button></div>`;
+    const [representation] = buildDomRepresentations([htmlArtifact(html)]);
+    assert.ok(representation);
+    assert.equal(detectRepeatedDomUnitSets([representation]).length, 0);
   });
 
   it("runs end-to-end with mocked static acquisition and persists nothing", async () => {
@@ -250,6 +311,25 @@ describe("generic structured extraction", () => {
       assert.equal(result.persistenceDisabled, true);
       assert.equal(result.quality.validEventLeads, 4);
       assert.equal(result.selectedRecordSet?.path, "props.pageProps.records");
+      assert.equal(result.strategySelected, "structured");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("selects DOM extraction when structured artifacts fail but repeated cards validate", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(`<!doctype html><html><body>${repeatedCardsHtml}</body></html>`, {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    try {
+      const result = await runGenericStructuredExtraction(experiment);
+      assert.equal(result.persistenceDisabled, true);
+      assert.equal(result.strategySelected, "dom");
+      assert.equal(result.quality.validEventLeads, 3);
+      assert.ok(result.dom?.schema);
     } finally {
       globalThis.fetch = originalFetch;
     }
