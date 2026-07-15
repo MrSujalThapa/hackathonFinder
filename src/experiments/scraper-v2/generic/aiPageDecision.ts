@@ -71,10 +71,6 @@ function unsafeText(value: string): boolean {
   return /\b(?:javascript:|<script|document\.|window\.|eval\(|fetch\(|XMLHttpRequest|powershell|cmd\.exe|curl\s+|sql\s+select|insert\s+into|delete\s+from)\b/i.test(value);
 }
 
-function ratio(count: number, total: number): number {
-  return total <= 0 ? 0 : Number((count / total).toFixed(3));
-}
-
 function redactSample(value: unknown): string {
   return boundedJson(value, 900)
     .replace(/"cookie"\s*:\s*"[^"]*"/gi, "\"cookie\":\"[redacted]\"")
