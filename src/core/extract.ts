@@ -209,10 +209,25 @@ export function extractHackathonEvent(
   const metadata = lead.metadata ?? {};
   const combinedText = [lead.title, lead.text, JSON.stringify(metadata)].filter(Boolean).join(" ");
   const sourceUrl = lead.url ?? asString(metadata.officialUrl) ?? "";
-  const parsedDateEvidence = parseDateEvidenceFromText(combinedText, {
+  const metadataDateEvidence = Array.isArray(metadata.parsedDateEvidence)
+    ? metadata.parsedDateEvidence.filter(
+        (item): item is NonNullable<HackathonEvent["parsedDateEvidence"]>[number] =>
+          Boolean(
+            item &&
+              typeof item === "object" &&
+              "kind" in item &&
+              "confidence" in item &&
+              "sourceUrl" in item,
+          ),
+      )
+    : [];
+  const parsedDateEvidence = [
+    ...metadataDateEvidence,
+    ...parseDateEvidenceFromText(combinedText, {
     now: options.now ?? new Date(),
     sourceUrl,
-  });
+    }),
+  ];
   const parsedLocation = detectLocationFromText(combinedText);
 
   const name = asString(metadata.name) ?? lead.title?.trim();
@@ -296,12 +311,22 @@ export function extractHackathonEvent(
   const applicationDeadline =
     asString(metadata.applicationDeadline) ??
     pickDateEvidence(parsedDateEvidence, "application_deadline");
+  const submissionOpenDate =
+    asString(metadata.submissionOpenDate) ??
+    pickDateEvidence(parsedDateEvidence, "submission_open");
   const submissionDeadline =
     asString(metadata.submissionDeadline) ??
     pickDateEvidence(parsedDateEvidence, "submission_deadline");
+  const judgingStartDate =
+    asString(metadata.judgingStartDate) ??
+    pickDateEvidence(parsedDateEvidence, "judging_start");
+  const judgingEndDate =
+    asString(metadata.judgingEndDate) ??
+    pickDateEvidence(parsedDateEvidence, "judging_end");
   const resultAnnouncementDate =
     asString(metadata.resultAnnouncementDate) ??
     pickDateEvidence(parsedDateEvidence, "result_announcement");
+  const displayedDateRange = asString(metadata.displayedDateRange);
 
   const deadline = applicationDeadlineFor({
     registrationDeadline,
@@ -320,8 +345,12 @@ export function extractHackathonEvent(
     registrationOpenDate,
     registrationDeadline,
     applicationDeadline,
+    submissionOpenDate,
     submissionDeadline,
+    judgingStartDate,
+    judgingEndDate,
     resultAnnouncementDate,
+    displayedDateRange,
     parsedDateEvidence,
     startDate: eventStartDate,
     endDate: eventEndDate,

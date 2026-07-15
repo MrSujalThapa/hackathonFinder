@@ -6,9 +6,16 @@
  * Playwright is used only for that public listing page — never for account login.
  */
 import * as cheerio from "cheerio";
-import type { DiscoveryPreferences, RawLead } from "@/core/discovery/types";
+import type {
+  DiscoveryPreferences,
+  DiscoveryProfile,
+  ParsedDateEvidence,
+  RawLead,
+} from "@/core/discovery/types";
+import { normalizeDatePart } from "@/core/dedupe";
 import type { Collector, CollectorInput, CollectorResult } from "@/collectors/types";
 import { emptyCollectorResult } from "@/collectors/types";
+import { fetchHtml } from "@/lib/http/fetchHtml";
 import {
   formatPlaywrightInstallHint,
   isPlaywrightBrowserMissingError,
@@ -25,6 +32,33 @@ const DEVPOST_SCROLL_NO_GROWTH_LIMIT = 2;
 const DEVPOST_SCROLL_WAIT_MS = 800;
 const DEVPOST_PAGE_TIMEOUT_MS = 12_000;
 const DEVPOST_PAGE_CONCURRENCY = 3;
+const DEVPOST_DETAIL_TIMEOUT_MS = 7_000;
+const DEVPOST_DETAIL_CONCURRENCY = 3;
+
+export type DevpostProfileBudget = {
+  maxCards: number;
+  maxPages: number;
+  detailLimit: number;
+};
+
+export function devpostBudgetForProfile(
+  profile: DiscoveryProfile | undefined,
+  requestedMaxResults: number,
+): DevpostProfileBudget {
+  const requested = Math.max(1, requestedMaxResults);
+  switch (profile) {
+    case "exhaustive":
+      return { maxCards: Math.max(requested, 1_000), maxPages: 150, detailLimit: 120 };
+    case "deep":
+      return { maxCards: Math.max(requested, 500), maxPages: 80, detailLimit: 80 };
+    case "standard":
+      return { maxCards: Math.max(requested, 180), maxPages: 35, detailLimit: 36 };
+    case "light":
+    default:
+      return { maxCards: Math.max(requested, DEVPOST_MAX_EVENTS), maxPages: DEVPOST_MAX_PAGES, detailLimit: 18 };
+  }
+}
+
 export function buildDevpostListingsUrl(page: number): string {
   const pageNumber = Math.max(1, Math.floor(page));
   return `${DEVPOST_BASE}/hackathons?status[]=upcoming&status[]=open&page=${pageNumber}`;
@@ -33,6 +67,20 @@ export const DEVPOST_OPEN_UPCOMING_URL = buildDevpostListingsUrl(1);
 export function buildDevpostApiUrl(page: number): string {
   const pageNumber = Math.max(1, Math.floor(page));
   return `${DEVPOST_BASE}/api/hackathons?status[]=upcoming&status[]=open&page=${pageNumber}`;
+}
+
+export function buildDevpostDatesUrl(url: string): string | undefined {
+  const canonical = canonicalizeDevpostUrl(url);
+  if (!canonical || !isDevpostHackathonUrl(canonical)) return undefined;
+  try {
+    const parsed = new URL(canonical);
+    parsed.pathname = `${parsed.pathname.replace(/\/+$/, "")}/details/dates`;
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 export type DevpostFailureHint =
@@ -225,6 +273,208 @@ export function buildDevpostSearchUrls(preferences: DiscoveryPreferences): strin
   return [DEVPOST_OPEN_UPCOMING_URL];
 }
 
+function parseDevpostDateValue(raw: string | undefined, fallbackYear = new Date().getUTCFullYear()): string | undefined {
+  if (!raw) return undefined;
+  const compact = raw
+    .replace(/\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?(?:\s+[A-Z]{2,4})?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!/\b20\d{2}\b/.test(compact) && /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b/i.test(compact)) {
+    return normalizeDatePart(`${compact}, ${fallbackYear}`) ?? undefined;
+  }
+  return normalizeDatePart(compact) ?? undefined;
+}
+
+export type DevpostDateRange = {
+  displayedDateRange: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+export function parseDevpostDisplayedDateRange(
+  value: string | undefined,
+  now: Date = new Date(),
+): DevpostDateRange | undefined {
+  const displayedDateRange = value?.replace(/\s+/g, " ").trim();
+  if (!displayedDateRange) return undefined;
+  const text = displayedDateRange.replace(/[–—]/g, "-");
+  const yearMatch = text.match(/\b(20\d{2})\b/g);
+  const fallbackYear = yearMatch
+    ? Number.parseInt(yearMatch[yearMatch.length - 1]!, 10)
+    : now.getUTCFullYear();
+  const match = text.match(
+    /\b([A-Za-z]{3,9})\s+(\d{1,2})(?:,?\s*(20\d{2}))?\s*(?:-|to|through|until)\s*(?:([A-Za-z]{3,9})\s+)?(\d{1,2})(?:,?\s*(20\d{2}))?\b/i,
+  );
+  if (!match) return { displayedDateRange };
+  const startYear = Number.parseInt(match[3] ?? String(fallbackYear), 10);
+  const endYear = Number.parseInt(match[6] ?? match[3] ?? String(fallbackYear), 10);
+  const startMonth = match[1]!;
+  const endMonth = match[4] ?? startMonth;
+  return {
+    displayedDateRange,
+    startDate: parseDevpostDateValue(`${startMonth} ${match[2]}, ${startYear}`, fallbackYear),
+    endDate: parseDevpostDateValue(`${endMonth} ${match[5]}, ${endYear}`, fallbackYear),
+  };
+}
+
+function devpostDateEvidence(input: {
+  kind: ParsedDateEvidence["kind"];
+  value?: string;
+  confidence?: ParsedDateEvidence["confidence"];
+  sourceUrl: string;
+  sourceText?: string;
+  sourceType?: ParsedDateEvidence["sourceType"];
+}): ParsedDateEvidence | undefined {
+  if (!input.value) return undefined;
+  return {
+    kind: input.kind,
+    value: input.value,
+    confidence: input.confidence ?? "high",
+    sourceUrl: input.sourceUrl,
+    sourceText: input.sourceText,
+    sourceType: input.sourceType,
+    retrievedAt: new Date().toISOString(),
+  };
+}
+
+function displayedRangeMetadata(
+  dateText: string | undefined,
+  sourceUrl: string,
+  sourceType: ParsedDateEvidence["sourceType"],
+  semanticRole: "submission_period" | "uncertain",
+): Record<string, unknown> {
+  const range = parseDevpostDisplayedDateRange(dateText);
+  if (!range) return {};
+  const evidence = [
+    semanticRole === "submission_period"
+      ? devpostDateEvidence({
+          kind: "submission_open",
+          value: range.startDate,
+          sourceUrl,
+          sourceText: range.displayedDateRange,
+          sourceType,
+        })
+      : undefined,
+    semanticRole === "submission_period"
+      ? devpostDateEvidence({
+          kind: "submission_deadline",
+          value: range.endDate,
+          sourceUrl,
+          sourceText: range.displayedDateRange,
+          sourceType,
+        })
+      : undefined,
+  ].filter((item): item is ParsedDateEvidence => Boolean(item));
+  return {
+    displayedDateRange: range.displayedDateRange,
+    ...(semanticRole === "submission_period"
+      ? {
+          submissionOpenDate: range.startDate,
+          submissionDeadline: range.endDate,
+        }
+      : {}),
+    parsedDateEvidence: evidence.length > 0 ? evidence : undefined,
+    dateExtractionState: semanticRole === "submission_period" ? "submission_period_from_listing" : "displayed_range_only",
+  };
+}
+
+export type DevpostScheduleDates = {
+  eventStartDate?: string;
+  eventEndDate?: string;
+  registrationOpenDate?: string;
+  registrationDeadline?: string;
+  submissionOpenDate?: string;
+  submissionDeadline?: string;
+  judgingStartDate?: string;
+  judgingEndDate?: string;
+  resultAnnouncementDate?: string;
+  parsedDateEvidence: ParsedDateEvidence[];
+};
+
+const DEVPOST_SCHEDULE_LABELS: Array<{
+  key: keyof DevpostScheduleDates;
+  evidenceKind: ParsedDateEvidence["kind"];
+  label: RegExp;
+  endpoint: "begin" | "end" | "single";
+}> = [
+  { key: "eventStartDate", evidenceKind: "event_start", label: /\b(?:hackathon|event|challenge|competition)\b/i, endpoint: "begin" },
+  { key: "eventEndDate", evidenceKind: "event_end", label: /\b(?:hackathon|event|challenge|competition)\b/i, endpoint: "end" },
+  { key: "registrationOpenDate", evidenceKind: "registration_open", label: /\b(?:registration|applications?)\b/i, endpoint: "begin" },
+  { key: "registrationDeadline", evidenceKind: "registration_deadline", label: /\b(?:registration|applications?)\b/i, endpoint: "end" },
+  { key: "submissionOpenDate", evidenceKind: "submission_open", label: /\bsubmissions?\b/i, endpoint: "begin" },
+  { key: "submissionDeadline", evidenceKind: "submission_deadline", label: /\bsubmissions?\b/i, endpoint: "end" },
+  { key: "judgingStartDate", evidenceKind: "judging_start", label: /\bjudging\b/i, endpoint: "begin" },
+  { key: "judgingEndDate", evidenceKind: "judging_end", label: /\bjudging\b/i, endpoint: "end" },
+  { key: "resultAnnouncementDate", evidenceKind: "result_announcement", label: /\b(?:winners?|results?)\b/i, endpoint: "single" },
+];
+
+function scheduleDateRegex(endpoint: "begin" | "end" | "single"): RegExp {
+  const date = "([A-Za-z]{3,9}\\s+\\d{1,2}(?:,?\\s+20\\d{2})?)(?:\\s+at\\s+\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?(?:\\s+[A-Z]{2,4})?)?";
+  if (endpoint === "begin") return new RegExp(`\\b(?:begins?|starts?|opens?)\\s*:?\\s*${date}`, "i");
+  if (endpoint === "end") return new RegExp(`\\b(?:ends?|closes?|deadline)\\s*:?\\s*${date}`, "i");
+  return new RegExp(`\\b(?:announced?|posted|winners?|results?)\\s*:?\\s*${date}`, "i");
+}
+
+function orderedScheduleDates(segment: string, fallbackYear: number): string[] {
+  const dates = [
+    ...segment.matchAll(
+      /\b[A-Za-z]{3,9}\s+\d{1,2}(?:,?\s+20\d{2})?(?:\s+at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?(?:\s+[A-Z]{2,4})?)?/gi,
+    ),
+  ]
+    .map((match) => parseDevpostDateValue(match[0], fallbackYear))
+    .filter((value): value is string => Boolean(value));
+  return [...new Set(dates)];
+}
+
+function scheduleSegments($: cheerio.CheerioAPI): string[] {
+  const segments = $("section, article, li, tr, .challenge-timeline-item, .timeline-item, .phase")
+    .map((_index, node) =>
+      $(node)
+        .text()
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .get()
+    .filter((text) => text.length > 8);
+  if (segments.length > 0) return segments;
+  return [$.root().text().replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\s+/g, " ").trim()];
+}
+
+export function parseDevpostScheduleHtml(
+  html: string,
+  sourceUrl: string,
+  now: Date = new Date(),
+): DevpostScheduleDates {
+  const $ = cheerio.load(html);
+  const result: DevpostScheduleDates = { parsedDateEvidence: [] };
+  const fallbackYear = now.getUTCFullYear();
+  const segments = scheduleSegments($);
+
+  for (const segment of segments) {
+    const segmentDates = orderedScheduleDates(segment, fallbackYear);
+    for (const item of DEVPOST_SCHEDULE_LABELS) {
+      if (result[item.key] || !item.label.test(segment)) continue;
+      const match = segment.match(scheduleDateRegex(item.endpoint));
+      const value =
+        parseDevpostDateValue(match?.[1], fallbackYear) ??
+        (item.endpoint === "end" ? segmentDates[1] : segmentDates[0]);
+      if (!value) continue;
+      (result[item.key] as string | undefined) = value;
+      const evidence = devpostDateEvidence({
+        kind: item.evidenceKind,
+        value,
+        sourceUrl,
+        sourceText: segment.slice(0, 220),
+        sourceType: "schedule",
+      });
+      if (evidence) result.parsedDateEvidence.push(evidence);
+    }
+  }
+
+  return result;
+}
+
 function extractTileFields(
   anchor: ReturnType<cheerio.CheerioAPI>,
   $: cheerio.CheerioAPI,
@@ -361,6 +611,7 @@ export function parseDevpostHtml(html: string, maxResults: number): RawLead[] {
       metadata: {
         prize: card.prize,
         dateText: card.dateText,
+        ...displayedRangeMetadata(card.dateText, card.url, "listing", "uncertain"),
         location: card.location,
         status: card.status,
         organizer: card.organizer,
@@ -433,6 +684,7 @@ export function parseDevpostApiPayload(
       metadata: {
         prize,
         dateText,
+        ...displayedRangeMetadata(dateText, url, "api", "submission_period"),
         location,
         status,
         organizer: item.organization_name,
@@ -686,6 +938,7 @@ function hasDevpostChallengePage(html: string): boolean {
 
 async function collectDevpostApiPages(
   maxResults: number,
+  maxPages: number,
   timeoutMs: number,
   logger?: (message: string) => void,
 ): Promise<{
@@ -758,13 +1011,13 @@ async function collectDevpostApiPages(
   }
 
   let nextPage = first.nextPage;
-  while (nextPage && leads.length < maxResults && nextPage <= DEVPOST_MAX_PAGES) {
+  while (nextPage && leads.length < maxResults && nextPage <= maxPages) {
     if (Date.now() - startedAt > timeoutMs) {
       stopReason = "timeout";
       break;
     }
     const batchPages = Array.from(
-      { length: Math.min(DEVPOST_PAGE_CONCURRENCY, DEVPOST_MAX_PAGES - nextPage + 1) },
+      { length: Math.min(DEVPOST_PAGE_CONCURRENCY, maxPages - nextPage + 1) },
       (_value, index) => nextPage! + index,
     );
     logger?.(`Fetching pages ${batchPages[0]}-${batchPages.at(-1)} concurrently`);
@@ -828,8 +1081,104 @@ async function collectDevpostApiPages(
   }
 
   if (leads.length >= maxResults) stopReason = "maximum_cards_reached";
-  if (nextPage && nextPage > DEVPOST_MAX_PAGES) stopReason = "maximum_pages_reached";
+  if (nextPage && nextPage > maxPages) stopReason = "maximum_pages_reached";
   return { leads, pages, duplicateUrls, repeatedPages, stopReason };
+}
+
+function shouldFetchDevpostSchedule(lead: RawLead): boolean {
+  const metadata = lead.metadata ?? {};
+  return Boolean(
+    lead.url &&
+      isDevpostHackathonUrl(lead.url) &&
+      (!metadata.submissionDeadline ||
+        !metadata.submissionOpenDate ||
+        !metadata.judgingStartDate ||
+        !metadata.resultAnnouncementDate),
+  );
+}
+
+async function enrichDevpostSchedules(
+  leads: RawLead[],
+  options: {
+    limit: number;
+    timeoutMs: number;
+    startedAt: number;
+    logger?: (message: string) => void;
+  },
+): Promise<{ leads: RawLead[]; opened: number; failures: number; warnings: string[] }> {
+  const warnings: string[] = [];
+  const targetIds = new Set(
+    leads
+      .filter(shouldFetchDevpostSchedule)
+      .slice(0, options.limit)
+      .map((lead) => lead.id),
+  );
+  let opened = 0;
+  let failures = 0;
+  let next = 0;
+  const enriched = [...leads];
+
+  async function worker(): Promise<void> {
+    while (next < enriched.length) {
+      const index = next;
+      next += 1;
+      const lead = enriched[index]!;
+      if (!targetIds.has(lead.id) || !lead.url) continue;
+      if (Date.now() - options.startedAt > options.timeoutMs) break;
+      const datesUrl = buildDevpostDatesUrl(lead.url);
+      if (!datesUrl) continue;
+      const remaining = Math.min(
+        DEVPOST_DETAIL_TIMEOUT_MS,
+        Math.max(1_500, options.timeoutMs - (Date.now() - options.startedAt)),
+      );
+      try {
+        opened += 1;
+        options.logger?.(`Opening Devpost dates page ${opened}/${targetIds.size}: ${datesUrl}`);
+        const html = await fetchHtml(datesUrl, {
+          timeoutMs: remaining,
+          retries: 1,
+          headers: { Accept: "text/html,application/xhtml+xml" },
+        });
+        const schedule = parseDevpostScheduleHtml(html, datesUrl);
+        const existingEvidence = Array.isArray(lead.metadata?.parsedDateEvidence)
+          ? lead.metadata?.parsedDateEvidence
+          : [];
+        enriched[index] = {
+          ...lead,
+          links: uniqueUrls([...lead.links, datesUrl], DEVPOST_BASE),
+          metadata: {
+            ...lead.metadata,
+            ...Object.fromEntries(
+              Object.entries(schedule).filter(([key, value]) =>
+                key !== "parsedDateEvidence" && typeof value === "string" && value.length > 0,
+              ),
+            ),
+            parsedDateEvidence: [
+              ...(existingEvidence as ParsedDateEvidence[]),
+              ...schedule.parsedDateEvidence,
+            ],
+            dateExtractionState:
+              schedule.parsedDateEvidence.length > 0
+                ? "authoritative_dates_page"
+                : lead.metadata?.dateExtractionState,
+            datesUrl,
+          },
+        };
+      } catch (error) {
+        failures += 1;
+        warnings.push(
+          error instanceof Error
+            ? `Devpost dates enrichment failed for ${datesUrl}: ${error.message}`
+            : `Devpost dates enrichment failed for ${datesUrl}`,
+        );
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(DEVPOST_DETAIL_CONCURRENCY, targetIds.size) }, () => worker()),
+  );
+  return { leads: enriched, opened, failures, warnings };
 }
 
 export const devpostCollector: Collector = {
@@ -840,10 +1189,13 @@ export const devpostCollector: Collector = {
     const result = emptyCollectorResult("devpost", startedAt);
     const searchUrls = buildDevpostSearchUrls(input.preferences);
     const seen = new Set<string>();
-    const maxAccepted = Math.min(input.maxResults, DEVPOST_MAX_EVENTS);
+    const budget = devpostBudgetForProfile(input.preferences.profile, input.maxResults);
+    const maxAccepted = budget.maxCards;
     let pagesFetched = 0;
     let initialCardCount = 0;
     let finalCardCount = 0;
+    let detailPagesOpened = 0;
+    let detailFailures = 0;
     const scrollAttempts = 0;
     const noGrowthAttempts = 0;
     const pageNoGrowthAttempts = 0;
@@ -858,8 +1210,17 @@ export const devpostCollector: Collector = {
     try {
       void searchUrls;
       input.logger?.("Using observed read-only Devpost API pagination...");
-      const api = await collectDevpostApiPages(maxAccepted, input.timeoutMs, input.logger);
-      result.leads = api.leads;
+      const api = await collectDevpostApiPages(maxAccepted, budget.maxPages, input.timeoutMs, input.logger);
+      const enriched = await enrichDevpostSchedules(api.leads, {
+        limit: budget.detailLimit,
+        timeoutMs: input.timeoutMs,
+        startedAt,
+        logger: input.logger,
+      });
+      result.leads = enriched.leads;
+      result.warnings.push(...enriched.warnings);
+      detailPagesOpened = enriched.opened;
+      detailFailures = enriched.failures;
       pagesFetched = api.pages.length;
       finalCardCount = api.pages.reduce((sum, page) => sum + page.cardCount, 0);
       initialCardCount = api.pages[0]?.cardCount ?? 0;
@@ -882,6 +1243,11 @@ export const devpostCollector: Collector = {
         playwrightPages: 0,
         initialCardCount,
         finalCardCount,
+        detailPagesOpened,
+        detailFailures,
+        maxCards: budget.maxCards,
+        maxPages: budget.maxPages,
+        detailLimit: budget.detailLimit,
         scrollAttempts,
         noGrowthAttempts,
         pageNoGrowthAttempts,
@@ -892,6 +1258,11 @@ export const devpostCollector: Collector = {
         searchUrls: pagesFetched,
       };
       result.warnings.push(`stop_reason=${stopReason}`);
+      result.warnings.push(`profile_budget_cards=${budget.maxCards}`);
+      result.warnings.push(`profile_budget_pages=${budget.maxPages}`);
+      result.warnings.push(`profile_budget_detail_limit=${budget.detailLimit}`);
+      result.warnings.push(`details_opened=${detailPagesOpened}`);
+      result.warnings.push(`detail_failures=${detailFailures}`);
       result.warnings.push(`unique_cards=${finalCardCount}`);
       result.warnings.push(`scrolls=${scrollAttempts}`);
       result.warnings.push(`no_growth_attempts=${noGrowthAttempts}`);
@@ -909,8 +1280,19 @@ export const devpostCollector: Collector = {
         );
         result.warnings.push(...rendered.warnings);
         finalCardCount = Math.max(finalCardCount, rendered.finalCardCount);
-        const fallbackLeads = parseDevpostHtml(rendered.html, maxAccepted);
-        for (const lead of fallbackLeads) {
+        const fallback = await enrichDevpostSchedules(
+          parseDevpostHtml(rendered.html, maxAccepted),
+          {
+            limit: budget.detailLimit,
+            timeoutMs: input.timeoutMs,
+            startedAt,
+            logger: input.logger,
+          },
+        );
+        result.warnings.push(...fallback.warnings);
+        detailPagesOpened += fallback.opened;
+        detailFailures += fallback.failures;
+        for (const lead of fallback.leads) {
           const key = lead.url ? normalizeUrlForDedupe(lead.url) : lead.id;
           if (seen.has(key)) continue;
           seen.add(key);
@@ -959,7 +1341,7 @@ export const devpostCollector: Collector = {
       discovered: finalCardCount,
       returned: result.leads.length,
       enriched: 0,
-      partial: parserFailures,
+      partial: parserFailures + detailFailures,
       dropped: Math.max(0, finalCardCount - result.leads.length),
       stopReason,
       safeMessage:

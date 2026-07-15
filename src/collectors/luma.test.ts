@@ -4,11 +4,15 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import {
   describeLumaFailure,
+  extractLumaTimelineCards,
   isRejectedLumaLeadUrl,
+  lumaBudgetForProfile,
   parseLumaHtml,
+  resolveLumaTimelineHeadingDate,
   resolveLumaFeeds,
   resolveLumaDiscoveryMode,
 } from "@/collectors/luma";
+import * as cheerio from "cheerio";
 
 const fixturePath = path.join(process.cwd(), "src/collectors/__fixtures__/luma.html");
 const nextDataPath = path.join(
@@ -108,6 +112,34 @@ describe("parseLumaHtml", () => {
     assert.equal(leads[0]?.metadata?.discoveryMode, "luma_ai");
     assert.deepEqual(leads[0]?.metadata?.discoveredFrom, ["luma_ai"]);
   });
+
+  it("inherits visible timeline headings for rendered feed cards", () => {
+    const html = `<!doctype html><html><body><main>
+      <h2>Tomorrow</h2>
+      <a class="event-link" href="/agent-hack"><h3>Agent Hackathon</h3><span>6:00 PM</span><span>Online</span></a>
+      <h2>August 4</h2>
+      <a class="event-link" href="/waterloo-build"><h3>Waterloo Buildathon</h3><span>Waterloo</span></a>
+    </main></body></html>`;
+    const now = new Date(Date.UTC(2026, 6, 15));
+    const leads = parseLumaHtml(html, 10, "https://luma.com/tech", "luma_tech", now);
+    const agent = leads.find((lead) => lead.title === "Agent Hackathon");
+    const waterloo = leads.find((lead) => lead.title === "Waterloo Buildathon");
+    assert.equal(agent?.metadata?.startDate, "2026-07-16");
+    assert.equal(agent?.metadata?.timelineHeading, "Tomorrow");
+    assert.equal(waterloo?.metadata?.startDate, "2026-08-04");
+    assert.equal(waterloo?.metadata?.dateExtractionState, "found_on_listing_timeline");
+  });
+
+  it("maps timeline proposals back to existing DOM cards only", () => {
+    const $ = cheerio.load(`<!doctype html><html><body>
+      <h2>Friday</h2>
+      <article class="event-card"><a href="/friday-hack"><h3>Friday Hack Night</h3></a><time>7 PM</time></article>
+    </body></html>`);
+    const cards = extractLumaTimelineCards($, "https://luma.com/tech", new Date(Date.UTC(2026, 6, 15)));
+    assert.equal(cards.length, 1);
+    assert.equal(cards[0]?.startDate, "2026-07-17");
+    assert.equal(cards[0]?.timelineHeading, "Friday");
+  });
 });
 
 describe("luma helpers", () => {
@@ -156,5 +188,20 @@ describe("luma helpers", () => {
   it("formats failure categories for health classification", () => {
     assert.match(describeLumaFailure("zero_matching_results"), /no likely hackathon/i);
     assert.match(describeLumaFailure("auth_required"), /authentication required/i);
+  });
+
+  it("uses deeper Luma scroll and detail budgets for deep profiles", () => {
+    const light = lumaBudgetForProfile("light", 50);
+    const deep = lumaBudgetForProfile("deep", 50);
+    assert.ok(deep.maxEvents > light.maxEvents);
+    assert.ok(deep.maxScrolls > light.maxScrolls);
+    assert.ok(deep.detailLimit > light.detailLimit);
+  });
+
+  it("resolves relative timeline headings from crawl date", () => {
+    const now = new Date(Date.UTC(2026, 6, 15));
+    assert.equal(resolveLumaTimelineHeadingDate("Today", now), "2026-07-15");
+    assert.equal(resolveLumaTimelineHeadingDate("This Weekend", now), "2026-07-18");
+    assert.equal(resolveLumaTimelineHeadingDate("August 4", now), "2026-08-04");
   });
 });

@@ -103,8 +103,12 @@ export function mergeHackathonEventPair(
     registrationOpenDate: preferStrongerText(existing.registrationOpenDate, incoming.registrationOpenDate, left, right),
     registrationDeadline: preferStrongerText(existing.registrationDeadline, incoming.registrationDeadline, left, right),
     applicationDeadline: preferStrongerText(existing.applicationDeadline, incoming.applicationDeadline, left, right),
+    submissionOpenDate: preferStrongerText(existing.submissionOpenDate, incoming.submissionOpenDate, left, right),
     submissionDeadline: preferStrongerText(existing.submissionDeadline, incoming.submissionDeadline, left, right),
+    judgingStartDate: preferStrongerText(existing.judgingStartDate, incoming.judgingStartDate, left, right),
+    judgingEndDate: preferStrongerText(existing.judgingEndDate, incoming.judgingEndDate, left, right),
     resultAnnouncementDate: preferStrongerText(existing.resultAnnouncementDate, incoming.resultAnnouncementDate, left, right),
+    displayedDateRange: preferStrongerText(existing.displayedDateRange, incoming.displayedDateRange, left, right),
     parsedDateEvidence: [
       ...new Map(
         [...(existing.parsedDateEvidence ?? []), ...(incoming.parsedDateEvidence ?? [])].map((item) => [

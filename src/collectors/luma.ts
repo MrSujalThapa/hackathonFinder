@@ -16,7 +16,8 @@
  */
 import * as cheerio from "cheerio";
 import type { Page } from "playwright";
-import type { RawLead } from "@/core/discovery/types";
+import type { DiscoveryProfile, RawLead } from "@/core/discovery/types";
+import { normalizeDatePart } from "@/core/dedupe";
 import type { Collector, CollectorInput, CollectorResult } from "@/collectors/types";
 import { emptyCollectorResult } from "@/collectors/types";
 import { fetchHtml, FetchHtmlError } from "@/lib/http/fetchHtml";
@@ -37,6 +38,30 @@ const LUMA_SCROLL_WAIT_MS = 800;
 const LUMA_DETAIL_LIMIT = 30;
 const DETAIL_PAGE_CONCURRENCY = 6;
 const LUMA_DETAIL_TIMEOUT_MS = 8_000;
+
+export type LumaProfileBudget = {
+  maxEvents: number;
+  maxScrolls: number;
+  detailLimit: number;
+};
+
+export function lumaBudgetForProfile(
+  profile: DiscoveryProfile | undefined,
+  requestedMaxResults: number,
+): LumaProfileBudget {
+  const requested = Math.max(1, requestedMaxResults);
+  switch (profile) {
+    case "exhaustive":
+      return { maxEvents: Math.max(requested, 600), maxScrolls: 120, detailLimit: 180 };
+    case "deep":
+      return { maxEvents: Math.max(requested, 350), maxScrolls: 80, detailLimit: 120 };
+    case "standard":
+      return { maxEvents: Math.max(requested, 180), maxScrolls: 45, detailLimit: 60 };
+    case "light":
+    default:
+      return { maxEvents: Math.max(requested, LUMA_MAX_EVENTS), maxScrolls: LUMA_MAX_SCROLLS, detailLimit: LUMA_DETAIL_LIMIT };
+  }
+}
 
 const HACKATHON_HINT =
   /\b(hackathon|buildathon|codefest|hack\s*day|hack\s*night|coding\s*competition|builder\s*competition|48[\s-]?hour\s*build|24[\s-]?hour\s*hack)\b/i;
@@ -77,6 +102,9 @@ type ParsedLumaEvent = {
   pageKind?: "event" | "calendar" | "discover" | "profile" | "unknown";
   discoveryMode?: LumaDiscoveryFeed | "luma_public";
   discoveredFrom?: string[];
+  timelineHeading?: string;
+  timelineTime?: string;
+  timezone?: string;
 };
 
 type LumaFeedConfig = {
@@ -161,6 +189,143 @@ function extractIsoDate(value: string | undefined): string | undefined {
   const parsed = new Date(value);
   if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
   return undefined;
+}
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  sunday: 0,
+  sun: 0,
+  monday: 1,
+  mon: 1,
+  tuesday: 2,
+  tue: 2,
+  wednesday: 3,
+  wed: 3,
+  thursday: 4,
+  thu: 4,
+  friday: 5,
+  fri: 5,
+  saturday: 6,
+  sat: 6,
+};
+
+function addUtcDays(date: Date, days: number): Date {
+  const copy = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  copy.setUTCDate(copy.getUTCDate() + days);
+  return copy;
+}
+
+function dateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+export function resolveLumaTimelineHeadingDate(
+  heading: string | undefined,
+  now: Date = new Date(),
+): string | undefined {
+  const text = heading?.replace(/\s+/g, " ").trim();
+  if (!text) return undefined;
+  if (/^today$/i.test(text)) return dateOnly(now);
+  if (/^tomorrow$/i.test(text)) return dateOnly(addUtcDays(now, 1));
+  if (/^this weekend$/i.test(text)) {
+    const delta = (6 - now.getUTCDay() + 7) % 7;
+    return dateOnly(addUtcDays(now, delta || 7));
+  }
+
+  const weekday = text.match(/^(sun(?:day)?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?)$/i);
+  if (weekday) {
+    const target = WEEKDAY_INDEX[weekday[1]!.toLowerCase()];
+    if (target == null) return undefined;
+    const delta = (target - now.getUTCDay() + 7) % 7;
+    return dateOnly(addUtcDays(now, delta));
+  }
+
+  const absolute = text.match(/\b([A-Za-z]{3,9})\s+(\d{1,2})(?:,?\s*(20\d{2}))?\b/);
+  if (absolute) {
+    const year = absolute[3] ?? String(now.getUTCFullYear());
+    let normalized = normalizeDatePart(`${absolute[1]} ${absolute[2]}, ${year}`) ?? undefined;
+    if (normalized && !absolute[3] && normalized < dateOnly(addUtcDays(now, -1))) {
+      normalized = normalizeDatePart(`${absolute[1]} ${absolute[2]}, ${now.getUTCFullYear() + 1}`) ?? normalized;
+    }
+    return normalized;
+  }
+
+  return undefined;
+}
+
+function isTimelineHeading(text: string): boolean {
+  return Boolean(resolveLumaTimelineHeadingDate(text, new Date(Date.UTC(2026, 6, 15))));
+}
+
+function extractVisibleTime(text: string): string | undefined {
+  return text.match(/\b(?:\d{1,2}(?::\d{2})?\s*(?:AM|PM)|All Day)\b/i)?.[0];
+}
+
+function lumaCardSelector(): string {
+  return "article.event-card, article[data-testid='event'], .event-card, main article, a.event-link[href], a.content-link[href]";
+}
+
+export function extractLumaTimelineCards(
+  $: cheerio.CheerioAPI,
+  baseUrl = LUMA_BASE,
+  now: Date = new Date(),
+): ParsedLumaEvent[] {
+  const cards: ParsedLumaEvent[] = [];
+  const seenElements = new Set<unknown>();
+  let currentHeading: string | undefined;
+
+  $("body *").each((_index, element) => {
+    const node = $(element);
+    const text = node.clone().children().remove().end().text().replace(/\s+/g, " ").trim();
+    const tag = String((element as { tagName?: string }).tagName ?? "").toLowerCase();
+    if ((/^h[1-6]$/.test(tag) || node.attr("role") === "heading") && text.length <= 60 && isTimelineHeading(text)) {
+      currentHeading = text;
+      return;
+    }
+
+    if (!node.is(lumaCardSelector())) return;
+    if (node.parents(lumaCardSelector()).length > 0) return;
+    if (seenElements.has(element)) return;
+    seenElements.add(element);
+
+    const headingDate = resolveLumaTimelineHeadingDate(currentHeading, now);
+    if (!headingDate) return;
+    const title =
+      node.find("h1, h2, h3, .title, [data-testid='event-title']").first().text().trim() ||
+      node.attr("aria-label")?.trim() ||
+      "";
+    const href =
+      node.is("a[href]") ? node.attr("href") : node.find("a[href]").first().attr("href");
+    const url = href ? normalizeUrl(href, baseUrl) : undefined;
+    const fullText = node.text().replace(/\s+/g, " ").trim();
+    const timelineTime =
+      node.find("time").first().text().trim() ||
+      node.find("[datetime]").first().attr("datetime")?.trim() ||
+      extractVisibleTime(fullText);
+    const location =
+      node
+        .find(".location, .venue, [data-testid='location']")
+        .first()
+        .text()
+        .replace(/\s+/g, " ")
+        .trim() || undefined;
+    if (!title && !url) return;
+    cards.push({
+      title: title || "Untitled Luma event",
+      url,
+      dateText: [currentHeading, timelineTime].filter(Boolean).join(" "),
+      startDate: headingDate,
+      location,
+      mode: parseMode(location ?? "", fullText),
+      description: fullText.slice(0, 280),
+      registration: undefined,
+      externalLinks: [],
+      pageKind: "event",
+      timelineHeading: currentHeading,
+      timelineTime,
+    });
+  });
+
+  return cards;
 }
 
 function toEventUrl(slugOrUrl: string | undefined): string | undefined {
@@ -498,6 +663,7 @@ export function parseLumaHtml(
   maxResults: number,
   baseUrl = LUMA_BASE,
   discoveryMode: LumaDiscoveryFeed | "luma_public" = "luma_public",
+  now: Date = new Date(),
 ): RawLead[] {
   const $ = cheerio.load(html);
   const pageKind = classifyLumaPageUrl(baseUrl);
@@ -514,6 +680,27 @@ export function parseLumaHtml(
 
   if (cards.length === 0) {
     cards = extractEventCards($, baseUrl);
+  }
+
+  const timelineCards = extractLumaTimelineCards($, baseUrl, now);
+  if (timelineCards.length > 0) {
+    const byKey = new Map<string, ParsedLumaEvent>();
+    for (const card of cards) {
+      byKey.set(card.url ? normalizeUrlForDedupe(card.url) : slugify(card.title), card);
+    }
+    for (const card of timelineCards) {
+      const key = card.url ? normalizeUrlForDedupe(card.url) : slugify(card.title);
+      const existing = byKey.get(key);
+      byKey.set(key, {
+        ...card,
+        ...existing,
+        dateText: existing?.dateText ?? card.dateText,
+        startDate: existing?.startDate ?? card.startDate,
+        timelineHeading: existing?.timelineHeading ?? card.timelineHeading,
+        timelineTime: existing?.timelineTime ?? card.timelineTime,
+      });
+    }
+    cards = [...byKey.values()];
   }
 
   // og: tags only when this is clearly a single event page — never for discover/calendar hubs.
@@ -540,7 +727,7 @@ export function parseLumaHtml(
   for (const card of cards) {
     if (card.pageKind && card.pageKind !== "event" && card.pageKind !== "unknown") continue;
     if (isRejectedLumaLeadUrl(card.url)) continue;
-    if (!isUpcoming(card.dateText ?? card.startDate, card.endDate)) continue;
+    if (!isUpcoming(card.startDate ?? card.dateText, card.endDate)) continue;
 
     const dedupeKey = card.url
       ? normalizeUrlForDedupe(card.url)
@@ -574,6 +761,10 @@ export function parseLumaHtml(
         dateText: card.dateText,
         startDate: card.startDate,
         endDate: card.endDate,
+        timelineHeading: card.timelineHeading,
+        timelineTime: card.timelineTime,
+        timezone: card.timezone,
+        dateExtractionState: card.timelineHeading ? "found_on_listing_timeline" : undefined,
         location: card.mode === "online" ? "Online" : card.location,
         mode: card.mode,
         registration: card.registration,
@@ -676,6 +867,7 @@ function isLikelyLumaEventUrl(url: string | undefined): boolean {
 async function collectLumaEventUrlsFromPage(
   page: Page,
   discoveryMode: LumaDiscoveryFeed,
+  maxEvents = LUMA_MAX_EVENTS,
 ): Promise<string[]> {
   const urls = await page.evaluate(() => {
     const anchors = [
@@ -704,19 +896,23 @@ async function collectLumaEventUrlsFromPage(
 
   const html = await page.content().catch(() => "");
   if (!html) return [];
-  return parseLumaHtml(html, LUMA_MAX_EVENTS, page.url(), discoveryMode)
+  return parseLumaHtml(html, maxEvents, page.url(), discoveryMode)
     .map((lead) => lead.url)
     .filter((url): url is string => Boolean(url))
     .filter(isLikelyLumaEventUrl);
 }
 
-async function collectLumaLeadsFromPage(page: Page, discoveryMode: LumaDiscoveryFeed): Promise<RawLead[]> {
+async function collectLumaLeadsFromPage(
+  page: Page,
+  discoveryMode: LumaDiscoveryFeed,
+  maxEvents = LUMA_MAX_EVENTS,
+): Promise<RawLead[]> {
   const html = await page.content().catch(() => "");
   if (!html) return [];
-  const leads = parseLumaHtml(html, LUMA_MAX_EVENTS, page.url(), discoveryMode)
+  const leads = parseLumaHtml(html, maxEvents, page.url(), discoveryMode)
     .filter((lead) => lead.url && isLikelyLumaEventUrl(lead.url));
   if (leads.length > 0) return leads;
-  return (await collectLumaEventUrlsFromPage(page, discoveryMode)).map((url) => ({
+  return (await collectLumaEventUrlsFromPage(page, discoveryMode, maxEvents)).map((url) => ({
     id: `luma-${slugify(new URL(url).pathname)}`,
     source: "luma" as const,
     title: "Luma event",
@@ -740,6 +936,7 @@ async function collectLumaLeadsFromPage(page: Page, discoveryMode: LumaDiscovery
 async function collectRenderedLumaFeed(
   feed: LumaFeedConfig,
   timeoutMs: number,
+  budget: LumaProfileBudget,
   logger?: (message: string) => void,
 ): Promise<LumaFeedCollection> {
   const warnings: string[] = [];
@@ -759,7 +956,7 @@ async function collectRenderedLumaFeed(
         await page.waitForTimeout(500);
 
         const collected = await collectUntilStable<RawLead>({
-          collectItems: () => collectLumaLeadsFromPage(page, feed.mode),
+          collectItems: () => collectLumaLeadsFromPage(page, feed.mode, budget.maxEvents),
           getKey: (lead) => normalizeUrlForDedupe(lead.url ?? lead.id),
           scroll: async () => {
             await page.mouse.wheel(0, 2_400);
@@ -769,8 +966,8 @@ async function collectRenderedLumaFeed(
               .waitForLoadState("networkidle", { timeout: LUMA_SCROLL_WAIT_MS })
               .catch(() => undefined);
           },
-          maxItems: LUMA_MAX_EVENTS,
-          maxScrolls: LUMA_MAX_SCROLLS,
+          maxItems: budget.maxEvents,
+          maxScrolls: budget.maxScrolls,
           noGrowthLimit: LUMA_NO_GROWTH_LIMIT,
           timeoutMs,
           waitMs: LUMA_SCROLL_WAIT_MS,
@@ -843,13 +1040,14 @@ async function enrichEventPages(
   leads: RawLead[],
   timeoutMs: number,
   startedAt: number,
+  detailLimit: number,
   shouldEnrich: (lead: RawLead) => boolean,
 ): Promise<{ leads: RawLead[]; warnings: string[]; opened: number; failures: number }> {
   const warnings: string[] = [];
   let opened = 0;
   let failures = 0;
 
-  const targets = new Set(leads.filter(shouldEnrich).slice(0, LUMA_DETAIL_LIMIT).map((lead) => lead.id));
+  const targets = new Set(leads.filter(shouldEnrich).slice(0, detailLimit).map((lead) => lead.id));
 
   const enriched = await mapLimit(leads, DETAIL_PAGE_CONCURRENCY, async (lead) => {
     if (!lead.url || Date.now() - startedAt > timeoutMs || !targets.has(lead.id)) {
@@ -921,6 +1119,7 @@ export const lumaCollector: Collector = {
     const mode = resolveLumaDiscoveryMode();
     const feedResolution = buildDiscoveryFeeds(input);
     const feeds = feedResolution.feeds;
+    const budget = lumaBudgetForProfile(input.preferences.profile, input.maxResults);
     const byUrl = new Map<string, { url: string; feeds: Set<LumaDiscoveryFeed>; lead?: RawLead }>();
     const budgetMs = input.timeoutMs;
     let pagesFetched = 0;
@@ -960,7 +1159,7 @@ export const lumaCollector: Collector = {
           break;
         }
         const remaining = Math.max(1_000, budgetMs - (Date.now() - startedAt));
-        const feedResult = await collectRenderedLumaFeed(feed, remaining, input.logger);
+        const feedResult = await collectRenderedLumaFeed(feed, remaining, budget, input.logger);
         pagesFetched += 1;
         result.warnings.push(...feedResult.warnings);
         scrollAttempts += feedResult.scrollAttempts;
@@ -996,7 +1195,7 @@ export const lumaCollector: Collector = {
       }
 
       const provisionalLeads = [...byUrl.values()]
-        .slice(0, Math.min(input.maxResults, LUMA_MAX_EVENTS))
+        .slice(0, budget.maxEvents)
         .map(({ url, feeds, lead }) => {
           const discoveredFrom = [...feeds];
           const primaryFeed = discoveredFrom[0] ?? "luma_public";
@@ -1038,7 +1237,7 @@ export const lumaCollector: Collector = {
       if (provisionalLeads.length > 0) {
         const detailTargetCount = provisionalLeads
           .filter((lead) => !lumaListingDataIsSufficient(lead))
-          .slice(0, LUMA_DETAIL_LIMIT).length;
+          .slice(0, budget.detailLimit).length;
         input.logger?.(
           detailTargetCount > 0
             ? `Opening up to ${detailTargetCount} Luma detail pages for weak listing records...`
@@ -1048,9 +1247,10 @@ export const lumaCollector: Collector = {
           provisionalLeads,
           budgetMs,
           startedAt,
+          budget.detailLimit,
           (lead) => !lumaListingDataIsSufficient(lead),
         );
-        result.leads = enriched.leads.slice(0, input.maxResults);
+        result.leads = enriched.leads.slice(0, budget.maxEvents);
         result.warnings.push(...enriched.warnings);
         detailPagesOpened = enriched.opened;
         detailFailures = enriched.failures;
@@ -1079,6 +1279,9 @@ export const lumaCollector: Collector = {
         noGrowthAttempts,
         detailPagesOpened,
         detailFailures,
+        maxEvents: budget.maxEvents,
+        maxScrolls: budget.maxScrolls,
+        detailLimit: budget.detailLimit,
         mode: mode === "authenticated" ? 1 : 0,
       };
       result.warnings.push(`stop_reasons=${stopReasons.join(",")}`);
@@ -1087,6 +1290,9 @@ export const lumaCollector: Collector = {
       result.warnings.push(`no_growth_attempts=${noGrowthAttempts}`);
       result.warnings.push(`details_opened=${detailPagesOpened}`);
       result.warnings.push(`detail_failures=${detailFailures}`);
+      result.warnings.push(`profile_budget_events=${budget.maxEvents}`);
+      result.warnings.push(`profile_budget_scrolls=${budget.maxScrolls}`);
+      result.warnings.push(`profile_budget_detail_limit=${budget.detailLimit}`);
       result.status =
         result.errors.length > 0
           ? "failed"

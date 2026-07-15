@@ -4,18 +4,23 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import {
   buildDevpostApiUrl,
+  buildDevpostDatesUrl,
   buildDevpostListingsUrl,
   buildDevpostSearchUrls,
   canonicalizeDevpostUrl,
   DEVPOST_OPEN_UPCOMING_URL,
   describeDevpostFailure,
+  devpostBudgetForProfile,
   devpostFingerprint,
   isDevpostHackathonUrl,
   isRejectedDevpostUrl,
+  parseDevpostDisplayedDateRange,
   parseDevpostApiPayload,
   parseDevpostHtml,
+  parseDevpostScheduleHtml,
 } from "@/collectors/devpost";
 import { getDefaultDiscoveryPreferences } from "@/agent/parseCommand";
+import { extractHackathonEvent } from "@/core/extract";
 
 const fixturePath = path.join(
   process.cwd(),
@@ -64,6 +69,9 @@ describe("parseDevpostHtml", () => {
       </a>`;
     const leads = parseDevpostHtml(html, 20);
     assert.ok(leads.some((lead) => /Lazy Loaded Hackathon/i.test(lead.title ?? "")));
+    const lazy = leads.find((lead) => /Lazy Loaded Hackathon/i.test(lead.title ?? ""));
+    assert.equal(lazy?.metadata?.displayedDateRange, "Sep 10 - Oct 1, 2026");
+    assert.equal(lazy?.metadata?.applicationDeadline, undefined);
     assert.equal(
       leads.filter((lead) => /toronto-builder\.devpost\.com/i.test(lead.url ?? "")).length,
       1,
@@ -119,6 +127,42 @@ describe("devpost url helpers", () => {
     );
   });
 
+  it("builds canonical details/dates URLs only for challenge pages", () => {
+    assert.equal(
+      buildDevpostDatesUrl("https://datahub.devpost.com/?ref_feature=challenge"),
+      "https://datahub.devpost.com/details/dates",
+    );
+    assert.equal(buildDevpostDatesUrl("https://devpost.com/hackathons"), undefined);
+  });
+
+  it("parses visible Devpost ranges without treating them as application deadlines", () => {
+    assert.deepEqual(
+      parseDevpostDisplayedDateRange("May 19 - Aug 17, 2026"),
+      {
+        displayedDateRange: "May 19 - Aug 17, 2026",
+        startDate: "2026-05-19",
+        endDate: "2026-08-17",
+      },
+    );
+  });
+
+  it("maps Devpost details/dates schedule fields to explicit normalized date fields", () => {
+    const schedule = parseDevpostScheduleHtml(
+      `
+      <section><h3>Submissions</h3><p>Begins: July 13, 2026 at 9:00am PDT</p><p>Ends: July 21, 2026 at 5:00pm PDT</p></section>
+      <section><h3>Judging</h3><p>Begins: July 22, 2026</p><p>Ends: July 25, 2026</p></section>
+      <section><h3>Winners Announced</h3><p>Announced: July 30, 2026</p></section>
+      `,
+      "https://datahub.devpost.com/details/dates",
+    );
+    assert.equal(schedule.submissionOpenDate, "2026-07-13");
+    assert.equal(schedule.submissionDeadline, "2026-07-21");
+    assert.equal(schedule.judgingStartDate, "2026-07-22");
+    assert.equal(schedule.judgingEndDate, "2026-07-25");
+    assert.equal(schedule.resultAnnouncementDate, "2026-07-30");
+    assert.ok(schedule.parsedDateEvidence.some((item) => item.kind === "submission_open"));
+  });
+
   it("detects repeated manual page fingerprints", () => {
     const pageOne = devpostFingerprint([
       "https://xprize.devpost.com/?ref=discover",
@@ -158,6 +202,20 @@ describe("devpost url helpers", () => {
     assert.equal(leads[0]!.metadata?.provenance, "native_devpost");
     assert.equal(leads[0]!.metadata?.discoveryMode, "native_devpost");
     assert.match(String(leads[0]!.metadata?.prize), /20,500/);
+    assert.equal(leads[0]!.metadata?.displayedDateRange, "Jul 06 - Aug 10, 2026");
+    assert.equal(leads[0]!.metadata?.submissionOpenDate, "2026-07-06");
+    assert.equal(leads[0]!.metadata?.submissionDeadline, "2026-08-10");
+    assert.equal(leads[0]!.metadata?.applicationDeadline, undefined);
+    const event = extractHackathonEvent(leads[0]!);
+    assert.equal(event?.displayedDateRange, "Jul 06 - Aug 10, 2026");
+    assert.equal(event?.submissionDeadline, "2026-08-10");
+    assert.equal(event?.applicationDeadline, undefined);
+  });
+
+  it("uses materially deeper Devpost budgets for deep and exhaustive profiles", () => {
+    assert.ok(devpostBudgetForProfile("deep", 50).maxCards > 100);
+    assert.ok(devpostBudgetForProfile("deep", 50).maxCards > devpostBudgetForProfile("light", 50).maxCards);
+    assert.ok(devpostBudgetForProfile("exhaustive", 50).maxPages > devpostBudgetForProfile("deep", 50).maxPages);
   });
 
   it("formats failure categories for health classification", () => {

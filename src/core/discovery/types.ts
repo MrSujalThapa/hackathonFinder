@@ -15,11 +15,16 @@ export type ParsedDateEvidence = {
     | "registration_open"
     | "registration_deadline"
     | "application_deadline"
+    | "submission_open"
     | "submission_deadline"
+    | "judging_start"
+    | "judging_end"
     | "result_announcement";
   confidence: "high" | "medium" | "low";
   sourceUrl: string;
   sourceText?: string;
+  retrievedAt?: string;
+  sourceType?: "listing" | "detail" | "schedule" | "api" | "text";
 };
 
 export type EventLocation = {
@@ -80,8 +85,12 @@ export type HackathonEvent = {
   registrationOpenDate?: string;
   registrationDeadline?: string;
   applicationDeadline?: string;
+  submissionOpenDate?: string;
   submissionDeadline?: string;
+  judgingStartDate?: string;
+  judgingEndDate?: string;
   resultAnnouncementDate?: string;
+  displayedDateRange?: string;
   parsedDateEvidence?: ParsedDateEvidence[];
   startDate?: string;
   endDate?: string;

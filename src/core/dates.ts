@@ -175,6 +175,24 @@ const LABELLED_DATE_PATTERNS: Array<{
       /\b(?:submission deadline|submissions close|project submission|build deadline|final submission)\s*[:\-]?\s*((?:20\d{2}-\d{2}-\d{2})|(?:[A-Za-z]+\s+\d{1,2},?\s+20\d{2})|(?:\d+\s+days?\s+left))/i,
   },
   {
+    kind: "submission_open",
+    confidence: "high",
+    pattern:
+      /\b(?:submissions? open|submissions? begin|submission period begins?|project submission opens?)\s*[:\-]?\s*((?:20\d{2}-\d{2}-\d{2})|(?:[A-Za-z]+\s+\d{1,2},?\s+20\d{2}))/i,
+  },
+  {
+    kind: "judging_start",
+    confidence: "high",
+    pattern:
+      /\b(?:judging begins?|judging starts?|review period begins?)\s*[:\-]?\s*((?:20\d{2}-\d{2}-\d{2})|(?:[A-Za-z]+\s+\d{1,2},?\s+20\d{2}))/i,
+  },
+  {
+    kind: "judging_end",
+    confidence: "high",
+    pattern:
+      /\b(?:judging ends?|judging closes?|review period ends?)\s*[:\-]?\s*((?:20\d{2}-\d{2}-\d{2})|(?:[A-Za-z]+\s+\d{1,2},?\s+20\d{2}))/i,
+  },
+  {
     kind: "result_announcement",
     confidence: "medium",
     pattern:
