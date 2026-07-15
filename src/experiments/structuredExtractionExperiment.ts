@@ -79,6 +79,7 @@ function experimentFromArgs(): SourceExperiment {
     allowedOrigins: [...new Set([...originVariants(parsed.origin), ...extraOrigins.flatMap(originVariants)])],
     maxRequests: numericArg("--max-requests", 40),
     maxPages: numericArg("--max-pages", 3),
+    maxBrowserActions: numericArg("--max-browser-actions", 0),
     maxPayloadBytes: numericArg("--max-payload-bytes", 5_000_000),
     browserAllowed: boolArg("--browser", true),
     expectedContentCategory: "public_event_directory",

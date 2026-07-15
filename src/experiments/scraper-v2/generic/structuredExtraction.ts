@@ -309,6 +309,9 @@ export function formatGenericStructuredExtractionResult(
   lines.push(`  browser escalated         ${result.acquisition.browserEscalated ? "yes" : "no"}`);
   lines.push(`  actions discovered        ${result.acquisition.actionsDiscovered ?? 0}`);
   lines.push(`  actions executed          ${result.acquisition.actionsExecuted ?? 0}`);
+  if (result.acquisition.identitiesAfterActions?.length) {
+    lines.push(`  identities after actions  ${result.acquisition.identitiesAfterActions.join(", ")}`);
+  }
   lines.push(`  checkpoint loaded         ${result.acquisition.checkpointLoaded ? "yes" : "no"}`);
   lines.push(`  checkpoint saved          ${result.acquisition.checkpointSaved ? "yes" : "no"}`);
   lines.push(`  browser pages             ${result.acquisition.browserPages}`);

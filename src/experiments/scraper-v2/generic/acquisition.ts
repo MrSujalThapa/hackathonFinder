@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { performance } from "node:perf_hooks";
 import { withPlaywright } from "@/lib/browser/playwright";
+import { enumerateCandidateActionsFromHtml } from "@/experiments/scraper-v2/generic/browserActions";
 import type {
   AcquiredArtifact,
   AcquiredArtifactKind,
@@ -114,6 +115,28 @@ function artifactKindForScript(id: string, payload: unknown): AcquiredArtifactKi
 
 function payloadFingerprint(payload: unknown): string {
   return JSON.stringify(payload).slice(0, 10_000);
+}
+
+function pageFingerprint(html: string): string {
+  return html.replace(/\s+/g, " ").slice(0, 20_000);
+}
+
+function visibleIdentityEstimate(html: string, baseUrl: string): number {
+  const $ = cheerio.load(html);
+  const identities = new Set<string>();
+  $("a[href],article,[role='article'],li,section,div")
+    .toArray()
+    .slice(0, 400)
+    .forEach((element) => {
+      const text = $(element).text().replace(/\s+/g, " ").trim();
+      const href = $(element).is("a[href]") ? $(element).attr("href") : $(element).find("a[href]").first().attr("href");
+      if (!/\b(hackathon|challenge|event|deadline|register|apply|prize|build)\b/i.test(text)) return;
+      const dateSignal = /\b(?:20\d{2}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(text);
+      const title = text.slice(0, 120);
+      const resolved = href ? new URL(href, baseUrl).toString() : "";
+      identities.add(`${resolved}|${title}|${dateSignal ? "dated" : "undated"}`);
+    });
+  return identities.size;
 }
 
 function numericPageParam(url: string): { param: string; page: number } | undefined {
@@ -353,19 +376,64 @@ export function shouldCaptureNetworkResponse(
 async function observeBrowserArtifacts(
   experiment: SourceExperiment,
   nextArtifactIndex: number,
-): Promise<{ artifacts: AcquiredArtifact[]; requestsMade: number; browserPages: number; durationMs: number; skippedReason?: string }> {
+): Promise<{
+  artifacts: AcquiredArtifact[];
+  requestsMade: number;
+  browserPages: number;
+  durationMs: number;
+  actionsDiscovered: number;
+  actionsExecuted: number;
+  identitiesAfterActions: number[];
+  skippedReason?: string;
+}> {
   if (!experiment.browserAllowed) {
     return {
       artifacts: [],
       requestsMade: 0,
       browserPages: 0,
       durationMs: 0,
+      actionsDiscovered: 0,
+      actionsExecuted: 0,
+      identitiesAfterActions: [],
       skippedReason: "browser observation disabled by manifest",
     };
   }
   const startedAt = performance.now();
   const artifacts: AcquiredArtifact[] = [];
   let observedRequests = 0;
+  let browserPages = 0;
+  let actionsDiscovered = 0;
+  let actionsExecuted = 0;
+  const identitiesAfterActions: number[] = [];
+
+  async function captureDomSnapshot(input: {
+    page: {
+      content(): Promise<string>;
+      title(): Promise<string>;
+    };
+    sourceUrl: string;
+  }): Promise<string> {
+    const html = await input.page.content();
+    if (byteLength(html) <= experiment.maxPayloadBytes) {
+      artifacts.push(
+        makeArtifact({
+          kind: "dom_snapshot",
+          index: nextArtifactIndex + artifacts.length,
+          sourceUrl: input.sourceUrl,
+          contentType: "text/html",
+          payload: {
+            title: await input.page.title().catch(() => ""),
+            textLength: html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length,
+            html,
+          },
+          rawBytes: byteLength(html),
+          acquisitionMode: "browser",
+          timingMs: ms(startedAt),
+        }),
+      );
+    }
+    return html;
+  }
 
   await withPlaywright(
     async ({ page }) => {
@@ -395,24 +463,48 @@ async function observeBrowserArtifacts(
 
       await page.goto(experiment.inputUrl, { waitUntil: "networkidle", timeout: 20_000 });
       await page.waitForTimeout(750);
-      const html = await page.content();
-      if (byteLength(html) <= experiment.maxPayloadBytes) {
-        artifacts.push(
-          makeArtifact({
-            kind: "dom_snapshot",
-            index: nextArtifactIndex + artifacts.length,
-            sourceUrl: page.url(),
-            contentType: "text/html",
-            payload: {
-              title: await page.title().catch(() => ""),
-              textLength: html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length,
-              html,
-            },
-            rawBytes: byteLength(html),
-            acquisitionMode: "browser",
-            timingMs: ms(startedAt),
-          }),
+      browserPages += 1;
+      let html = await captureDomSnapshot({ page, sourceUrl: page.url() });
+      let previousFingerprint = pageFingerprint(html);
+      const maxActions = Math.max(0, experiment.maxBrowserActions ?? 0);
+
+      for (let transition = 0; transition < maxActions; transition += 1) {
+        if (artifacts.length + nextArtifactIndex >= experiment.maxRequests) break;
+        const actions = enumerateCandidateActionsFromHtml(html, page.url()).filter(
+          (action) =>
+            !action.disabled &&
+            action.confidence >= 0.55 &&
+            (action.proposedEffect === "next_page" ||
+              action.proposedEffect === "load_more" ||
+              action.proposedEffect === "infinite_scroll" ||
+              action.proposedEffect === "open_detail") &&
+            (!action.href || isSafePublicOrigin(action.href, experiment.allowedOrigins)),
         );
+        actionsDiscovered += actions.length;
+        const action = actions[0];
+        if (!action) break;
+        if (action.href && (action.proposedEffect === "next_page" || action.proposedEffect === "open_detail")) {
+          await page.goto(action.href, { waitUntil: "networkidle", timeout: 20_000 }).catch(() => undefined);
+        } else if (action.proposedEffect === "infinite_scroll") {
+          await page.mouse.wheel(0, 5000);
+          await page.waitForTimeout(900);
+        } else {
+          const actionIndex = Number(action.elementId.split(":")[1]) - 1;
+          await page.evaluate((index) => {
+            const elements = [...document.querySelectorAll("a[href],button,[role='button'],[role='link'],select,input[type='button'],input[type='submit']")];
+            (elements[index] as HTMLElement | undefined)?.click();
+          }, actionIndex);
+          await page.waitForLoadState("networkidle", { timeout: 12_000 }).catch(() => undefined);
+          await page.waitForTimeout(500);
+        }
+        html = await captureDomSnapshot({ page, sourceUrl: page.url() });
+        const nextFingerprint = pageFingerprint(html);
+        const identityEstimate = visibleIdentityEstimate(html, page.url());
+        if (nextFingerprint === previousFingerprint) break;
+        previousFingerprint = nextFingerprint;
+        actionsExecuted += 1;
+        browserPages += 1;
+        identitiesAfterActions.push(identityEstimate);
       }
     },
     { timeoutMs: 25_000, headless: true },
@@ -421,8 +513,11 @@ async function observeBrowserArtifacts(
   return {
     artifacts,
     requestsMade: observedRequests,
-    browserPages: 1,
+    browserPages,
     durationMs: ms(startedAt),
+    actionsDiscovered,
+    actionsExecuted,
+    identitiesAfterActions,
   };
 }
 
@@ -460,6 +555,9 @@ export async function acquireGenericArtifacts(
           blockedReason: undefined,
           rssLinks: [],
           sitemapLinks: [],
+          actionsDiscovered: browserFallback.actionsDiscovered,
+          actionsExecuted: browserFallback.actionsExecuted,
+          identitiesAfterActions: browserFallback.identitiesAfterActions,
         },
       };
     }
@@ -490,6 +588,9 @@ export async function acquireGenericArtifacts(
   let browserPages = 0;
   let pagesRequested = 1;
   let paginationStopReason: NonNullable<AcquisitionDiagnostics["paginationStopReason"]> = "not_attempted";
+  let actionsDiscovered = 0;
+  let actionsExecuted = 0;
+  let identitiesAfterActions: number[] = [];
 
   attemptedLayers.push("framework state");
   if (!staticArtifactsSufficient(artifacts)) {
@@ -504,6 +605,9 @@ export async function acquireGenericArtifacts(
       artifacts = artifacts.concat(observed.artifacts).slice(0, experiment.maxRequests);
       requestsMade += observed.requestsMade;
       browserPages += observed.browserPages;
+      actionsDiscovered += observed.actionsDiscovered;
+      actionsExecuted += observed.actionsExecuted;
+      identitiesAfterActions = identitiesAfterActions.concat(observed.identitiesAfterActions);
       if (observed.skippedReason) skippedLayers.push(observed.skippedReason);
     }
   } else {
@@ -533,9 +637,12 @@ export async function acquireGenericArtifacts(
       skippedLayers,
       requestsMade,
       pagesRequested,
-      paginationExecuted: paginated.artifacts.length > 0,
-      paginationStopReason,
+      paginationExecuted: paginated.artifacts.length > 0 || actionsExecuted > 0,
+      paginationStopReason: actionsExecuted > 0 && paginationStopReason === "no_page_param" ? "no_growth" : paginationStopReason,
       browserPages,
+      actionsDiscovered,
+      actionsExecuted,
+      identitiesAfterActions,
       bytesInspected: artifacts.reduce((total, artifact) => total + artifact.byteSize, 0),
       rssLinks: staticResult.rssLinks,
       sitemapLinks: staticResult.sitemapLinks,

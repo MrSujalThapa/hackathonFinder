@@ -3,6 +3,7 @@ export type SourceExperiment = {
   allowedOrigins: string[];
   maxRequests: number;
   maxPages: number;
+  maxBrowserActions?: number;
   maxPayloadBytes: number;
   browserAllowed: boolean;
   expectedContentCategory?: "public_event_directory";
@@ -33,6 +34,24 @@ export type DiscoveryBudget = {
   maxSources: number;
   maxPagesPerSource: number;
   maxRequestsPerSource: number;
+  maxDetailPagesPerSource: number;
+  maxDurationMs: number;
+  dateHorizonStart?: string;
+  dateHorizonEnd?: string;
+  prioritizeLatency: boolean;
+  prioritizeCoverage: boolean;
+};
+
+export type CrawlProfile = "light" | "standard" | "deep" | "exhaustive";
+
+export type CrawlPlan = {
+  profile: CrawlProfile;
+  targetValidEvents: number;
+  maxRawRecords: number;
+  maxSources: number;
+  maxPagesPerSource: number;
+  maxRequestsPerSource: number;
+  maxBrowserActionsPerSource: number;
   maxDetailPagesPerSource: number;
   maxDurationMs: number;
   dateHorizonStart?: string;
@@ -187,6 +206,7 @@ export type AcquisitionDiagnostics = {
   browserEscalated?: boolean;
   actionsDiscovered?: number;
   actionsExecuted?: number;
+  identitiesAfterActions?: number[];
   checkpointSaved?: boolean;
   checkpointLoaded?: boolean;
 };
