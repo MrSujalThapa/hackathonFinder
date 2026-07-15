@@ -66,15 +66,15 @@ function inferContext(name: string | undefined, href: string | undefined, role: 
   const controlName = (name ?? "").replace(/\s+/g, " ").trim();
   const explicitPagingLabel = controlName.length <= 80 &&
     /\b(next|older|page\s*\d+|load more|show more|view more)\b/i.test(controlName);
+  if (/\b(home|about|privacy|terms|sponsor|contact|blog|login|log in|sign in|sign up|register account|profile|portfolio|dashboard|account)\b/.test(text)) {
+    return "navigation";
+  }
   if (href && !pagingHref && !explicitPagingLabel) {
     return "detail";
   }
   if (/\b(next|previous|pagination|page\s*\d+|load more|show more|cursor|offset)\b/.test(text)) return "pagination";
   if (/\b(filter|category|sort|location|type)\b/.test(text)) return "filter";
   if (/\b(register|apply|details?|view event|learn more)\b/.test(text)) return "detail";
-  if (/\b(home|about|privacy|terms|sponsor|contact|blog|login|log in|sign in|sign up|register account|profile|portfolio|dashboard|account)\b/.test(text)) {
-    return "navigation";
-  }
   return "unknown";
 }
 
