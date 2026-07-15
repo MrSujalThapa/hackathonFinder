@@ -24,6 +24,7 @@ function representationForUnitSet(
 export function runGenericDomExtraction(
   artifacts: AcquiredArtifact[],
   experiment: SourceExperiment,
+  options: { selectedUnitSetId?: string; allowCompositeIdentity?: boolean } = {},
 ): DomExtractionResult {
   const totalStartedAt = performance.now();
   const timings: Record<string, number> = {};
@@ -45,7 +46,9 @@ export function runGenericDomExtraction(
   const detectionStartedAt = performance.now();
   const repeatedUnitSets = detectRepeatedDomUnitSets(representations);
   timings.repeatedUnitDetectionMs = ms(detectionStartedAt);
-  const selectedUnitSet = repeatedUnitSets.find(
+  const selectedUnitSet = (options.selectedUnitSetId
+    ? repeatedUnitSets.find((unitSet) => unitSet.unitSetId === options.selectedUnitSetId)
+    : undefined) ?? repeatedUnitSets.find(
     (unitSet) =>
       unitSet.confidence >= 0.5 &&
       unitSet.rejectionReasons.length === 0 &&
@@ -69,7 +72,7 @@ export function runGenericDomExtraction(
   const schemaStartedAt = performance.now();
   const representation = representationForUnitSet(representations, selectedUnitSet);
   const inferred = representation
-    ? inferDomSchemaAndLeads({ representation, unitSet: selectedUnitSet, experiment })
+    ? inferDomSchemaAndLeads({ representation, unitSet: selectedUnitSet, experiment, allowCompositeIdentity: options.allowCompositeIdentity })
     : { leads: [], rejectionReasons: ["missing representation for selected unit set"] };
   timings.domSchemaInferenceMs = ms(schemaStartedAt);
 

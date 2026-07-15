@@ -416,6 +416,26 @@ export type GenericStructuredExtractionResult = {
   leads: GenericShadowLead[];
   strategySelected: "structured" | "dom" | "none";
   dom?: DomExtractionResult;
+  aiAssistance?: {
+    invoked: boolean;
+    accepted: boolean;
+    provider?: string;
+    model?: string;
+    latencyMs?: number;
+    tokenEstimate?: number;
+    selectedGroupId?: string;
+    classification?: string;
+    selectedActionId?: string;
+    candidateGroups: number;
+    rejectedReasons: string[];
+  };
+  visionAssistance?: {
+    invoked: boolean;
+    accepted: boolean;
+    selectedGroupId?: string;
+    mappedDomNodes: number;
+    rejectedReasons: string[];
+  };
   pagination: PaginationInference;
   quality: ExtractionQualityReport;
   timings: Record<string, number>;

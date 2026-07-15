@@ -92,6 +92,7 @@ export function inferDomSchemaAndLeads(input: {
   representation: DomRepresentation;
   unitSet: RepeatedUnitSet;
   experiment: SourceExperiment;
+  allowCompositeIdentity?: boolean;
 }): { schema?: DomExtractionSchema; leads: GenericShadowLead[]; rejectionReasons: string[] } {
   const map = nodeMap(input.representation);
   const parent = map.get(input.unitSet.parentNodeId);
@@ -110,7 +111,8 @@ export function inferDomSchemaAndLeads(input: {
     const date = candidateDate(nodes);
     const location = candidateLocation(nodes);
     const mode = candidateMode(nodes);
-    const key = stableDedupeKey([href, title, date]);
+    const compositeIdentity = input.allowCompositeIdentity && !href ? stableDedupeKey([title, date, location]) : undefined;
+    const key = stableDedupeKey([href, compositeIdentity, title, date]);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     leads.push({
@@ -118,12 +120,13 @@ export function inferDomSchemaAndLeads(input: {
       artifactKind: "dom_snapshot",
       title,
       ...(href ? { canonicalUrl: href, sourceRecordId: href } : {}),
+      ...(!href && compositeIdentity ? { sourceRecordId: `composite:${compositeIdentity}` } : {}),
       ...(date ? { startDate: date } : {}),
       ...(location ? { location } : {}),
       ...(mode ? { mode } : {}),
       normalizedStatus: "unknown",
       statusInference: "dom repeated-unit inference",
-      confidence: Math.min(1, Number((input.unitSet.confidence + (href ? 0.1 : 0) + (date ? 0.05 : 0)).toFixed(3))),
+      confidence: Math.min(1, Number((input.unitSet.confidence + (href ? 0.1 : 0) + (date ? 0.05 : 0) - (!href && compositeIdentity ? 0.12 : 0)).toFixed(3))),
     });
   }
 

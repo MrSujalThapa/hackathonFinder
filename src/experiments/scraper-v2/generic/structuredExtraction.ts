@@ -1,4 +1,6 @@
 import { performance } from "node:perf_hooks";
+import { buildAiPageDecisionInput, requestAiPageDecision, shouldInvokeAiPageDecision, type AiPageDecisionResult } from "@/experiments/scraper-v2/generic/aiPageDecision";
+import { enumerateCandidateActionsFromHtml } from "@/experiments/scraper-v2/generic/browserActions";
 import { ExistingCustomRuntime } from "@/experiments/scraper-v2/generic/crawlRuntime";
 import { runGenericDomExtraction } from "@/experiments/scraper-v2/generic/domExtraction";
 import { validateEventIntent } from "@/experiments/scraper-v2/generic/eventIntentValidation";
@@ -20,6 +22,7 @@ import type {
   InferredEventSchema,
   SourceExperiment,
 } from "@/experiments/scraper-v2/generic/types";
+import type { LlmProvider } from "@/lib/llm/types";
 
 function ms(startedAt: number): number {
   return Math.round(performance.now() - startedAt);
@@ -134,6 +137,46 @@ function staticArtifactsSufficientForExperiment(experiment: SourceExperiment, ar
   return true;
 }
 
+function htmlFromArtifact(artifact: AcquiredArtifact): string | undefined {
+  if (artifact.kind !== "html" && artifact.kind !== "dom_snapshot") return undefined;
+  const payload = artifact.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+  const html = (payload as Record<string, unknown>).html;
+  return typeof html === "string" ? html : undefined;
+}
+
+function aiDomProposalPasses(input: {
+  dom: NonNullable<GenericStructuredExtractionResult["dom"]>;
+  previousLeadCount: number;
+  experiment: SourceExperiment;
+  selectedGroupId: string;
+  blockedReason?: string;
+}): { ok: true } | { ok: false; reasons: string[] } {
+  const reasons: string[] = [];
+  const selected = input.dom.selectedUnitSet;
+  if (!selected || selected.unitSetId !== input.selectedGroupId) reasons.push("AI-selected DOM group was not mapped to a real unit set");
+  if (input.dom.leads.length <= input.previousLeadCount) reasons.push("AI proposal did not improve deterministic output");
+  if (selected && selected.diagnostics.unitCount >= 5 && input.dom.leads.length < 5) {
+    reasons.push("AI-selected schema does not work on at least 5 records");
+  }
+  const quality = evaluateGenericExtractionQuality({
+    discoveredRecords: input.dom.availableRecords ?? input.dom.leads.length,
+    leads: input.dom.leads,
+    experiment: input.experiment,
+    blockedReason: input.blockedReason,
+    schemaRejected: input.dom.stopReason === "schema_rejected",
+  });
+  if (quality.estimatedPrecision < 0.9) reasons.push("sampled event precision below 90%");
+  if (quality.obviousNonEvents / Math.max(1, quality.normalizedLeads) > 0.05) {
+    reasons.push("navigation/editorial false positives exceed 5%");
+  }
+  const listingPath = new URL(input.experiment.inputUrl).pathname.replace(/\/$/, "");
+  if (input.dom.leads.some((lead) => lead.canonicalUrl && new URL(lead.canonicalUrl).pathname.replace(/\/$/, "") === listingPath)) {
+    reasons.push("listing URL reused as event URL");
+  }
+  return reasons.length === 0 ? { ok: true } : { ok: false, reasons };
+}
+
 function selectExtractionStrategy(input: {
   structuredLeads: GenericStructuredExtractionResult["leads"];
   structuredDiscoveredRecords: number;
@@ -171,7 +214,7 @@ function selectExtractionStrategy(input: {
 
 export async function runGenericStructuredExtraction(
   experiment: SourceExperiment,
-  options: { runtime?: CrawlRuntime; budget?: DiscoveryBudget; signal?: AbortSignal; checkpointDir?: string } = {},
+  options: { runtime?: CrawlRuntime; budget?: DiscoveryBudget; signal?: AbortSignal; checkpointDir?: string; aiProvider?: LlmProvider | null } = {},
 ): Promise<GenericStructuredExtractionResult> {
   const totalStartedAt = performance.now();
   const timings: Record<string, number> = {};
@@ -216,8 +259,86 @@ export async function runGenericStructuredExtraction(
   timings.normalizationMs = ms(normalizationStartedAt);
 
   const domStartedAt = performance.now();
-  const dom = runGenericDomExtraction(acquisition.artifacts, experiment);
+  let dom = runGenericDomExtraction(acquisition.artifacts, experiment);
   timings.domInferenceMs = ms(domStartedAt);
+
+  let aiAssistance: GenericStructuredExtractionResult["aiAssistance"];
+  const deterministicLeadCount = structuredLeads.length + dom.leads.length;
+  const actionCandidates = acquisition.artifacts
+    .flatMap((artifact) => {
+      const html = htmlFromArtifact(artifact);
+      return html ? enumerateCandidateActionsFromHtml(html, artifact.sourceUrl) : [];
+    })
+    .slice(0, 20);
+  const aiInput = buildAiPageDecisionInput({
+    sourceUrl: experiment.inputUrl,
+    artifacts: acquisition.artifacts,
+    recordSets: discovery.recordSets,
+    schemas: schemaByRecordSet,
+    validations: eventIntentValidations,
+    repeatedUnitSets: dom.repeatedUnitSets,
+    actionCandidates,
+  });
+  if (
+    shouldInvokeAiPageDecision({
+      deterministicValidEvents: deterministicLeadCount,
+      candidateGroups: aiInput.candidateGroups,
+      blockedReason: acquisition.diagnostics.blockedReason,
+    })
+  ) {
+    const ai: AiPageDecisionResult = await requestAiPageDecision({
+      sanitizedInput: aiInput,
+      provider: options.aiProvider,
+      signal: options.signal,
+    }).catch((error): AiPageDecisionResult => ({
+      invoked: true,
+      accepted: false,
+      sanitizedInput: aiInput,
+      rejectedReasons: [error instanceof Error ? error.message : String(error)],
+    }));
+    aiAssistance = {
+      invoked: ai.invoked,
+      accepted: false,
+      ...(ai.provider ? { provider: ai.provider } : {}),
+      ...(ai.model ? { model: ai.model } : {}),
+      ...(ai.latencyMs !== undefined ? { latencyMs: ai.latencyMs } : {}),
+      ...(ai.tokenEstimate !== undefined ? { tokenEstimate: ai.tokenEstimate } : {}),
+      ...(ai.decision?.selectedGroupId ? { selectedGroupId: ai.decision.selectedGroupId } : {}),
+      ...(ai.decision?.classification ? { classification: ai.decision.classification } : {}),
+      ...(ai.decision?.selectedActionId ? { selectedActionId: ai.decision.selectedActionId } : {}),
+      candidateGroups: aiInput.candidateGroups.length,
+      rejectedReasons: [...ai.rejectedReasons],
+    };
+    const selectedGroup = ai.decision?.selectedGroupId
+      ? aiInput.candidateGroups.find((group) => group.groupId === ai.decision?.selectedGroupId)
+      : undefined;
+    if (ai.accepted && ai.decision?.classification === "event_records" && selectedGroup?.kind === "dom") {
+      const aiDom = runGenericDomExtraction(acquisition.artifacts, experiment, {
+        selectedUnitSetId: selectedGroup.groupId,
+        allowCompositeIdentity: true,
+      });
+      const validation = aiDomProposalPasses({
+        dom: aiDom,
+        previousLeadCount: deterministicLeadCount,
+        experiment,
+        selectedGroupId: selectedGroup.groupId,
+        blockedReason: acquisition.diagnostics.blockedReason,
+      });
+      if (validation.ok) {
+        dom = aiDom;
+        aiAssistance.accepted = true;
+      } else {
+        aiAssistance.rejectedReasons.push(...validation.reasons);
+      }
+    }
+  } else if (aiInput.candidateGroups.length > 0) {
+    aiAssistance = {
+      invoked: false,
+      accepted: false,
+      candidateGroups: aiInput.candidateGroups.length,
+      rejectedReasons: deterministicLeadCount > 0 ? ["deterministic extraction already produced leads"] : ["no plausible unresolved AI candidate"],
+    };
+  }
 
   const strategySelected = selectExtractionStrategy({
     structuredLeads,
@@ -270,6 +391,7 @@ export async function runGenericStructuredExtraction(
     leads,
     strategySelected,
     dom,
+    ...(aiAssistance ? { aiAssistance } : {}),
     pagination,
     quality,
     timings,
@@ -340,6 +462,16 @@ export function formatGenericStructuredExtractionResult(
   lines.push("  persistence               disabled");
   if (result.quality.degradedReasons.length > 0) {
     lines.push(`  degraded reasons          ${result.quality.degradedReasons.join("; ")}`);
+  }
+  if (result.aiAssistance) {
+    lines.push(`  AI invoked                ${result.aiAssistance.invoked ? "yes" : "no"}`);
+    lines.push(`  AI accepted               ${result.aiAssistance.accepted ? "yes" : "no"}`);
+    lines.push(`  AI candidate groups       ${result.aiAssistance.candidateGroups}`);
+    if (result.aiAssistance.provider) lines.push(`  AI provider/model         ${result.aiAssistance.provider}/${result.aiAssistance.model ?? "unknown"}`);
+    if (result.aiAssistance.selectedGroupId) lines.push(`  AI selected group         ${result.aiAssistance.selectedGroupId}`);
+    if (result.aiAssistance.classification) lines.push(`  AI classification         ${result.aiAssistance.classification}`);
+    if (result.aiAssistance.latencyMs !== undefined) lines.push(`  AI latency                ${seconds(result.aiAssistance.latencyMs)}`);
+    if (result.aiAssistance.rejectedReasons.length > 0) lines.push(`  AI rejected reasons       ${result.aiAssistance.rejectedReasons.join("; ")}`);
   }
   return lines;
 }
