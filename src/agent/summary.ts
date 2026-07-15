@@ -124,6 +124,17 @@ export function buildAcceptedSummary(
       );
     }
 
+    const evidenceBits = [
+      item.hasOfficialUrl || item.event.officialUrl ? "Official listing" : null,
+      item.event.parsedDateEvidence?.some(
+        (entry) => entry.sourceType === "schedule" || entry.sourceType === "detail",
+      )
+        ? "official dates page"
+        : item.event.displayedDateRange || item.event.submissionDeadline
+          ? "visible schedule evidence"
+          : null,
+    ].filter(Boolean);
+
     return {
       name: item.event.name,
       score: item.score.score,
@@ -133,8 +144,12 @@ export function buildAcceptedSummary(
       eventEndDate: eventEndFor(item.event),
       applicationDeadline,
       submissionDeadline: item.event.submissionDeadline,
+      judgingStartDate: item.event.judgingStartDate,
+      judgingEndDate: item.event.judgingEndDate,
+      displayedDateRange: item.event.displayedDateRange,
       participationMode: item.event.eventLocation?.mode ?? item.event.mode,
       eligibility: item.event.eligibility,
+      themes: item.event.themes,
       source: item.event.source,
       status: item.status,
       classification: item.classification,
@@ -142,6 +157,7 @@ export function buildAcceptedSummary(
       deadlineState: item.deadlineState,
       hasOfficialUrl: item.hasOfficialUrl ?? Boolean(item.event.officialUrl),
       hasApplyUrl: item.hasApplyUrl ?? Boolean(item.event.applyUrl),
+      evidenceSummary: evidenceBits.join(" + ") || "Listing evidence",
     };
   });
 }

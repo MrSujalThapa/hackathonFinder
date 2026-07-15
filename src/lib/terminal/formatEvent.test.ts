@@ -4,6 +4,7 @@ import {
   formatJobEventLine,
   formatJobSummary,
   normalizeJobEvent,
+  shouldSuppressTerminalEvent,
 } from "@/lib/terminal/formatEvent";
 import type { DiscoveryJob, DiscoveryJobEvent } from "@/lib/terminal/types";
 
@@ -51,6 +52,7 @@ describe("formatJobSummary", () => {
       summary: {
         rawLeads: 77,
         uniqueLeads: 43,
+        queueReady: 41,
         durationMs: 12000,
         llmCalls: 3,
         fallbackUsed: false,
@@ -59,8 +61,23 @@ describe("formatJobSummary", () => {
     };
     const text = formatJobSummary(job);
     assert.match(text, /created\s+7/);
-    assert.match(text, /raw leads\s+77/);
+    assert.match(text, /raw collected\s+77/);
+    assert.match(text, /queue-ready\s+41/);
+    assert.match(text, /needs review\s+2/);
     assert.match(text, /mlh:25/);
+  });
+
+  it("suppresses fingerprint dumps unless verbose", () => {
+    const event: DiscoveryJobEvent = {
+      id: "e3",
+      jobId: "j1",
+      sequence: 3,
+      timestamp: "2026-07-12T00:00:00.000Z",
+      type: "source_progress",
+      level: "warning",
+      message: "page fingerprint warning dump",
+    };
+    assert.equal(shouldSuppressTerminalEvent(event, false), true);
   });
 });
 

@@ -41,8 +41,8 @@ import {
   type DiscoveryEventSink,
 } from "@/discovery/events";
 import { aggregateCollectorResults } from "@/discovery/collectorAggregation";
-import { collectCustomSource } from "@/collectors/customSource";
 import type { CustomSource } from "@/server/customSources/types";
+import { collectCustomSourceWithV2Routing } from "@/discovery/genericScraperV2Mode";
 import type {
   DiscoveryPerformanceTracker,
 } from "@/discovery/performance";
@@ -387,7 +387,7 @@ export async function executeDiscoveryPipeline(
       const customId = `custom:${customSource.slug}` as const;
       const customStartedAtMs = performanceTracker?.now();
       await emitter.emit("source_started", "Starting...", { source: customId });
-      const customResult = await collectCustomSource(customSource, {
+      const customResult = await collectCustomSourceWithV2Routing(customSource, {
         timeoutMs: effectiveSourceTimeout,
         logger: (message) => {
           const unprefixed = message.replace(new RegExp(`^\\[custom:${customSource.slug}\\]\\s*`), "");
@@ -465,8 +465,16 @@ export async function executeDiscoveryPipeline(
       stats.durationMs = result.durationMs;
       stats.errors.push(...result.errors);
       stats.warnings.push(...result.warnings);
+      const verbose = options.verbose === true;
+      const sourceWarnings = result.warnings.filter(
+        (warning) =>
+          verbose ||
+          !/fingerprint|page-fingerprint|page fingerprint|rawHtml|selector dump/i.test(
+            warning,
+          ),
+      );
       summary.warnings.push(
-        ...result.warnings.map((warning) => `[${result.source}] ${warning}`),
+        ...sourceWarnings.map((warning) => `[${result.source}] ${warning}`),
       );
       summary.errors.push(
         ...result.errors.map((error) => `[${result.source}] ${error}`),
@@ -524,16 +532,28 @@ export async function executeDiscoveryPipeline(
         );
       } else {
         stats.outcome = degraded ? "degraded" : "executed";
+        const unique =
+          typeof result.metrics?.uniqueCards === "number"
+            ? result.metrics.uniqueCards
+            : result.diagnostics.discovered || result.leads.length;
+        const stopReason =
+          result.diagnostics.stopReason ??
+          result.warnings.find((warning) => /stop_reason|exhaust|timeout|no_growth|page_cap/i.test(warning));
         await emitter.emit(
           "source_completed",
-          `${result.leads.length} leads found`,
+          `${result.leads.length} collected, ${unique} unique${
+            stopReason ? `, stop: ${stopReason}` : ""
+          }`,
           {
             source: result.source,
             metadata: {
               leadsFound: result.leads.length,
+              unique,
               durationMs: result.durationMs,
               errors: result.errors.length,
               warnings: result.warnings.length,
+              stopReason,
+              metrics: result.metrics ?? null,
             },
           },
         );
@@ -628,8 +648,8 @@ export async function executeDiscoveryPipeline(
       const stats = sourceStats.get(source);
       if (!stats) return;
       stats.accepted += 1;
-      stats.queueReady += 1;
       if (status === "NEEDS_REVIEW") stats.needsReview += 1;
+      else stats.queueReady += 1;
     };
     const markInvalidRejected = (source: DiscoverySourceId) => {
       const stats = sourceStats.get(source);
@@ -944,27 +964,75 @@ export async function executeDiscoveryPipeline(
 
     const created = dryRun ? summary.wouldCreate : summary.created;
     const updated = dryRun ? summary.wouldUpdate : summary.updated;
+    const queueReady = Math.max(0, summary.accepted - summary.needsReview);
+    await emitter.emit(
+      "source_progress",
+      `${queueReady} candidates ready`,
+      { source: "result", metadata: { queueReady } },
+    );
+    await emitter.emit(
+      "source_progress",
+      `${summary.needsReview} need review`,
+      { source: "result", metadata: { needsReview: summary.needsReview } },
+    );
+    for (const candidate of summary.acceptedCandidates.slice(0, 20)) {
+      const eventPeriod =
+        candidate.eventStartDate &&
+        candidate.eventEndDate &&
+        candidate.eventEndDate !== candidate.eventStartDate
+          ? `${candidate.eventStartDate} to ${candidate.eventEndDate}`
+          : candidate.eventStartDate ?? "Not publicly listed";
+      await emitter.emit(
+        "source_progress",
+        [
+          candidate.name,
+          `Event/competition period: ${eventPeriod}`,
+          `Applications close: ${
+            candidate.deadlineState === "missing" || !candidate.applicationDeadline
+              ? "Not publicly listed"
+              : candidate.applicationDeadline
+          }`,
+          `Submissions close: ${candidate.submissionDeadline ?? "Not publicly listed"}`,
+          `Location: ${candidate.location}`,
+          `Mode: ${candidate.participationMode ?? "unknown"}`,
+          `Status: ${candidate.status}`,
+          `Source: ${candidate.source ?? "unknown"}`,
+        ].join(" · "),
+        {
+          source: "result",
+          metadata: { candidate },
+        },
+      );
+    }
     await emitter.emit(
       "run_completed",
       dryRun
-        ? `Would create ${created}, would update ${updated}`
-        : `${created} created, ${updated} updated`,
+        ? `Would create ${created}, would update ${updated} · queue-ready ${queueReady}, needs review ${summary.needsReview}`
+        : `${created} created, ${updated} updated · queue-ready ${queueReady}, needs review ${summary.needsReview}`,
       {
         metadata: {
           rawLeads: summary.rawLeads,
+          uniqueLeads: summary.uniqueLeads,
           accepted: summary.accepted,
+          queueReady,
           rejected: summary.rejected,
           needsReview: summary.needsReview,
           created,
           updated,
           durationMs: summary.durationMs,
           dryRun,
+          profile: preferences.profile ?? null,
           sourceAccounting: summary.sourceAccounting,
           sourceStats: summary.sourceStats.map((stats) => ({
             source: stats.source,
             leadsFound: stats.leadsFound,
+            queueReady: stats.queueReady,
+            needsReview: stats.needsReview,
+            rejected: stats.rejected,
+            durationMs: stats.durationMs,
             outcome: stats.outcome,
           })),
+          acceptedCandidates: summary.acceptedCandidates,
           performance: performanceTracker?.finalize(),
           persistenceShadow: summary.persistenceShadow ?? null,
         },

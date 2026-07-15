@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
+  allocateLumaFeedBudgets,
   describeLumaFailure,
   extractLumaTimelineCards,
   isRejectedLumaLeadUrl,
@@ -158,12 +159,35 @@ describe("luma helpers", () => {
     const resolution = resolveLumaFeeds({ requestedLocation: "Waterloo" });
     assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/tech"));
     assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/ai"));
+    assert.ok(resolution.feeds.some((feed) => /discover\?q=hackathon/i.test(feed.url)));
+  });
+
+  it("prioritizes AI and hackathon feeds before Tech for AI queries", () => {
+    const resolution = resolveLumaFeeds({
+      requestedTopics: ["AI"],
+      rawCommand: "find AI hackathons from Luma",
+    });
+    const topicUrls = resolution.feeds.filter((feed) => feed.type === "topic").map((feed) => feed.url);
+    assert.equal(topicUrls[0], "https://luma.com/ai");
+    assert.ok(topicUrls.some((url) => /discover\?q=hackathon/i.test(url)));
+    assert.ok(topicUrls.indexOf("https://luma.com/ai") < topicUrls.indexOf("https://luma.com/tech"));
   });
 
   it("uses explicit fallback when no verified city feed exists", () => {
     const resolution = resolveLumaFeeds({ requestedLocation: "London" });
     assert.match(resolution.fallbackReason ?? "", /No verified London city feed/i);
     assert.ok(resolution.feeds.every((feed) => feed.type === "topic"));
+  });
+
+  it("allocates per-feed scroll budgets instead of one shared pool", () => {
+    const total = lumaBudgetForProfile("deep", 50);
+    const parts = allocateLumaFeedBudgets(total, 3);
+    assert.equal(parts.length, 3);
+    assert.ok(parts.every((part) => part.maxScrolls < total.maxScrolls));
+    assert.equal(
+      parts.reduce((sum, part) => sum + part.maxScrolls, 0),
+      total.maxScrolls,
+    );
   });
 
   it("rejects discover/calendar/profile URLs as leads", () => {

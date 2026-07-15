@@ -6,6 +6,9 @@ import type {
   TerminalLine,
 } from "@/lib/terminal/types";
 
+const NOISY_WARNING =
+  /fingerprint|page-fingerprint|page fingerprint|rawHtml|selector dump|dom snapshot/i;
+
 function levelToKind(
   level: TerminalEventLevel,
 ): TerminalLine["kind"] {
@@ -39,6 +42,17 @@ function shortType(type: string): string {
     .replace(/_/g, " ");
 }
 
+export function shouldSuppressTerminalEvent(
+  event: DiscoveryJobEvent,
+  verbose = false,
+): boolean {
+  if (verbose) return false;
+  if (NOISY_WARNING.test(event.message)) return true;
+  const warnings = event.metadata?.warnings;
+  if (typeof warnings === "string" && NOISY_WARNING.test(warnings)) return true;
+  return false;
+}
+
 export function jobEventToTerminalLine(
   event: DiscoveryJobEvent,
   lineId: string,
@@ -55,6 +69,64 @@ export function jobEventToTerminalLine(
   };
 }
 
+function formatDeadlineDisplay(value: unknown, deadlineState?: unknown): string {
+  if (deadlineState === "missing" || value == null || value === "" || value === "Unknown") {
+    return "Not publicly listed";
+  }
+  if (typeof value !== "string") return "Not publicly listed";
+  return value;
+}
+
+function formatEventPeriod(candidate: Record<string, unknown>): string {
+  const start = typeof candidate.eventStartDate === "string" ? candidate.eventStartDate : undefined;
+  const end = typeof candidate.eventEndDate === "string" ? candidate.eventEndDate : undefined;
+  const displayed =
+    typeof candidate.displayedDateRange === "string" ? candidate.displayedDateRange : undefined;
+  if (displayed) return displayed;
+  if (start && end && end !== start) return `${start} to ${end}`;
+  if (start) return start;
+  return "Not publicly listed";
+}
+
+export function formatTerminalCandidateResult(
+  candidate: Record<string, unknown>,
+): string {
+  const name = typeof candidate.name === "string" ? candidate.name : "Untitled";
+  const judgingStart =
+    typeof candidate.judgingStartDate === "string" ? candidate.judgingStartDate : undefined;
+  const judgingEnd =
+    typeof candidate.judgingEndDate === "string" ? candidate.judgingEndDate : undefined;
+  const judging =
+    judgingStart && judgingEnd
+      ? `${judgingStart} to ${judgingEnd}`
+      : judgingStart || judgingEnd || "Not publicly listed";
+  const themes = Array.isArray(candidate.themes)
+    ? candidate.themes.filter((item): item is string => typeof item === "string").join(", ")
+    : typeof candidate.themes === "string"
+      ? candidate.themes
+      : "Unknown";
+  const evidence =
+    typeof candidate.evidenceSummary === "string"
+      ? candidate.evidenceSummary
+      : "Listing evidence";
+
+  return [
+    name,
+    "",
+    `- Event/competition period: ${formatEventPeriod(candidate)}`,
+    `- Applications close: ${formatDeadlineDisplay(candidate.applicationDeadline, candidate.deadlineState)}`,
+    `- Submissions close: ${formatDeadlineDisplay(candidate.submissionDeadline)}`,
+    `- Judging period: ${judging}`,
+    `- Location: ${typeof candidate.location === "string" ? candidate.location : "Unknown"}`,
+    `- Mode: ${typeof candidate.participationMode === "string" ? candidate.participationMode : "unknown"}`,
+    `- Eligibility: ${typeof candidate.eligibility === "string" ? candidate.eligibility : "See official rules"}`,
+    `- Themes: ${themes}`,
+    `- Status: ${typeof candidate.status === "string" ? candidate.status : "Unknown"}`,
+    `- Source: ${typeof candidate.source === "string" ? candidate.source : "unknown"}`,
+    `- Evidence: ${evidence}`,
+  ].join("\n");
+}
+
 export function formatJobSummary(job: DiscoveryJob): string {
   const s = job.summary ?? {};
   const lines: string[] = ["[complete] Run summary"];
@@ -64,6 +136,11 @@ export function formatJobSummary(job: DiscoveryJob): string {
   const accepted = job.acceptedCount ?? num(s.accepted);
   const rejected = job.rejectedCount ?? num(s.rejected);
   const needsReview = job.needsReviewCount ?? num(s.needsReview);
+  const queueReady =
+    num(s.queueReady) ??
+    (typeof accepted === "number" && typeof needsReview === "number"
+      ? Math.max(0, accepted - needsReview)
+      : undefined);
   const rawLeads = num(s.rawLeads) ?? num((job as { rawLeadsCount?: number }).rawLeadsCount);
   const uniqueLeads = num(s.uniqueLeads);
   const durationMs =
@@ -71,17 +148,46 @@ export function formatJobSummary(job: DiscoveryJob): string {
   const llmCalls = num(s.llmCalls);
   const fallbackUsed =
     typeof s.fallbackUsed === "boolean" ? s.fallbackUsed : undefined;
+  const profile = typeof s.profile === "string" ? s.profile : undefined;
+  const dryRun = typeof s.dryRun === "boolean" ? s.dryRun : undefined;
 
-  pushCount(lines, "raw leads", rawLeads);
-  pushCount(lines, "unique / deduped", uniqueLeads);
-  pushCount(lines, "accepted", accepted);
-  pushCount(lines, "rejected", rejected);
+  if (profile) lines.push(`  profile  ${profile}`);
+  if (dryRun != null) lines.push(`  dry-run  ${dryRun ? "yes" : "no"}`);
+  pushCount(lines, "raw collected", rawLeads);
+  pushCount(lines, "unique candidates", uniqueLeads);
+  pushCount(lines, "queue-ready", queueReady);
   pushCount(lines, "needs review", needsReview);
+  pushCount(lines, "rejected", rejected);
   pushCount(lines, "created", created);
   pushCount(lines, "updated", updated);
 
+  const sourceStats = Array.isArray(s.sourceStats) ? s.sourceStats : [];
+  for (const stats of sourceStats) {
+    if (!stats || typeof stats !== "object") continue;
+    const row = stats as Record<string, unknown>;
+    const source = typeof row.source === "string" ? row.source : "source";
+    const collected = num(row.leadsFound) ?? 0;
+    const ready = num(row.queueReady) ?? 0;
+    const review = num(row.needsReview) ?? 0;
+    const rejectedCount = num(row.rejected) ?? num(row.invalidRejected) ?? 0;
+    const elapsed = num(row.durationMs);
+    const stopReason =
+      typeof row.stopReason === "string"
+        ? row.stopReason
+        : Array.isArray(row.warnings) && typeof row.warnings[0] === "string"
+          ? String(row.warnings[0])
+          : typeof row.outcome === "string"
+            ? row.outcome
+            : undefined;
+    lines.push(
+      `  [${source}] collected ${collected}, queue-ready ${ready}, needs review ${review}, rejected ${rejectedCount}${
+        typeof elapsed === "number" ? `, ${formatDuration(elapsed)}` : ""
+      }${stopReason ? `, stop: ${stopReason}` : ""}`,
+    );
+  }
+
   const sourceCounts = s.sourceCounts;
-  if (sourceCounts && typeof sourceCounts === "object") {
+  if (sourceCounts && typeof sourceCounts === "object" && sourceStats.length === 0) {
     const parts = Object.entries(sourceCounts as Record<string, number>)
       .map(([name, n]) => `${name}:${n}`)
       .join(" · ");
@@ -98,11 +204,43 @@ export function formatJobSummary(job: DiscoveryJob): string {
     lines.push(`  fallback  ${fallbackUsed ? "yes" : "no"}`);
   }
 
+  const candidates = Array.isArray(s.acceptedCandidates)
+    ? (s.acceptedCandidates as Array<Record<string, unknown>>)
+    : [];
+  if (candidates.length > 0) {
+    lines.push("");
+    lines.push("[result] Candidates");
+    for (const candidate of candidates.slice(0, 20)) {
+      lines.push(formatTerminalCandidateResult(candidate));
+      lines.push("");
+    }
+    if (candidates.length > 20) {
+      lines.push(`… ${candidates.length - 20} more candidates`);
+    }
+  }
+
+  const warnings = Array.isArray(s.warnings)
+    ? s.warnings.filter((warning): warning is string => typeof warning === "string")
+    : [];
+  const verbose = s.verbose === true;
+  const visibleWarnings = verbose
+    ? warnings
+    : warnings.filter((warning) => !NOISY_WARNING.test(warning));
+  if (visibleWarnings.length > 0) {
+    lines.push("[warnings]");
+    for (const warning of visibleWarnings.slice(0, verbose ? 100 : 12)) {
+      lines.push(`  - ${warning}`);
+    }
+    if (!verbose && warnings.length > visibleWarnings.length) {
+      lines.push("  - (noisy fingerprint/page dumps hidden; use --verbose)");
+    }
+  }
+
   if (job.safeErrorMessage) {
     lines.push(`  note  ${job.safeErrorMessage}`);
   }
 
-  return lines.join("\n");
+  return lines.join("\n").trimEnd();
 }
 
 function num(value: unknown): number | undefined {

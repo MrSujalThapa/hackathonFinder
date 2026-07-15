@@ -74,7 +74,8 @@ export type LumaDiscoveryFeed =
   | "luma_toronto"
   | "luma_waterloo"
   | "luma_tech"
-  | "luma_ai";
+  | "luma_ai"
+  | "luma_hackathon";
 
 export type LumaFailureHint =
   | "network"
@@ -395,10 +396,24 @@ const VERIFIED_LOCATION_FEEDS: Record<string, LumaFeedConfig> = {
   },
 };
 
-const TOPIC_FEEDS: LumaFeedConfig[] = [
-  { mode: "luma_tech", label: "Tech", url: `${LUMA_BASE}/tech`, type: "topic" },
-  { mode: "luma_ai", label: "AI", url: `${LUMA_BASE}/ai`, type: "topic" },
-];
+const AI_FEED: LumaFeedConfig = {
+  mode: "luma_ai",
+  label: "AI",
+  url: `${LUMA_BASE}/ai`,
+  type: "topic",
+};
+const HACKATHON_FEED: LumaFeedConfig = {
+  mode: "luma_hackathon",
+  label: "Hackathon search",
+  url: `${LUMA_BASE}/discover?q=hackathon`,
+  type: "topic",
+};
+const TECH_FEED: LumaFeedConfig = {
+  mode: "luma_tech",
+  label: "Tech",
+  url: `${LUMA_BASE}/tech`,
+  type: "topic",
+};
 
 function requestedLumaLocation(input: CollectorInput): string | undefined {
   const command = input.preferences.rawCommand.toLowerCase();
@@ -411,13 +426,20 @@ function requestedLumaLocation(input: CollectorInput): string | undefined {
   return undefined;
 }
 
+function wantsAiTopic(topics: string[] | undefined, command = ""): boolean {
+  const haystack = `${(topics ?? []).join(" ")} ${command}`.toLowerCase();
+  return /\b(ai|artificial intelligence|agents?|llm|machine learning|ml)\b/i.test(haystack);
+}
+
 export function resolveLumaFeeds(input: {
   requestedLocation?: string;
   requestedTopics?: string[];
+  rawCommand?: string;
 }): LumaFeedResolution {
   const feeds: LumaFeedConfig[] = [];
   const requestedLocation = input.requestedLocation?.trim();
   const key = requestedLocation?.toLowerCase();
+  const aiFirst = wantsAiTopic(input.requestedTopics, input.rawCommand);
 
   if (key === "ontario") {
     feeds.push(VERIFIED_LOCATION_FEEDS.toronto, VERIFIED_LOCATION_FEEDS.waterloo);
@@ -425,7 +447,13 @@ export function resolveLumaFeeds(input: {
     feeds.push(VERIFIED_LOCATION_FEEDS[key]);
   }
 
-  feeds.push(...TOPIC_FEEDS);
+  // Prefer AI / hackathon discovery before the broad Tech feed so deep runs
+  // still reach theme-relevant paths before the source timeout.
+  if (aiFirst) {
+    feeds.push(AI_FEED, HACKATHON_FEED, TECH_FEED);
+  } else {
+    feeds.push(HACKATHON_FEED, AI_FEED, TECH_FEED);
+  }
 
   const unique = new Map<string, LumaFeedConfig>();
   for (const feed of feeds) unique.set(feed.url, feed);
@@ -445,7 +473,33 @@ function buildDiscoveryFeeds(input: CollectorInput): LumaFeedResolution {
   return resolveLumaFeeds({
     requestedLocation,
     requestedTopics: input.preferences.themes,
+    rawCommand: input.preferences.rawCommand,
   });
+}
+
+export function allocateLumaFeedBudgets(
+  total: LumaProfileBudget,
+  feedCount: number,
+): LumaProfileBudget[] {
+  const count = Math.max(1, feedCount);
+  const baseScrolls = Math.max(4, Math.floor(total.maxScrolls / count));
+  const leftoverScrolls = Math.max(0, total.maxScrolls - baseScrolls * count);
+  const baseEvents = Math.max(10, Math.floor(total.maxEvents / count));
+  return Array.from({ length: count }, (_, index) => ({
+    maxEvents: baseEvents + (index === 0 ? Math.max(0, total.maxEvents - baseEvents * count) : 0),
+    maxScrolls: baseScrolls + (index === 0 ? leftoverScrolls : 0),
+    detailLimit: total.detailLimit,
+  }));
+}
+
+function leadLooksHackathon(lead: RawLead): boolean {
+  return isLikelyHackathon(lead.title ?? "", lead.text ?? "");
+}
+
+function leadMatchesTheme(lead: RawLead, themes: string[]): boolean {
+  if (themes.length === 0) return true;
+  const haystack = `${lead.title ?? ""} ${lead.text ?? ""}`.toLowerCase();
+  return themes.some((theme) => haystack.includes(theme.toLowerCase()));
 }
 
 function extractNextData($: cheerio.CheerioAPI): unknown | undefined {
@@ -1150,26 +1204,68 @@ export const lumaCollector: Collector = {
         `Using ${topicFeeds.map((feed) => feed.label).join(" and ")} feeds with location filtering`,
       );
     }
-    input.logger?.(`Topic feeds: ${topicFeeds.map((feed) => feed.label).join(", ")}`);
+    input.logger?.(
+      `Topic feeds (priority order): ${topicFeeds.map((feed) => feed.label).join(", ")}`,
+    );
+
+    const feedBudgets = allocateLumaFeedBudgets(budget, feeds.length);
+    let bonusScrolls = 0;
 
     try {
-      for (const feed of feeds) {
+      for (let feedIndex = 0; feedIndex < feeds.length; feedIndex += 1) {
+        const feed = feeds[feedIndex]!;
         if (Date.now() - startedAt > budgetMs) {
           result.warnings.push("Luma collector stopped early after timeout budget.");
+          stopReasons.push(`${feed.mode}:timeout_before_start`);
           break;
         }
-        const remaining = Math.max(1_000, budgetMs - (Date.now() - startedAt));
-        const feedResult = await collectRenderedLumaFeed(feed, remaining, budget, input.logger);
+        // Cap each feed so the first broad feed cannot consume the whole source deadline.
+        const perFeedTimeout = Math.max(
+          4_000,
+          Math.floor((budgetMs - (Date.now() - startedAt)) / Math.max(1, feeds.length - feedIndex)),
+        );
+        const remaining = Math.min(
+          perFeedTimeout,
+          Math.max(1_000, budgetMs - (Date.now() - startedAt)),
+        );
+        const feedBudget: LumaProfileBudget = {
+          ...feedBudgets[feedIndex]!,
+          maxScrolls: feedBudgets[feedIndex]!.maxScrolls + bonusScrolls,
+        };
+        bonusScrolls = 0;
+        input.logger?.(
+          `[${feed.label}] budget ${feedBudget.maxScrolls} scrolls / ${feedBudget.maxEvents} events (${remaining}ms)`,
+        );
+        const feedResult = await collectRenderedLumaFeed(feed, remaining, feedBudget, input.logger);
         pagesFetched += 1;
         result.warnings.push(...feedResult.warnings);
         scrollAttempts += feedResult.scrollAttempts;
         noGrowthAttempts += feedResult.noGrowthAttempts;
         uniqueCards += feedResult.uniqueCount;
         stopReasons.push(`${feed.mode}:${feedResult.stopReason}`);
+        const hackathonMatches = feedResult.leads.filter(leadLooksHackathon).length;
+        const themeMatches = feedResult.leads.filter((lead) =>
+          leadMatchesTheme(lead, input.preferences.themes),
+        ).length;
         result.warnings.push(`stop_reason_${feed.mode}=${feedResult.stopReason}`);
         result.warnings.push(`unique_cards_${feed.mode}=${feedResult.uniqueCount}`);
         result.warnings.push(`scrolls_${feed.mode}=${feedResult.scrollAttempts}`);
         result.warnings.push(`no_growth_${feed.mode}=${feedResult.noGrowthAttempts}`);
+        result.warnings.push(`hackathon_matches_${feed.mode}=${hackathonMatches}`);
+        result.warnings.push(`theme_matches_${feed.mode}=${themeMatches}`);
+        input.logger?.(
+          `[${feed.label}] ${feedResult.uniqueCount} unique, ${hackathonMatches} hackathon-intent, ${themeMatches} theme matches`,
+        );
+
+        // Zero-relevant feeds lose remaining scroll budget; relevant feeds may receive more.
+        if (hackathonMatches === 0 && themeMatches === 0) {
+          bonusScrolls = 0;
+        } else {
+          bonusScrolls = Math.min(
+            12,
+            Math.max(0, Math.floor(feedBudget.maxScrolls / 3)),
+          );
+        }
 
         for (const lead of feedResult.leads) {
           if (!lead.url) continue;
@@ -1232,10 +1328,24 @@ export const lumaCollector: Collector = {
           } satisfies RawLead;
         });
 
+      // Only spend detail budget on cards that already look like hackathons / theme matches.
+      const enrichable = provisionalLeads.filter(
+        (lead) =>
+          leadLooksHackathon(lead) ||
+          leadMatchesTheme(lead, input.preferences.themes),
+      );
+      const skippedDetail = provisionalLeads.length - enrichable.length;
+      if (skippedDetail > 0) {
+        result.warnings.push(`detail_skipped_unrelated=${skippedDetail}`);
+        input.logger?.(
+          `Skipping detail enrichment for ${skippedDetail} unrelated/social listing cards`,
+        );
+      }
+
       let detailPagesOpened = 0;
       let detailFailures = 0;
-      if (provisionalLeads.length > 0) {
-        const detailTargetCount = provisionalLeads
+      if (enrichable.length > 0) {
+        const detailTargetCount = enrichable
           .filter((lead) => !lumaListingDataIsSufficient(lead))
           .slice(0, budget.detailLimit).length;
         input.logger?.(
@@ -1244,16 +1354,21 @@ export const lumaCollector: Collector = {
             : "Skipping Luma detail pages because listing records are sufficient...",
         );
         const enriched = await enrichEventPages(
-          provisionalLeads,
+          enrichable,
           budgetMs,
           startedAt,
           budget.detailLimit,
           (lead) => !lumaListingDataIsSufficient(lead),
         );
-        result.leads = enriched.leads.slice(0, budget.maxEvents);
+        const byId = new Map(enriched.leads.map((lead) => [lead.id, lead]));
+        result.leads = provisionalLeads
+          .map((lead) => byId.get(lead.id) ?? lead)
+          .slice(0, budget.maxEvents);
         result.warnings.push(...enriched.warnings);
         detailPagesOpened = enriched.opened;
         detailFailures = enriched.failures;
+      } else {
+        result.leads = provisionalLeads.slice(0, budget.maxEvents);
       }
 
       for (const lead of result.leads) {

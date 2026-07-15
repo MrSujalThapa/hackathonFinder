@@ -254,8 +254,12 @@ export type AgentRunSummary = {
     eventEndDate?: string;
     applicationDeadline?: string;
     submissionDeadline?: string;
+    judgingStartDate?: string;
+    judgingEndDate?: string;
+    displayedDateRange?: string;
     participationMode?: string;
     eligibility?: string;
+    themes?: string[];
     source?: DiscoverySourceId;
     status: string;
     classification?: EventPageClassification;
@@ -263,6 +267,7 @@ export type AgentRunSummary = {
     deadlineState?: string;
     hasOfficialUrl?: boolean;
     hasApplyUrl?: boolean;
+    evidenceSummary?: string;
   }>;
   rejectedCandidates: RejectedCandidate[];
   sourceStats: SourceRunStats[];
