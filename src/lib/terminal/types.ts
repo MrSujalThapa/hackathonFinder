@@ -166,6 +166,7 @@ export type ParsedTerminalCommand =
       reviewPolicy?: "broad" | "balanced" | "strict";
       profile?: "light" | "standard" | "deep" | "exhaustive";
       dryRun?: boolean;
+      verbose?: boolean;
       remotePolicy?: "exclude" | "include" | "only" | "inferred_open";
       onsiteOnly?: boolean;
     }

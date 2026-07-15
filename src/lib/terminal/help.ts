@@ -58,10 +58,17 @@ const HELP_FIND = [
   "  search <request>",
   "  <natural language request>",
   "",
+  "Flags (removed from planner text):",
+  "  --profile light|standard|deep|exhaustive",
+  "  --include-remote | --remote | --onsite-only",
+  "  --dry-run | --verbose",
+  "  --sources=<builtin-or-custom>",
+  "",
   "Examples:",
   "  /find upcoming AI hackathons in Toronto or remote",
-  "  find student hackathons in Canada",
-  "  search all connected sources for robotics hackathons",
+  "  find upcoming AI hackathons in Toronto --profile light --dry-run",
+  "  find remote AI hackathons in the next 6 months --profile deep",
+  "  find AI hackathons from Devpost in the next 6 months --profile deep --dry-run",
 ] as const;
 
 const HELP_SOURCE = [

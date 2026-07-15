@@ -27,6 +27,7 @@ import {
   formatJobSummary,
   formatStatusLine,
   jobEventToTerminalLine,
+  shouldSuppressTerminalEvent,
 } from "@/lib/terminal/formatEvent";
 import { formatHelpText } from "@/lib/terminal/help";
 import { cycleAutocomplete } from "@/lib/terminal/autocomplete";
@@ -34,6 +35,10 @@ import {
   isActiveJobStatus,
   parseTerminalCommand,
 } from "@/lib/terminal/parseCommand";
+import {
+  formatQueryInterpretationLines,
+  interpretDiscoveryQuery,
+} from "@/lib/terminal/queryInterpretation";
 import { formatSessionListLine } from "@/lib/terminal/sessionClient";
 import type {
   DiscoveryJob,
@@ -104,6 +109,7 @@ export function DiscoveryTerminal() {
   const streamingSessionIdRef = useRef<string | null>(null);
   const streamingJobIdRef = useRef<string | null>(null);
   const stopStreamRef = useRef<(() => void) | null>(null);
+  const verboseStreamRef = useRef(false);
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const sessionsRef = useRef(sessions);
@@ -221,6 +227,7 @@ export function DiscoveryTerminal() {
           // Guard: only the session that owns this stream receives events.
           if (streamingSessionIdRef.current !== sessionId) return;
           if (streamingJobIdRef.current !== jobId) return;
+          if (shouldSuppressTerminalEvent(event, verboseStreamRef.current)) return;
 
           patchSession(sessionId, (s) => {
             if (s.seenEventIds.includes(event.id)) return s;
@@ -275,17 +282,33 @@ export function DiscoveryTerminal() {
       rawDisplay: string,
       options: {
         dryRun?: boolean;
+        verbose?: boolean;
+        profile?: "light" | "standard" | "deep" | "exhaustive";
+        remotePolicy?: "exclude" | "include" | "only" | "inferred_open";
+        sources?: string[];
       } = {},
     ) => {
       if (submitting) return;
 
       setSubmitting(true);
+      verboseStreamRef.current = options.verbose === true;
       patchSession(sessionId, {
         showRunActions: false,
         lastCommand: request,
       });
+      const interpretation = interpretDiscoveryQuery({
+        request,
+        profile: options.profile,
+        remotePolicy: options.remotePolicy,
+        sources: options.sources,
+        dryRun: options.dryRun,
+        verbose: options.verbose,
+      });
       appendLines(sessionId, [
         makeLine({ kind: "prompt", text: rawDisplay.trim() }),
+        ...formatQueryInterpretationLines(interpretation).map((text) =>
+          makeLine({ kind: "system", text }),
+        ),
       ]);
 
       try {
@@ -747,6 +770,10 @@ export function DiscoveryTerminal() {
     if (parsed.kind === "find") {
       await startFind(sessionId, parsed.request, raw, {
         dryRun: parsed.dryRun,
+        verbose: parsed.verbose,
+        profile: parsed.profile,
+        remotePolicy: parsed.remotePolicy,
+        sources: parsed.sources,
       });
       return;
     }

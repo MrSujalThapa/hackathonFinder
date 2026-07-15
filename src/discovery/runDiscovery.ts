@@ -39,6 +39,8 @@ import {
 import type { CustomSource } from "@/server/customSources/types";
 import { createDiscoveryPerformanceTracker } from "@/discovery/performance";
 import type { IncomingCandidateWrite } from "@/discovery/persistence/persistencePlan";
+import { devpostBudgetForProfile } from "@/collectors/devpost";
+import { lumaBudgetForProfile } from "@/collectors/luma";
 
 export type DiscoveryRunMode = "auto" | "agent" | "deterministic";
 
@@ -89,6 +91,7 @@ type DiscoveryCommandFlags = {
   remotePolicy?: RemotePolicy;
   onsiteOnly?: boolean;
   dryRun?: boolean;
+  verbose?: boolean;
 };
 
 function commandMentionsSources(command: string): boolean {
@@ -116,6 +119,7 @@ function parseDiscoveryCommandFlags(command: string): DiscoveryCommandFlags {
   let remotePolicy: RemotePolicy | undefined;
   let onsiteOnly = false;
   let dryRun = false;
+  let verbose = false;
 
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index]!;
@@ -135,6 +139,7 @@ function parseDiscoveryCommandFlags(command: string): DiscoveryCommandFlags {
       continue;
     }
     if (lower === "--verbose") {
+      verbose = true;
       continue;
     }
     if (lower === "--remote") {
@@ -197,6 +202,7 @@ function parseDiscoveryCommandFlags(command: string): DiscoveryCommandFlags {
     remotePolicy,
     onsiteOnly,
     dryRun,
+    verbose,
   };
 }
 
@@ -351,11 +357,13 @@ export async function runDiscovery(
     jobStartOverheadMs: input.jobStartOverheadMs,
   });
 
-  const { hakku, plannerCommand, withCli, customSelection } =
+  let commandVerbose = input.verbose === true;
+  const { hakku, plannerCommand, withCli, customSelection, commandFlags } =
     await performanceTracker.measure("commandParsing", async () => {
       const nextHakku = await getHakkuConnectionStatus();
       const nextCommandFlags = parseDiscoveryCommandFlags(input.command);
       dryRun = dryRun || nextCommandFlags.dryRun === true;
+      commandVerbose = commandVerbose || nextCommandFlags.verbose === true;
       const nextPlannerCommand = nextCommandFlags.query || input.command;
       const parsed = parseCommand(nextPlannerCommand);
       const nextCustomSelection = await selectCustomSourcesForRun(nextCommandFlags);
@@ -363,6 +371,7 @@ export async function runDiscovery(
         hakku: nextHakku,
         plannerCommand: nextPlannerCommand,
         customSelection: nextCustomSelection,
+        commandFlags: nextCommandFlags,
         withCli: applyCliOptions(parsed, {
           sources: input.sources ?? nextCustomSelection.builtInFromFlag,
           maxResults: input.maxResults ?? maxResultsForProfile(nextCommandFlags.profile),
@@ -438,6 +447,60 @@ export async function runDiscovery(
       skipped: selection.skipped,
     },
   });
+
+  const profile = effectivePreferences.profile ?? commandFlags.profile ?? "standard";
+  const maxResults =
+    effectivePreferences.maxResults ?? maxResultsForProfile(profile) ?? 150;
+  const devpostBudget = devpostBudgetForProfile(profile, maxResults);
+  const lumaBudget = lumaBudgetForProfile(profile, maxResults);
+  const remoteLabel =
+    effectivePreferences.remotePolicy === "only"
+      ? "remote only"
+      : effectivePreferences.remotePolicy === "exclude"
+        ? "excluded"
+        : effectivePreferences.remotePolicy === "inferred_open"
+          ? "inferred open"
+          : "included";
+  await emitter.emit(
+    "source_progress",
+    `Theme: ${effectivePreferences.themes.join(", ") || "unspecified"}`,
+    { source: "query" },
+  );
+  await emitter.emit(
+    "source_progress",
+    `Location: ${
+      effectivePreferences.locationConstraint === "event_location"
+        ? effectivePreferences.locations.join(", ") || "unspecified"
+        : effectivePreferences.locations.join(", ") || "none"
+    }`,
+    { source: "query" },
+  );
+  await emitter.emit("source_progress", `Remote: ${remoteLabel}`, { source: "query" });
+  await emitter.emit(
+    "source_progress",
+    `Dates: ${
+      effectivePreferences.dateFrom && effectivePreferences.dateTo
+        ? `${effectivePreferences.dateFrom} – ${effectivePreferences.dateTo}`
+        : "upcoming / inferred horizon"
+    }`,
+    { source: "query" },
+  );
+  await emitter.emit("source_progress", `Profile: ${profile}`, { source: "query" });
+  await emitter.emit(
+    "source_progress",
+    `Dry-run: ${dryRun ? "yes" : "no"}`,
+    { source: "query" },
+  );
+  await emitter.emit(
+    "source_progress",
+    `Devpost budget: ${devpostBudget.maxCards} cards / ${devpostBudget.maxPages} pages / ${devpostBudget.detailLimit} details`,
+    { source: "query" },
+  );
+  await emitter.emit(
+    "source_progress",
+    `Luma budget: ${lumaBudget.maxEvents} events / ${lumaBudget.maxScrolls} scrolls / ${lumaBudget.detailLimit} details`,
+    { source: "query" },
+  );
 
   await emitter.emit("source_progress", `Planned: ${plannedSourceLabels.join(", ") || "(none)"}`, {
     source: "sources",
@@ -648,7 +711,7 @@ export async function runDiscovery(
       showSearchPlan: input.showSearchPlan,
       showXPlan: input.showXPlan,
       dryRunPlan: input.dryRunPlan,
-      verbose: input.verbose,
+      verbose: commandVerbose,
       agentObservability,
       runId,
       eventSink: input.eventSink,

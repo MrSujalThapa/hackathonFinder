@@ -40,6 +40,7 @@ describe("parseTerminalCommand", () => {
     assert.equal(parsed.profile, "light");
     assert.equal(parsed.remotePolicy, "include");
     assert.equal(parsed.dryRun, true);
+    assert.equal(parsed.verbose, true);
     assert.equal(parsed.request.includes("--verbose"), false);
   });
 

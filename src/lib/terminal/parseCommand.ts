@@ -313,6 +313,7 @@ function parseDiscoveryRequest(rawRequest: string, raw: string): ParsedTerminalC
   let reviewPolicy: "broad" | "balanced" | "strict" | undefined;
   let profile: "light" | "standard" | "deep" | "exhaustive" | undefined;
   let dryRun = false;
+  let verbose = false;
   let remotePolicy: "exclude" | "include" | "only" | "inferred_open" | undefined;
   let onsiteOnly = false;
 
@@ -337,6 +338,7 @@ function parseDiscoveryRequest(rawRequest: string, raw: string): ParsedTerminalC
       continue;
     }
     if (part === "--verbose") {
+      verbose = true;
       continue;
     }
     if (part === "--remote") {
@@ -399,6 +401,7 @@ function parseDiscoveryRequest(rawRequest: string, raw: string): ParsedTerminalC
     ...(reviewPolicy ? { reviewPolicy } : {}),
     ...(profile ? { profile } : {}),
     ...(dryRun ? { dryRun } : {}),
+    ...(verbose ? { verbose } : {}),
     ...(remotePolicy ? { remotePolicy } : {}),
     ...(onsiteOnly ? { onsiteOnly } : {}),
   };
