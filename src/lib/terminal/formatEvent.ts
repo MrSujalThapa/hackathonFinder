@@ -158,8 +158,9 @@ export function formatJobSummary(job: DiscoveryJob): string {
   pushCount(lines, "queue-ready", queueReady);
   pushCount(lines, "needs review", needsReview);
   pushCount(lines, "rejected", rejected);
-  pushCount(lines, "created", created);
-  pushCount(lines, "updated", updated);
+  // Dry-run persistence metrics are projected creates/updates, not applied writes.
+  pushCount(lines, dryRun ? "would create" : "created", created);
+  pushCount(lines, dryRun ? "would update" : "updated", updated);
 
   const sourceStats = Array.isArray(s.sourceStats) ? s.sourceStats : [];
   for (const stats of sourceStats) {

@@ -67,6 +67,31 @@ describe("formatJobSummary", () => {
     assert.match(text, /mlh:25/);
   });
 
+  it("labels dry-run persistence projections as would create/update", () => {
+    const job: DiscoveryJob = {
+      id: "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      command: "find AI --dry-run",
+      status: "completed",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      createdCount: 16,
+      updatedCount: 0,
+      acceptedCount: 16,
+      rejectedCount: 10,
+      needsReviewCount: 15,
+      summary: {
+        dryRun: true,
+        queueReady: 1,
+        rawLeads: 100,
+        uniqueLeads: 80,
+      },
+    };
+    const text = formatJobSummary(job);
+    assert.match(text, /dry-run\s+yes/);
+    assert.match(text, /would create\s+16/);
+    assert.match(text, /would update\s+0/);
+    assert.doesNotMatch(text, /^\s+created\s+/m);
+  });
+
   it("suppresses fingerprint dumps unless verbose", () => {
     const event: DiscoveryJobEvent = {
       id: "e3",

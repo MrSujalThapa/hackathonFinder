@@ -160,13 +160,25 @@ function isHardInvalidVerificationReason(reason: string): boolean {
   );
 }
 
-function broadNeedsReviewReasons(
-  event: { deadline?: string; registrationDeadline?: string; applicationDeadline?: string; startDate?: string; eventStartDate?: string; applyUrl?: string; officialUrl?: string },
+const SOFT_APPLICATION_DEADLINE_FLAG = "Applications close: Unknown";
+
+/** Review-gate reasons for broad-review mode (exported for focused closure tests). */
+export function broadNeedsReviewReasons(
+  event: {
+    deadline?: string;
+    registrationDeadline?: string;
+    applicationDeadline?: string;
+    startDate?: string;
+    eventStartDate?: string;
+    applyUrl?: string;
+    officialUrl?: string;
+  },
   score: ScoringResult,
 ): string[] {
-  const reasons = [...score.redFlags];
+  // Missing application deadline alone must not force NEEDS_REVIEW when the event
+  // date is verified; quality.missingDeadlines still tracks the soft gap.
+  const reasons = score.redFlags.filter((flag) => flag !== SOFT_APPLICATION_DEADLINE_FLAG);
   if (!eventStartFor(event)) reasons.push("Event date unclear");
-  if (!applicationDeadlineFor(event)) reasons.push("Applications close: Unknown");
   if (!event.applyUrl) reasons.push("Application URL missing or unclear");
   if (!event.officialUrl) reasons.push("Official URL missing or unclear");
   return [...new Set(reasons)];
