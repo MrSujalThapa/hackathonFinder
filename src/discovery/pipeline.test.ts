@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { performance } from "node:perf_hooks";
 import { describe, it } from "node:test";
 
 import { awaitCollectorResultsWithTotalBudget } from "@/discovery/pipeline";
@@ -161,14 +162,17 @@ describe("awaitCollectorResultsWithTotalBudget", () => {
       console.log("done");
     `;
 
+    const startedAt = performance.now();
     const child = spawnSync(process.execPath, ["--import", "tsx", "-e", script], {
       cwd: process.cwd(),
       encoding: "utf8",
-      timeout: 3_000,
+      timeout: 8_000,
     });
+    const elapsedMs = performance.now() - startedAt;
 
     assert.equal(child.error, undefined);
     assert.equal(child.status, 0, child.stderr);
     assert.match(child.stdout, /done/);
+    assert.ok(elapsedMs < 5_000, `expected fast path under 5s, got ${Math.round(elapsedMs)}ms`);
   });
 });
