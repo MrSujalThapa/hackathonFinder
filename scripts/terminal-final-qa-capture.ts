@@ -1,9 +1,11 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { chromium, type Page } from "playwright";
+import { loadLocalEnv } from "../src/cli/loadEnv";
 
+loadLocalEnv();
 const BASE = process.env.SMOKE_BASE_URL ?? "http://localhost:3100";
-const PASSWORD = process.env.SMOKE_OWNER_PASSWORD;
+const PASSWORD = process.env.APP_PASSWORD;
 
 const OUT = {
   persistence: path.resolve("artifacts/terminal/final-persistence"),
@@ -54,7 +56,7 @@ function record(
 }
 
 async function login(page: Page) {
-  if (!PASSWORD) throw new Error("Set SMOKE_OWNER_PASSWORD");
+  if (!PASSWORD) throw new Error("Set APP_PASSWORD");
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
       await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded" });

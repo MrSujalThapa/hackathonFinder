@@ -1,19 +1,20 @@
 /**
  * Step 16 Terminal + Settings Sources visual QA capture.
  *
- * Auth: SMOKE_OWNER_PASSWORD (same flow as smoke:prod / design-after-capture).
+ * Auth: APP_PASSWORD (same flow as smoke:prod / design-after-capture).
  * Prefer API login for reliability under Fast Refresh.
  *
  * Usage (server already running):
- *   $env:SMOKE_OWNER_PASSWORD="…"; npx tsx scripts/terminal-source-qa-capture.ts
+ *   npx tsx scripts/terminal-source-qa-capture.ts
  */
 import { chromium, type ConsoleMessage, type Page } from "playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { loadLocalEnv } from "../src/cli/loadEnv";
 
+loadLocalEnv();
 const BASE = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
-const PASSWORD =
-  process.env.SMOKE_OWNER_PASSWORD ?? process.env.DESIGN_OWNER_PASSWORD;
+const PASSWORD = process.env.APP_PASSWORD;
 const TERM_OUT = path.resolve("artifacts/terminal");
 const SRC_OUT = path.resolve("artifacts/sources");
 
@@ -88,7 +89,7 @@ function attachConsole(page: Page) {
 }
 
 async function login(page: Page) {
-  if (!PASSWORD) throw new Error("Set SMOKE_OWNER_PASSWORD");
+  if (!PASSWORD) throw new Error("Set APP_PASSWORD");
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await page.goto(`${BASE}/login`, {

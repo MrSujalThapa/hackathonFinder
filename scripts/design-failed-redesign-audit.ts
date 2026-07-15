@@ -5,9 +5,11 @@
 import { chromium, type Page } from "playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { loadLocalEnv } from "../src/cli/loadEnv";
 
+loadLocalEnv();
 const BASE = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
-const PASSWORD = process.env.SMOKE_OWNER_PASSWORD ?? process.env.DESIGN_OWNER_PASSWORD;
+const PASSWORD = process.env.APP_PASSWORD;
 const OUT = path.resolve("artifacts/design/failed-redesign-audit");
 const VIEWPORTS = [
   { name: "390x844", width: 390, height: 844 },
@@ -126,7 +128,7 @@ async function openFirstCandidate(page: Page): Promise<boolean> {
 }
 
 async function main() {
-  if (!PASSWORD) throw new Error("Set SMOKE_OWNER_PASSWORD");
+  if (!PASSWORD) throw new Error("Set APP_PASSWORD");
   mkdirSync(OUT, { recursive: true });
   const consoleLogs: Array<{ type: string; text: string }> = [];
   const failedRequests: Array<{ url: string; status: number }> = [];

@@ -19,8 +19,6 @@
     "smoke:queue": "tsx scripts/smoke-queue.ts",
     "smoke:prod": "tsx scripts/smoke-production-auth.ts",
     "candidates:audit-sources": "tsx scripts/audit-candidate-sources.ts",
-    "hash:password": "tsx scripts/hash-password.ts",
-    "verify:password": "tsx scripts/verify-password.ts",
     "skills:sync": "tsx scripts/sync-agent-skills.ts",
     "skills:check": "tsx scripts/check-agent-skills.ts",
     "test": "npm run test:fast",

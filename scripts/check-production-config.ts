@@ -29,8 +29,7 @@ async function main(): Promise<number> {
   console.log(`Google Sheets: ${env.GOOGLE_SHEET_ID && env.GOOGLE_SERVICE_ACCOUNT_JSON ? "configured" : "missing"}`);
   console.log(
     `Owner auth: ${
-      (env.APP_OWNER_PASSWORD_HASH_B64 || env.APP_OWNER_PASSWORD_HASH) &&
-      env.APP_SESSION_SECRET
+      env.APP_PASSWORD && env.APP_SESSION_SECRET
         ? "configured"
         : "missing"
     }`,

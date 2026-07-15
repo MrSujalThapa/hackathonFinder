@@ -1,8 +1,11 @@
 import { chromium } from "playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { loadLocalEnv } from "../src/cli/loadEnv";
 
+loadLocalEnv();
 const OUT = path.resolve("artifacts/design/failed-redesign-audit");
+const PASSWORD = process.env.APP_PASSWORD;
 mkdirSync(OUT, { recursive: true });
 
 async function main() {
@@ -12,7 +15,8 @@ async function main() {
     waitUntil: "domcontentloaded",
     timeout: 30_000,
   });
-  await page.getByLabel("Owner password").fill("design-overhaul-pass");
+  if (!PASSWORD) throw new Error("Set APP_PASSWORD");
+  await page.getByLabel("Owner password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/queue/, { timeout: 20_000 });
   await page.waitForTimeout(600);

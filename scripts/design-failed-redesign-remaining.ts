@@ -4,9 +4,11 @@
 import { chromium } from "playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { loadLocalEnv } from "../src/cli/loadEnv";
 
+loadLocalEnv();
 const BASE = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
-const PASSWORD = process.env.SMOKE_OWNER_PASSWORD ?? "design-overhaul-pass";
+const PASSWORD = process.env.APP_PASSWORD;
 const OUT = path.resolve("artifacts/design/failed-redesign-audit");
 const VIEWPORTS = [
   { name: "390x844", width: 390, height: 844 },
@@ -36,6 +38,8 @@ async function shot(
 }
 
 async function main() {
+  if (!PASSWORD) throw new Error("Set APP_PASSWORD");
+  const password = PASSWORD;
   mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
@@ -48,7 +52,7 @@ async function main() {
   try {
     await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded" });
     await settle(page);
-    await page.getByLabel("Owner password").fill(PASSWORD);
+    await page.getByLabel("Owner password").fill(password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/queue/, { timeout: 20_000 });
     await settle(page);

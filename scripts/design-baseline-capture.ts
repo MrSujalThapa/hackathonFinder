@@ -6,9 +6,11 @@
 import { chromium, type Page, type ConsoleMessage } from "playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { loadLocalEnv } from "../src/cli/loadEnv";
 
+loadLocalEnv();
 const BASE = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
-const PASSWORD = process.env.SMOKE_OWNER_PASSWORD ?? process.env.DESIGN_OWNER_PASSWORD;
+const PASSWORD = process.env.APP_PASSWORD;
 const OUT = path.resolve("artifacts/design/before");
 
 const VIEWPORTS = [
@@ -43,7 +45,7 @@ async function shot(
 
 async function login(page: Page): Promise<void> {
   if (!PASSWORD) {
-    throw new Error("Set SMOKE_OWNER_PASSWORD or DESIGN_OWNER_PASSWORD");
+    throw new Error("Set APP_PASSWORD");
   }
   await page.goto(`${BASE}/login`, { waitUntil: "load" });
   await settle(page);

@@ -5,9 +5,11 @@
 import { chromium, type Page } from "playwright";
 import { mkdirSync, writeFileSync, readdirSync, copyFileSync, existsSync } from "node:fs";
 import path from "node:path";
+import { loadLocalEnv } from "../src/cli/loadEnv";
 
+loadLocalEnv();
 const BASE = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
-const PASSWORD = process.env.SMOKE_OWNER_PASSWORD ?? "design-overhaul-pass";
+const PASSWORD = process.env.APP_PASSWORD;
 const OUT = path.resolve("artifacts/design/final-after");
 const FINAL_BEFORE = path.resolve("artifacts/design/final-before");
 

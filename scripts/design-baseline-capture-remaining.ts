@@ -4,9 +4,11 @@
 import { chromium, type Page } from "playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { loadLocalEnv } from "../src/cli/loadEnv";
 
+loadLocalEnv();
 const BASE = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
-const PASSWORD = process.env.SMOKE_OWNER_PASSWORD!;
+const PASSWORD = process.env.APP_PASSWORD;
 const OUT = path.resolve("artifacts/design/before");
 const VIEWPORTS = [
   { name: "390x844", width: 390, height: 844 },
@@ -21,13 +23,15 @@ async function settle(page: Page) {
 }
 
 async function main() {
+  if (!PASSWORD) throw new Error("Set APP_PASSWORD");
+  const password = PASSWORD;
   mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   try {
     await page.goto(`${BASE}/login`, { waitUntil: "load" });
     await settle(page);
-    await page.getByLabel("Owner password").fill(PASSWORD);
+    await page.getByLabel("Owner password").fill(password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/queue/, { timeout: 20_000 });
     await settle(page);
