@@ -33,9 +33,9 @@ const LUMA_LEGACY_BASE = "https://lu.ma";
 const LUMA_MAX_EVENTS = 100;
 const LUMA_MAX_SCROLLS = 30;
 const LUMA_NO_GROWTH_LIMIT = 3;
-const LUMA_SCROLL_WAIT_MS = 1_200;
+const LUMA_SCROLL_WAIT_MS = 800;
 const LUMA_DETAIL_LIMIT = 30;
-const DETAIL_PAGE_CONCURRENCY = 3;
+const DETAIL_PAGE_CONCURRENCY = 6;
 const LUMA_DETAIL_TIMEOUT_MS = 8_000;
 
 const HACKATHON_HINT =
@@ -95,6 +95,7 @@ export type LumaFeedResolution = {
 type LumaFeedCollection = {
   feed: LumaFeedConfig;
   urls: string[];
+  leads: RawLead[];
   uniqueCount: number;
   scrollAttempts: number;
   noGrowthAttempts: number;
@@ -709,6 +710,33 @@ async function collectLumaEventUrlsFromPage(
     .filter(isLikelyLumaEventUrl);
 }
 
+async function collectLumaLeadsFromPage(page: Page, discoveryMode: LumaDiscoveryFeed): Promise<RawLead[]> {
+  const html = await page.content().catch(() => "");
+  if (!html) return [];
+  const leads = parseLumaHtml(html, LUMA_MAX_EVENTS, page.url(), discoveryMode)
+    .filter((lead) => lead.url && isLikelyLumaEventUrl(lead.url));
+  if (leads.length > 0) return leads;
+  return (await collectLumaEventUrlsFromPage(page, discoveryMode)).map((url) => ({
+    id: `luma-${slugify(new URL(url).pathname)}`,
+    source: "luma" as const,
+    title: "Luma event",
+    url,
+    text: `Luma public event - discovered from ${discoveryMode}`,
+    links: [url],
+    postedAt: new Date().toISOString(),
+    metadata: {
+      officialUrl: url,
+      applyUrl: url,
+      attribution: "luma",
+      provenance: "luma_public",
+      lumaMode: "public",
+      discoveryMode,
+      discoveredFrom: [discoveryMode],
+      sourceIds: { luma: slugify(new URL(url).pathname) },
+    },
+  }));
+}
+
 async function collectRenderedLumaFeed(
   feed: LumaFeedConfig,
   timeoutMs: number,
@@ -730,9 +758,9 @@ async function collectRenderedLumaFeed(
           });
         await page.waitForTimeout(500);
 
-        const collected = await collectUntilStable<string>({
-          collectItems: () => collectLumaEventUrlsFromPage(page, feed.mode),
-          getKey: (url) => normalizeUrlForDedupe(url),
+        const collected = await collectUntilStable<RawLead>({
+          collectItems: () => collectLumaLeadsFromPage(page, feed.mode),
+          getKey: (lead) => normalizeUrlForDedupe(lead.url ?? lead.id),
           scroll: async () => {
             await page.mouse.wheel(0, 2_400);
           },
@@ -759,7 +787,8 @@ async function collectRenderedLumaFeed(
 
         return {
           feed,
-          urls: collected.items,
+          urls: collected.items.map((lead) => lead.url).filter((url): url is string => Boolean(url)),
+          leads: collected.items,
           uniqueCount: collected.uniqueCount,
           scrollAttempts: collected.scrollAttempts,
           noGrowthAttempts: collected.noGrowthAttempts,
@@ -778,6 +807,7 @@ async function collectRenderedLumaFeed(
     return {
       feed,
       urls: [],
+      leads: [],
       uniqueCount: 0,
       scrollAttempts: 0,
       noGrowthAttempts: 0,
@@ -813,13 +843,16 @@ async function enrichEventPages(
   leads: RawLead[],
   timeoutMs: number,
   startedAt: number,
+  shouldEnrich: (lead: RawLead) => boolean,
 ): Promise<{ leads: RawLead[]; warnings: string[]; opened: number; failures: number }> {
   const warnings: string[] = [];
   let opened = 0;
   let failures = 0;
 
-  const enriched = await mapLimit(leads, DETAIL_PAGE_CONCURRENCY, async (lead, index) => {
-    if (!lead.url || Date.now() - startedAt > timeoutMs || index >= LUMA_DETAIL_LIMIT) {
+  const targets = new Set(leads.filter(shouldEnrich).slice(0, LUMA_DETAIL_LIMIT).map((lead) => lead.id));
+
+  const enriched = await mapLimit(leads, DETAIL_PAGE_CONCURRENCY, async (lead) => {
+    if (!lead.url || Date.now() - startedAt > timeoutMs || !targets.has(lead.id)) {
       return lead;
     }
 
@@ -868,6 +901,17 @@ async function enrichEventPages(
   return { leads: enriched, warnings, opened, failures };
 }
 
+function lumaListingDataIsSufficient(lead: RawLead): boolean {
+  const title = (lead.title ?? "").replace(/\s+/g, " ").trim();
+  const metadata = lead.metadata ?? {};
+  return (
+    title.length > 3 &&
+    !/^luma event$/i.test(title) &&
+    Boolean(metadata.startDate || metadata.dateText) &&
+    Boolean(metadata.location || (lead.text ?? "").length > 20)
+  );
+}
+
 export const lumaCollector: Collector = {
   source: "luma",
 
@@ -877,7 +921,7 @@ export const lumaCollector: Collector = {
     const mode = resolveLumaDiscoveryMode();
     const feedResolution = buildDiscoveryFeeds(input);
     const feeds = feedResolution.feeds;
-    const byUrl = new Map<string, { url: string; feeds: Set<LumaDiscoveryFeed> }>();
+    const byUrl = new Map<string, { url: string; feeds: Set<LumaDiscoveryFeed>; lead?: RawLead }>();
     const budgetMs = input.timeoutMs;
     let pagesFetched = 0;
     let scrollAttempts = 0;
@@ -928,6 +972,18 @@ export const lumaCollector: Collector = {
         result.warnings.push(`scrolls_${feed.mode}=${feedResult.scrollAttempts}`);
         result.warnings.push(`no_growth_${feed.mode}=${feedResult.noGrowthAttempts}`);
 
+        for (const lead of feedResult.leads) {
+          if (!lead.url) continue;
+          const key = normalizeUrlForDedupe(lead.url);
+          const existing = byUrl.get(key);
+          if (existing) {
+            existing.feeds.add(feed.mode);
+            if (!existing.lead || !lumaListingDataIsSufficient(existing.lead)) existing.lead = lead;
+          } else {
+            byUrl.set(key, { url: lead.url, feeds: new Set([feed.mode]), lead });
+          }
+        }
+
         for (const url of feedResult.urls) {
           const key = normalizeUrlForDedupe(url);
           const existing = byUrl.get(key);
@@ -941,9 +997,21 @@ export const lumaCollector: Collector = {
 
       const provisionalLeads = [...byUrl.values()]
         .slice(0, Math.min(input.maxResults, LUMA_MAX_EVENTS))
-        .map(({ url, feeds }) => {
+        .map(({ url, feeds, lead }) => {
           const discoveredFrom = [...feeds];
           const primaryFeed = discoveredFrom[0] ?? "luma_public";
+          if (lead && lumaListingDataIsSufficient(lead)) {
+            return {
+              ...lead,
+              metadata: {
+                ...lead.metadata,
+                officialUrl: lead.metadata?.officialUrl ?? url,
+                applyUrl: lead.metadata?.applyUrl ?? url,
+                discoveryMode: primaryFeed,
+                discoveredFrom,
+              },
+            } satisfies RawLead;
+          }
           return {
             id: `luma-${slugify(new URL(url).pathname)}`,
             source: "luma" as const,
@@ -968,10 +1036,20 @@ export const lumaCollector: Collector = {
       let detailPagesOpened = 0;
       let detailFailures = 0;
       if (provisionalLeads.length > 0) {
+        const detailTargetCount = provisionalLeads
+          .filter((lead) => !lumaListingDataIsSufficient(lead))
+          .slice(0, LUMA_DETAIL_LIMIT).length;
         input.logger?.(
-          `Opening up to ${Math.min(provisionalLeads.length, LUMA_DETAIL_LIMIT)} Luma detail pages...`,
+          detailTargetCount > 0
+            ? `Opening up to ${detailTargetCount} Luma detail pages for weak listing records...`
+            : "Skipping Luma detail pages because listing records are sufficient...",
         );
-        const enriched = await enrichEventPages(provisionalLeads, budgetMs, startedAt);
+        const enriched = await enrichEventPages(
+          provisionalLeads,
+          budgetMs,
+          startedAt,
+          (lead) => !lumaListingDataIsSufficient(lead),
+        );
         result.leads = enriched.leads.slice(0, input.maxResults);
         result.warnings.push(...enriched.warnings);
         detailPagesOpened = enriched.opened;

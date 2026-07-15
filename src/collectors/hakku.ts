@@ -593,6 +593,15 @@ export function mergeHakkuDetail(card: HakkuCard, detail: HakkuDetail): HakkuCar
   };
 }
 
+function hakkuListingDataIsSufficient(card: HakkuCard): boolean {
+  return Boolean(
+    card.title &&
+      (card.externalEventUrl || card.url || card.hakkuDetailUrl) &&
+      (card.dateText || card.startDate || card.location || card.format) &&
+      (card.externalEventUrl || card.text || card.tags.length > 0),
+  );
+}
+
 function inferHakkuMode(card: HakkuCard): "online" | "in-person" | "hybrid" | undefined {
   const haystack = [card.format, card.location, card.text, ...card.tags].filter(Boolean).join(" ");
   if (/\bhybrid\b/i.test(haystack)) return "hybrid";
@@ -778,7 +787,7 @@ async function enrichHakkuDetails(
   logger?: (message: string) => void,
 ): Promise<{ cards: HakkuCard[]; opened: number; parsed: number; failures: number }> {
   const targets = cards
-    .filter((card) => card.hakkuDetailUrl)
+    .filter((card) => card.hakkuDetailUrl && !hakkuListingDataIsSufficient(card))
     .slice(0, Math.min(HAKKU_DETAIL_LIMIT, maxDetails));
   if (targets.length === 0) return { cards, opened: 0, parsed: 0, failures: 0 };
 
