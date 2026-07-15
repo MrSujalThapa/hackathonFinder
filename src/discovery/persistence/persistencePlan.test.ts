@@ -309,4 +309,103 @@ describe("planPersistence", () => {
     assert.equal(plan.candidateUnchanged.length, 1);
     assert.equal(plan.actionsToCreate.length, 0);
   });
+
+  it("stable identical inputs create zero candidates on rerun", () => {
+    const alpha = write(candidate({ fingerprint: "fp-stable-a", name: "Stable A" }));
+    const beta = write(
+      candidate({
+        fingerprint: "fp-stable-b",
+        name: "Stable B",
+        officialUrl: "https://beta.example",
+        applyUrl: "https://beta.example/apply",
+        sourceIds: { mlh: "beta" },
+      }),
+      [
+        evidence({
+          url: "https://beta.example/",
+          title: "Beta",
+        }),
+      ],
+    );
+
+    const first = planPersistence([alpha, beta], [], [], { now: NOW });
+    assert.equal(first.candidateCreates.length, 2);
+    assert.equal(first.evidenceCreates.length, 2);
+    assert.equal(first.diagnostics.uniqueFingerprints, 2);
+
+    const existingCandidates = first.candidateCreates.map((item, index) =>
+      rowFrom(item.sourceInput, {
+        id: `candidate-${index + 1}`,
+        fingerprint: item.fingerprint,
+        status: "APPROVED",
+        sheet_row_id: index === 0 ? "sheet-1" : null,
+        sheet_appended_at: index === 0 ? NOW : null,
+      }),
+    );
+    const existingEvidence = first.evidenceCreates.map((item, index) =>
+      evidenceRow({
+        id: `evidence-${index + 1}`,
+        candidate_id: existingCandidates[index]?.id ?? `candidate-${index + 1}`,
+        type: item.type,
+        url: item.row.url ?? null,
+        url_key: item.urlKey,
+        title: item.row.title ?? null,
+        seen_count: item.row.seen_count ?? 1,
+      }),
+    );
+
+    const second = planPersistence([alpha, beta], existingCandidates, existingEvidence, {
+      now: NOW,
+    });
+    assert.equal(second.candidateCreates.length, 0);
+    assert.equal(second.candidateUpdates.length, 0);
+    assert.equal(second.candidateUnchanged.length, 2);
+    assert.equal(second.evidenceCreates.length, 0);
+    assert.equal(second.actionsToCreate.length, 0);
+    assert.equal(existingCandidates[0]?.status, "APPROVED");
+    assert.equal(existingCandidates[0]?.sheet_row_id, "sheet-1");
+    assert.deepEqual(
+      second.candidateUnchanged.map((item) => item.fingerprint).sort(),
+      ["fp-stable-a", "fp-stable-b"],
+    );
+  });
+
+  it("one genuinely new event creates exactly one candidate on delta rerun", () => {
+    const stable = write(candidate({ fingerprint: "fp-stable", name: "Stable Hack" }));
+    const first = planPersistence([stable], [], [], { now: NOW });
+    const existingCandidate = rowFrom(first.candidateCreates[0]!.sourceInput, {
+      id: "candidate-1",
+      status: "NEEDS_REVIEW",
+    });
+    const existingEvidence = first.evidenceCreates.map((item) =>
+      evidenceRow({
+        id: "evidence-1",
+        candidate_id: "candidate-1",
+        type: item.type,
+        url: item.row.url ?? null,
+        url_key: item.urlKey,
+      }),
+    );
+
+    const novel = write(
+      candidate({
+        fingerprint: "fp-novel",
+        name: "Novel Hack",
+        officialUrl: "https://novel.example",
+        applyUrl: "https://novel.example/apply",
+        sourceIds: { mlh: "novel" },
+      }),
+      [evidence({ url: "https://novel.example/", title: "Novel" })],
+    );
+    const delta = planPersistence([stable, novel], [existingCandidate], existingEvidence, {
+      now: NOW,
+    });
+
+    assert.equal(delta.candidateCreates.length, 1);
+    assert.equal(delta.candidateCreates[0]?.fingerprint, "fp-novel");
+    assert.equal(delta.candidateUnchanged.length, 1);
+    assert.equal(delta.candidateUnchanged[0]?.fingerprint, "fp-stable");
+    assert.equal(delta.candidateUpdates.length, 0);
+    assert.equal(existingCandidate.status, "NEEDS_REVIEW");
+  });
 });
