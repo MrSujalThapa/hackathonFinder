@@ -7,6 +7,7 @@ import {
   validateAiPageDecision,
 } from "@/experiments/scraper-v2/generic/aiPageDecision";
 import { runGenericStructuredExtraction } from "@/experiments/scraper-v2/generic/structuredExtraction";
+import { validateVisualGroupingDecision } from "@/experiments/scraper-v2/generic/visualGrouping";
 import type { AcquiredArtifact, SourceExperiment } from "@/experiments/scraper-v2/generic/types";
 
 function source(): SourceExperiment {
@@ -159,9 +160,46 @@ describe("phase 5.4 bounded AI and vision-assisted recovery", () => {
     }
   });
 
+  it("maps visual grouping proposals back to real DOM unit sets", () => {
+    const unitSet = {
+      unitSetId: "dom:visual",
+      artifactId: "html:0",
+      parentNodeId: 1,
+      unitNodeIds: [2, 3, 4],
+      structuralScore: 0.8,
+      fieldDensityScore: 0.8,
+      layoutScore: 0.8,
+      confidence: 0.8,
+      rejectionReasons: [],
+      diagnostics: {
+        unitCount: 3,
+        averageTextLength: 40,
+        uniqueTitleRatio: 1,
+        uniqueUrlRatio: 0,
+        dateCoverage: 1,
+        locationCoverage: 1,
+        anchorCoverage: 0,
+        depth: 2,
+      },
+    };
+    const ok = validateVisualGroupingDecision({
+      value: { cardNodeIds: [2, 3, 4], confidence: 0.85 },
+      unitSets: [unitSet],
+    });
+    assert.equal(ok.ok, true);
+    if (ok.ok) assert.equal(ok.mappedUnitSet.unitSetId, "dom:visual");
+
+    const bad = validateVisualGroupingDecision({
+      value: { cardNodeIds: [99, 100], confidence: 0.9 },
+      unitSets: [unitSet],
+    });
+    assert.equal(bad.ok, false);
+  });
+
   it("keeps Phase 5.4 generic and persistence-free", async () => {
     for (const file of [
       "src/experiments/scraper-v2/generic/aiPageDecision.ts",
+      "src/experiments/scraper-v2/generic/visualGrouping.ts",
       "src/experiments/scraper-v2/generic/structuredExtraction.ts",
       "src/experiments/scraper-v2/generic/domSchema.ts",
     ]) {

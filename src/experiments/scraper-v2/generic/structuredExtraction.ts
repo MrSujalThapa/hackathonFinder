@@ -23,6 +23,7 @@ import type {
   SourceExperiment,
 } from "@/experiments/scraper-v2/generic/types";
 import type { LlmProvider } from "@/lib/llm/types";
+import { shouldInvokeVisionGrouping } from "@/experiments/scraper-v2/generic/visualGrouping";
 
 function ms(startedAt: number): number {
   return Math.round(performance.now() - startedAt);
@@ -263,6 +264,7 @@ export async function runGenericStructuredExtraction(
   timings.domInferenceMs = ms(domStartedAt);
 
   let aiAssistance: GenericStructuredExtractionResult["aiAssistance"];
+  let visionAssistance: GenericStructuredExtractionResult["visionAssistance"];
   const deterministicLeadCount = structuredLeads.length + dom.leads.length;
   const actionCandidates = acquisition.artifacts
     .flatMap((artifact) => {
@@ -339,6 +341,21 @@ export async function runGenericStructuredExtraction(
       rejectedReasons: deterministicLeadCount > 0 ? ["deterministic extraction already produced leads"] : ["no plausible unresolved AI candidate"],
     };
   }
+  if (
+    shouldInvokeVisionGrouping({
+      visibleEventLikeCards: aiInput.candidateGroups.some((group) => group.kind === "dom" && (group.titleCoverage >= 0.7 || group.dateCoverage >= 0.4)),
+      deterministicLeads: deterministicLeadCount,
+      aiAccepted: aiAssistance?.accepted ?? false,
+      domUnitSets: dom.repeatedUnitSets.length,
+    })
+  ) {
+    visionAssistance = {
+      invoked: false,
+      accepted: false,
+      mappedDomNodes: 0,
+      rejectedReasons: ["image-capable vision provider is not configured in the current LLM abstraction"],
+    };
+  }
 
   const strategySelected = selectExtractionStrategy({
     structuredLeads,
@@ -392,6 +409,7 @@ export async function runGenericStructuredExtraction(
     strategySelected,
     dom,
     ...(aiAssistance ? { aiAssistance } : {}),
+    ...(visionAssistance ? { visionAssistance } : {}),
     pagination,
     quality,
     timings,
@@ -472,6 +490,12 @@ export function formatGenericStructuredExtractionResult(
     if (result.aiAssistance.classification) lines.push(`  AI classification         ${result.aiAssistance.classification}`);
     if (result.aiAssistance.latencyMs !== undefined) lines.push(`  AI latency                ${seconds(result.aiAssistance.latencyMs)}`);
     if (result.aiAssistance.rejectedReasons.length > 0) lines.push(`  AI rejected reasons       ${result.aiAssistance.rejectedReasons.join("; ")}`);
+  }
+  if (result.visionAssistance) {
+    lines.push(`  vision invoked            ${result.visionAssistance.invoked ? "yes" : "no"}`);
+    lines.push(`  vision accepted           ${result.visionAssistance.accepted ? "yes" : "no"}`);
+    if (result.visionAssistance.selectedGroupId) lines.push(`  vision selected group     ${result.visionAssistance.selectedGroupId}`);
+    if (result.visionAssistance.rejectedReasons.length > 0) lines.push(`  vision rejected reasons   ${result.visionAssistance.rejectedReasons.join("; ")}`);
   }
   return lines;
 }
