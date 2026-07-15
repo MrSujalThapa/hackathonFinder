@@ -1,11 +1,13 @@
 import type { DiscoverySourceId, RawLead } from "@/core/discovery/types";
 import { emptyCollectorResult, type CollectorResult } from "@/collectors/types";
 import { collectCustomSource } from "@/collectors/customSource";
+import { inferDiscoveryBudget } from "@/experiments/scraper-v2/generic/budget";
 import type {
   GenericShadowLead,
   GenericStructuredExtractionResult,
   SourceExperiment,
 } from "@/experiments/scraper-v2/generic/types";
+import { hasLlmConfig } from "@/config/env";
 import type { CustomSource } from "@/server/customSources/types";
 import { slugify, uniqueUrls } from "@/lib/http/url";
 
@@ -16,14 +18,39 @@ async function loadGenericStructuredExtraction() {
   return mod.runGenericStructuredExtraction;
 }
 
+/** Match Phase 5.6 harness: allow www and apex origins for safe pagination/actions. */
+export function originVariants(origin: string): string[] {
+  try {
+    const parsed = new URL(origin);
+    const host = parsed.hostname;
+    const variants = new Set([parsed.origin]);
+    if (host.startsWith("www.")) {
+      variants.add(
+        `${parsed.protocol}//${host.slice(4)}${parsed.port ? `:${parsed.port}` : ""}`,
+      );
+    } else if (host.includes(".")) {
+      variants.add(
+        `${parsed.protocol}//www.${host}${parsed.port ? `:${parsed.port}` : ""}`,
+      );
+    }
+    return [...variants];
+  } catch {
+    return [origin];
+  }
+}
+
 export type GenericScraperV2Mode = "off" | "shadow" | "live";
 
 const BLOCKED_HOSTS = [/dorahacks\.io$/i];
 
 export function readGenericScraperV2Mode(
-  env: NodeJS.ProcessEnv = process.env,
+  env?: { GENERIC_SCRAPER_V2_MODE?: string | undefined },
 ): GenericScraperV2Mode {
-  const raw = (env.GENERIC_SCRAPER_V2_MODE ?? "off").trim().toLowerCase();
+  // When a caller supplies an env object, do not fall back to process.env.
+  const source = env ?? process.env;
+  const raw = String(source["GENERIC_SCRAPER_V2_MODE"] ?? "off")
+    .trim()
+    .toLowerCase();
   if (raw === "shadow" || raw === "live" || raw === "off") return raw;
   return "off";
 }
@@ -44,17 +71,20 @@ export function customSourceToExperiment(source: CustomSource): SourceExperiment
   } catch {
     // keep listing URL
   }
+  const isHackathonsSpace = /hackathons\.space/i.test(source.listingUrl);
   return {
     inputUrl: source.listingUrl,
-    allowedOrigins: [origin],
+    allowedOrigins: originVariants(origin),
     maxRequests: Math.max(8, Math.min(40, source.maxItems)),
-    maxPages: Math.max(3, Math.min(20, Math.ceil(source.maxItems / 10))),
-    maxBrowserActions: 8,
-    maxPayloadBytes: 2_000_000,
+    // Parity with Phase 5.6 harness for directory coverage (≈3 pages / Next actions).
+    maxPages: isHackathonsSpace
+      ? 3
+      : Math.max(3, Math.min(20, Math.ceil(source.maxItems / 10))),
+    maxBrowserActions: isHackathonsSpace ? 3 : 8,
+    maxPayloadBytes: 5_000_000,
     browserAllowed: source.mode !== "static",
     expectedContentCategory: "public_event_directory",
-    expectedMinimumEventCount:
-      /hackathons\.space/i.test(source.listingUrl) ? 20 : undefined,
+    expectedMinimumEventCount: isHackathonsSpace ? 20 : undefined,
   };
 }
 
@@ -161,11 +191,19 @@ export async function collectCustomSourceWithV2Routing(
   }
 
   options.logger?.(`[${customId}] Generic V2 mode=${mode}`);
+  if (!hasLlmConfig()) {
+    options.logger?.(
+      `[${customId}] LLM not configured (LLM_PROVIDER/LLM_API_KEY) — V2 AI assist unavailable`,
+    );
+  }
   const experiment = customSourceToExperiment(source);
+  const budget = inferDiscoveryBudget({
+    query: "standard public hackathon directory coverage",
+  });
   let extraction: GenericStructuredExtractionResult | undefined;
   try {
     const runGenericStructuredExtraction = await loadGenericStructuredExtraction();
-    extraction = await runGenericStructuredExtraction(experiment);
+    extraction = await runGenericStructuredExtraction(experiment, { budget });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Generic V2 failed";
     options.logger?.(`[${customId}] Generic V2 error: ${message}`);

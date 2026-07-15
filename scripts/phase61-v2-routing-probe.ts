@@ -6,7 +6,8 @@ import {
 } from "@/discovery/genericScraperV2Mode";
 import type { CustomSource } from "@/server/customSources/types";
 
-loadLocalEnv();
+const loadEnv = process.argv.includes("--load-env");
+if (loadEnv) loadLocalEnv();
 
 function source(slug: string, listingUrl: string): CustomSource {
   return {
@@ -32,13 +33,16 @@ function source(slug: string, listingUrl: string): CustomSource {
 async function probe(
   label: string,
   listingUrl: string,
-  mode: "shadow" | "live",
+  mode: "off" | "shadow" | "live",
 ): Promise<void> {
-  console.log(`\n=== ${label} mode=${mode} ===`);
+  console.log(`\n=== ${label} mode=${mode} loadEnv=${loadEnv} ===`);
   console.log(`blocked_host=${isBlockedCustomSourceUrl(listingUrl)}`);
+  console.log(
+    `openai=${process.env.OPENAI_API_KEY ? "set" : "missing"} anthropic=${process.env.ANTHROPIC_API_KEY ? "set" : "missing"}`,
+  );
   const result = await collectCustomSourceWithV2Routing(source(label, listingUrl), {
     mode,
-    timeoutMs: 60_000,
+    timeoutMs: 90_000,
     persistHealth: false,
     logger: (message) => console.log(message),
   });
@@ -51,6 +55,7 @@ async function probe(
         metrics: result.metrics ?? null,
         stopReason: result.diagnostics.stopReason,
         safeMessage: result.diagnostics.safeMessage,
+        provenance: result.leads[0]?.metadata?.provenance ?? null,
       },
       null,
       2,
@@ -60,11 +65,23 @@ async function probe(
 
 async function main(): Promise<void> {
   console.log(`env_mode=${readGenericScraperV2Mode()}`);
-  await probe("dorahacks", "https://dorahacks.io/hackathon", "shadow");
-  await probe("hackathons-space", "https://www.hackathons.space/", "shadow");
-  await probe("eventornado", "https://eventornado.com/events", "shadow");
-  await probe("hackathons-space", "https://www.hackathons.space/", "live");
-  await probe("eventornado", "https://eventornado.com/events", "live");
+  const only = process.argv.find((arg) => arg.startsWith("--only="))?.slice("--only=".length);
+  const modeArg = process.argv.find((arg) => arg.startsWith("--mode="))?.slice("--mode=".length) as
+    | "off"
+    | "shadow"
+    | "live"
+    | undefined;
+  const mode = modeArg ?? "live";
+
+  if (!only || only === "dorahacks") {
+    await probe("dorahacks", "https://dorahacks.io/hackathon", mode === "off" ? "shadow" : mode);
+  }
+  if (!only || only === "hackathons-space") {
+    await probe("hackathons-space", "https://www.hackathons.space/", mode);
+  }
+  if (!only || only === "eventornado") {
+    await probe("eventornado", "https://eventornado.com/events", mode);
+  }
 }
 
 main().catch((error) => {

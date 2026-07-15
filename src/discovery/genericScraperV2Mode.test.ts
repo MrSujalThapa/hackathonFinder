@@ -4,6 +4,7 @@ import {
   customSourceToExperiment,
   genericLeadToRawLead,
   isBlockedCustomSourceUrl,
+  originVariants,
   readGenericScraperV2Mode,
 } from "@/discovery/genericScraperV2Mode";
 import type { CustomSource } from "@/server/customSources/types";
@@ -33,19 +34,10 @@ function customSource(overrides: Partial<CustomSource> = {}): CustomSource {
 
 describe("generic scraper v2 routing guards", () => {
   it("defaults GENERIC_SCRAPER_V2_MODE to off", () => {
-    assert.equal(readGenericScraperV2Mode({} as unknown as NodeJS.ProcessEnv), "off");
-    assert.equal(
-      readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "shadow" } as unknown as NodeJS.ProcessEnv),
-      "shadow",
-    );
-    assert.equal(
-      readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "live" } as unknown as NodeJS.ProcessEnv),
-      "live",
-    );
-    assert.equal(
-      readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "weird" } as unknown as NodeJS.ProcessEnv),
-      "off",
-    );
+    assert.equal(readGenericScraperV2Mode({}), "off");
+    assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "shadow" }), "shadow");
+    assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "live" }), "live");
+    assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "weird" }), "off");
   });
 
   it("blocks DoraHacks without bypass", () => {
@@ -58,6 +50,14 @@ describe("generic scraper v2 routing guards", () => {
     const space = customSourceToExperiment(customSource());
     assert.equal(space.inputUrl, "https://www.hackathons.space/");
     assert.ok((space.expectedMinimumEventCount ?? 0) >= 20);
+    assert.deepEqual(
+      space.allowedOrigins,
+      originVariants("https://www.hackathons.space"),
+    );
+    assert.equal(space.maxPayloadBytes, 5_000_000);
+    assert.equal(space.maxPages, 3);
+    assert.equal(space.maxBrowserActions, 3);
+    assert.ok(space.allowedOrigins.includes("https://hackathons.space"));
 
     const eventornado = customSourceToExperiment(
       customSource({
@@ -67,6 +67,7 @@ describe("generic scraper v2 routing guards", () => {
       }),
     );
     assert.equal(eventornado.inputUrl, "https://eventornado.com/events");
+    assert.ok(eventornado.allowedOrigins.includes("https://www.eventornado.com"));
   });
 
   it("maps V2 leads onto the normal RawLead pipeline shape", () => {
