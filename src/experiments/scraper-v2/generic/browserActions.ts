@@ -123,3 +123,31 @@ export function verifyActionResult(input: ActionVerificationInput): {
   if (!input.dateCoverageImproved && input.usefulRecordsAdded <= 0) reasons.push("no useful records or date coverage improvement");
   return { accepted: reasons.length === 0, reasons };
 }
+
+export function verifyActionStateProgression(input: {
+  actionId: string;
+  beforeFingerprint: string;
+  afterFingerprint: string;
+  seenIdentityKeys: Set<string>;
+  nextIdentityKeys: Set<string>;
+  attemptedFingerprintByAction: Map<string, string>;
+}): {
+  accepted: boolean;
+  newIdentityKeys: string[];
+  reasons: string[];
+} {
+  const reasons: string[] = [];
+  if (input.attemptedFingerprintByAction.get(input.actionId) === input.beforeFingerprint) {
+    reasons.push("action already attempted for this page fingerprint");
+  }
+  if (input.beforeFingerprint === input.afterFingerprint) {
+    reasons.push("page fingerprint did not change");
+  }
+  const newIdentityKeys = [...input.nextIdentityKeys].filter((key) => !input.seenIdentityKeys.has(key));
+  if (newIdentityKeys.length <= 0) reasons.push("no new stable identities appeared");
+  return {
+    accepted: reasons.length === 0,
+    newIdentityKeys,
+    reasons,
+  };
+}

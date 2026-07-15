@@ -22,7 +22,13 @@ function deterministicText(input: LlmGenerateRequest): string {
   const lastUser = [...input.messages]
     .reverse()
     .find((message) => message.role === "user");
-  return `fake:${lastUser?.content ?? ""}`;
+  const content = lastUser?.content;
+  return `fake:${typeof content === "string" ? content : JSON.stringify(content ?? "")}`;
+}
+
+function contentLength(content: LlmGenerateRequest["messages"][number]["content"]): number {
+  if (typeof content === "string") return content.length;
+  return content.reduce((total, part) => total + (part.type === "text" ? part.text.length : 1024), 0);
 }
 
 export function createFakeLlmProvider(
@@ -51,7 +57,7 @@ export function createFakeLlmProvider(
         finishReason: "stop",
         usage: {
           inputTokens: input.messages.reduce(
-            (sum, message) => sum + Math.ceil(message.content.length / 4),
+            (sum, message) => sum + Math.ceil(contentLength(message.content) / 4),
             0,
           ),
           outputTokens: Math.ceil(output.length / 4),

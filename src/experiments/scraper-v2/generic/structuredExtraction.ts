@@ -24,6 +24,12 @@ import type {
 } from "@/experiments/scraper-v2/generic/types";
 import type { LlmProvider } from "@/lib/llm/types";
 import { shouldInvokeVisionGrouping } from "@/experiments/scraper-v2/generic/visualGrouping";
+import {
+  buildVisionPageDecisionInput,
+  requestVisionPageDecision,
+  shouldInvokeVisionPageDecision,
+  type VisionPageDecisionResult,
+} from "@/experiments/scraper-v2/generic/visionPageDecision";
 
 function ms(startedAt: number): number {
   return Math.round(performance.now() - startedAt);
@@ -215,7 +221,7 @@ function selectExtractionStrategy(input: {
 
 export async function runGenericStructuredExtraction(
   experiment: SourceExperiment,
-  options: { runtime?: CrawlRuntime; budget?: DiscoveryBudget; signal?: AbortSignal; checkpointDir?: string; aiProvider?: LlmProvider | null } = {},
+  options: { runtime?: CrawlRuntime; budget?: DiscoveryBudget; signal?: AbortSignal; checkpointDir?: string; aiProvider?: LlmProvider | null; visionProvider?: LlmProvider | null } = {},
 ): Promise<GenericStructuredExtractionResult> {
   const totalStartedAt = performance.now();
   const timings: Record<string, number> = {};
@@ -281,7 +287,20 @@ export async function runGenericStructuredExtraction(
     repeatedUnitSets: dom.repeatedUnitSets,
     actionCandidates,
   });
+  const visionInput = buildVisionPageDecisionInput({
+    sourceUrl: experiment.inputUrl,
+    artifacts: acquisition.artifacts,
+    dom,
+    actionCandidates,
+  });
+  const visionShouldRunFirst = shouldInvokeVisionPageDecision({
+    deterministicValidEvents: deterministicLeadCount,
+    textAiAccepted: false,
+    visionInput,
+  }) && visionInput?.candidateGroups.every((group) => group.dateCoverage < 0.25);
+
   if (
+    !visionShouldRunFirst &&
     shouldInvokeAiPageDecision({
       deterministicValidEvents: deterministicLeadCount,
       candidateGroups: aiInput.candidateGroups,
@@ -341,7 +360,60 @@ export async function runGenericStructuredExtraction(
       rejectedReasons: deterministicLeadCount > 0 ? ["deterministic extraction already produced leads"] : ["no plausible unresolved AI candidate"],
     };
   }
+  if (visionShouldRunFirst && visionInput) {
+    const redactedVisionInput = {
+      sourceOrigin: visionInput.sourceOrigin,
+      mediaType: visionInput.mediaType,
+      candidateGroups: visionInput.candidateGroups,
+      actionCandidates: visionInput.actionCandidates,
+      screenshotBytes: 0,
+    };
+    const vision: VisionPageDecisionResult = await requestVisionPageDecision({
+      sanitizedInput: visionInput,
+      unitSets: dom.repeatedUnitSets,
+      provider: options.visionProvider,
+      signal: options.signal,
+    }).catch((error): VisionPageDecisionResult => ({
+      invoked: true,
+      accepted: false,
+      mappedUnitSets: [],
+      sanitizedInput: redactedVisionInput,
+      rejectedReasons: [error instanceof Error ? error.message : String(error)],
+    }));
+    visionAssistance = {
+      invoked: vision.invoked,
+      accepted: false,
+      ...(vision.provider ? { provider: vision.provider } : {}),
+      ...(vision.model ? { model: vision.model } : {}),
+      ...(vision.latencyMs !== undefined ? { latencyMs: vision.latencyMs } : {}),
+      ...(vision.decision?.selectedGroupIds?.[0] ? { selectedGroupId: vision.decision.selectedGroupIds[0] } : {}),
+      ...(vision.decision?.selectedGroupIds ? { selectedGroupIds: vision.decision.selectedGroupIds } : {}),
+      mappedDomNodes: vision.mappedUnitSets.reduce((total, unitSet) => total + unitSet.unitNodeIds.length, 0),
+      rejectedReasons: [...vision.rejectedReasons],
+    };
+    const selectedVisionGroup = vision.mappedUnitSets[0];
+    if (vision.accepted && selectedVisionGroup) {
+      const visionDom = runGenericDomExtraction(acquisition.artifacts, experiment, {
+        selectedUnitSetId: selectedVisionGroup.unitSetId,
+        allowCompositeIdentity: true,
+      });
+      const validation = aiDomProposalPasses({
+        dom: visionDom,
+        previousLeadCount: deterministicLeadCount,
+        experiment,
+        selectedGroupId: selectedVisionGroup.unitSetId,
+        blockedReason: acquisition.diagnostics.blockedReason,
+      });
+      if (validation.ok) {
+        dom = visionDom;
+        visionAssistance.accepted = true;
+      } else {
+        visionAssistance.rejectedReasons.push(...validation.reasons);
+      }
+    }
+  }
   if (
+    !visionAssistance &&
     shouldInvokeVisionGrouping({
       visibleEventLikeCards: aiInput.candidateGroups.some((group) => group.kind === "dom" && (group.titleCoverage >= 0.7 || group.dateCoverage >= 0.4)),
       deterministicLeads: deterministicLeadCount,
@@ -452,6 +524,23 @@ export function formatGenericStructuredExtractionResult(
   if (result.acquisition.identitiesAfterActions?.length) {
     lines.push(`  identities after actions  ${result.acquisition.identitiesAfterActions.join(", ")}`);
   }
+  if (result.acquisition.identityGrowthAfterActions?.length) {
+    lines.push(`  identity growth/actions    ${result.acquisition.identityGrowthAfterActions.join(", ")}`);
+  }
+  if (result.acquisition.browserObservation) {
+    const observation = result.acquisition.browserObservation;
+    lines.push(`  listeners before nav       ${observation.listenersAttachedBeforeNavigation ? "yes" : "no"}`);
+    lines.push(`  browser final rendered URL ${observation.finalRenderedUrl ?? "unknown"}`);
+    lines.push(`  DOM samples                ${observation.domSamples.map((sample) => `${sample.label}:${sample.nodeCount}/${sample.textLength}/${sample.eventWordCount}`).join(", ")}`);
+    lines.push(`  network JSON responses     ${observation.networkJsonResponses}`);
+    lines.push(`  nested scroll containers   ${observation.nestedScrollContainers}`);
+    lines.push(`  iframes/open shadows       ${observation.iframes}/${observation.openShadowRoots}`);
+    lines.push(`  loading overlay            ${observation.loadingOverlayDetected ? "yes" : "no"}`);
+    if (observation.blockedState) lines.push(`  blocked state              ${observation.blockedState}`);
+  }
+  if (result.acquisition.actionTrace?.length) {
+    lines.push(`  action trace              ${result.acquisition.actionTrace.map((item) => `${item.actionId}/${item.effect}/${item.accepted ? "accepted" : "rejected"}/+${item.newIdentityCount}${item.rejectedReasons.length ? `(${item.rejectedReasons.join("|")})` : ""}`).join("; ")}`);
+  }
   lines.push(`  checkpoint loaded         ${result.acquisition.checkpointLoaded ? "yes" : "no"}`);
   lines.push(`  checkpoint saved          ${result.acquisition.checkpointSaved ? "yes" : "no"}`);
   lines.push(`  browser pages             ${result.acquisition.browserPages}`);
@@ -494,7 +583,11 @@ export function formatGenericStructuredExtractionResult(
   if (result.visionAssistance) {
     lines.push(`  vision invoked            ${result.visionAssistance.invoked ? "yes" : "no"}`);
     lines.push(`  vision accepted           ${result.visionAssistance.accepted ? "yes" : "no"}`);
+    if (result.visionAssistance.provider) lines.push(`  vision provider/model     ${result.visionAssistance.provider}/${result.visionAssistance.model ?? "unknown"}`);
+    if (result.visionAssistance.latencyMs !== undefined) lines.push(`  vision latency            ${seconds(result.visionAssistance.latencyMs)}`);
     if (result.visionAssistance.selectedGroupId) lines.push(`  vision selected group     ${result.visionAssistance.selectedGroupId}`);
+    if (result.visionAssistance.selectedGroupIds?.length) lines.push(`  vision selected groups    ${result.visionAssistance.selectedGroupIds.join(", ")}`);
+    lines.push(`  vision mapped DOM nodes   ${result.visionAssistance.mappedDomNodes}`);
     if (result.visionAssistance.rejectedReasons.length > 0) lines.push(`  vision rejected reasons   ${result.visionAssistance.rejectedReasons.join("; ")}`);
   }
   return lines;

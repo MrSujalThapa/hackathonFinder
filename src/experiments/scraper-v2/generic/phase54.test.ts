@@ -50,7 +50,8 @@ function cardHtml(count = 6): string {
 function providerSelectingFirstGroup() {
   return createFakeLlmProvider({
     handler(input) {
-      const user = input.messages.findLast((message) => message.role === "user")?.content ?? "{}";
+      const content = input.messages.findLast((message) => message.role === "user")?.content ?? "{}";
+      const user = typeof content === "string" ? content : "{}";
       const parsed = JSON.parse(user) as { candidateGroups: Array<{ groupId: string }> };
       return JSON.stringify({
         selectedGroupId: parsed.candidateGroups[0]?.groupId,

@@ -207,6 +207,33 @@ export type AcquisitionDiagnostics = {
   actionsDiscovered?: number;
   actionsExecuted?: number;
   identitiesAfterActions?: number[];
+  identityGrowthAfterActions?: number[];
+  actionTrace?: Array<{
+    actionId: string;
+    effect: CandidateAction["proposedEffect"];
+    accepted: boolean;
+    newIdentityCount: number;
+    rejectedReasons: string[];
+  }>;
+  browserObservation?: {
+    listenersAttachedBeforeNavigation: boolean;
+    initialDocumentUrl?: string;
+    finalRenderedUrl?: string;
+    domSamples: Array<{
+      label: string;
+      nodeCount: number;
+      textLength: number;
+      eventWordCount: number;
+      scrollContainerCount: number;
+    }>;
+    networkJsonResponses: number;
+    frameworkHydrationDetected: boolean;
+    nestedScrollContainers: number;
+    iframes: number;
+    openShadowRoots: number;
+    loadingOverlayDetected: boolean;
+    blockedState?: string;
+  };
   checkpointSaved?: boolean;
   checkpointLoaded?: boolean;
 };
@@ -432,7 +459,11 @@ export type GenericStructuredExtractionResult = {
   visionAssistance?: {
     invoked: boolean;
     accepted: boolean;
+    provider?: string;
+    model?: string;
+    latencyMs?: number;
     selectedGroupId?: string;
+    selectedGroupIds?: string[];
     mappedDomNodes: number;
     rejectedReasons: string[];
   };

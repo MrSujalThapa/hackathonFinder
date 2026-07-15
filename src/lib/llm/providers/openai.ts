@@ -6,6 +6,7 @@ import {
   redactLlmSecrets,
 } from "@/lib/llm/errors";
 import type {
+  LlmContentPart,
   LlmFinishReason,
   LlmGenerateRequest,
   LlmGenerateResult,
@@ -110,13 +111,27 @@ async function readBodyBounded(
   return new TextDecoder("utf-8").decode(merged);
 }
 
+function toOpenAiContent(content: string | LlmContentPart[]): string | Array<Record<string, unknown>> {
+  if (typeof content === "string") return content;
+  return content.map((part) => {
+    if (part.type === "text") {
+      return { type: "input_text", text: part.text };
+    }
+    return {
+      type: "input_image",
+      image_url: `data:${part.mediaType};base64,${part.imageBase64}`,
+      detail: part.detail ?? "low",
+    };
+  });
+}
+
 function toOpenAiInput(messages: LlmMessage[]): Array<{
   role: LlmMessage["role"];
-  content: string;
+  content: string | Array<Record<string, unknown>>;
 }> {
   return messages.map((message) => ({
     role: message.role,
-    content: message.content,
+    content: toOpenAiContent(message.content),
   }));
 }
 

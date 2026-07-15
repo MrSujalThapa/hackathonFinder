@@ -1,11 +1,12 @@
 import * as cheerio from "cheerio";
 import { performance } from "node:perf_hooks";
 import { withPlaywright } from "@/lib/browser/playwright";
-import { enumerateCandidateActionsFromHtml } from "@/experiments/scraper-v2/generic/browserActions";
+import { enumerateCandidateActionsFromHtml, verifyActionStateProgression } from "@/experiments/scraper-v2/generic/browserActions";
 import type {
   AcquiredArtifact,
   AcquiredArtifactKind,
   AcquisitionDiagnostics,
+  CandidateAction,
   SourceExperiment,
 } from "@/experiments/scraper-v2/generic/types";
 import { byteLength, isPlainRecord, isSafePublicOrigin } from "@/experiments/scraper-v2/generic/valueUtils";
@@ -121,7 +122,7 @@ function pageFingerprint(html: string): string {
   return html.replace(/\s+/g, " ").slice(0, 20_000);
 }
 
-function visibleIdentityEstimate(html: string, baseUrl: string): number {
+function visibleIdentityKeys(html: string, baseUrl: string): Set<string> {
   const $ = cheerio.load(html);
   const identities = new Set<string>();
   $("a[href],article,[role='article'],li,section,div")
@@ -136,7 +137,124 @@ function visibleIdentityEstimate(html: string, baseUrl: string): number {
       const resolved = href ? new URL(href, baseUrl).toString() : "";
       identities.add(`${resolved}|${title}|${dateSignal ? "dated" : "undated"}`);
     });
-  return identities.size;
+  return identities;
+}
+
+function detectBlockedStateFromHtml(html: string): string | undefined {
+  const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2_000);
+  const eventWordCount = (text.match(/hackathon|challenge|event|deadline|register|apply|prize|build/gi) ?? []).length;
+  if (eventWordCount < 3 && /confirm you are human|security check before continuing|captcha|cf-challenge|awswaf/i.test(text)) {
+    return "human_verification";
+  }
+  if (eventWordCount < 3 && /access denied|temporarily blocked|unusual traffic|forbidden/i.test(text)) {
+    return "blocked";
+  }
+  return undefined;
+}
+
+type BrowserObservationSample = NonNullable<AcquisitionDiagnostics["browserObservation"]>["domSamples"][number];
+type BrowserObservation = NonNullable<AcquisitionDiagnostics["browserObservation"]>;
+
+type PageLike = {
+  url(): string;
+  content(): Promise<string>;
+  title(): Promise<string>;
+  waitForTimeout(ms: number): Promise<void>;
+  evaluate<T>(fn: () => T | Promise<T>): Promise<T>;
+};
+
+async function sampleBrowserDom(page: PageLike, label: string): Promise<BrowserObservationSample & {
+  frameworkHydrationDetected: boolean;
+  iframes: number;
+  openShadowRoots: number;
+  loadingOverlayDetected: boolean;
+  blockedState?: string;
+}> {
+  const data = await page.evaluate(() => {
+    const text = document.body?.innerText ?? "";
+    const elements = [...document.querySelectorAll("body *")] as HTMLElement[];
+    const visible = elements.filter((element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    });
+    const scrollContainers = elements.filter((element) => {
+      const style = getComputedStyle(element);
+      return element.scrollHeight > element.clientHeight + 80 && /(auto|scroll|overlay)/i.test(style.overflowY);
+    });
+    const loadingOverlay = visible.some((element) =>
+      /\b(loading|please wait|checking|security check|verify|captcha)\b/i.test(element.innerText ?? ""),
+    );
+    return {
+      nodeCount: elements.length,
+      textLength: text.replace(/\s+/g, " ").trim().length,
+      eventWordCount: (text.match(/hackathon|challenge|event|deadline|register|apply|prize|build/gi) ?? []).length,
+      scrollContainerCount: scrollContainers.length,
+      frameworkHydrationDetected: Boolean(
+        (window as unknown as { __NEXT_DATA__?: unknown }).__NEXT_DATA__ ||
+          document.querySelector("[data-reactroot],#__next,#root,[data-rsc]"),
+      ),
+      iframes: document.querySelectorAll("iframe").length,
+      openShadowRoots: elements.filter((element) => element.shadowRoot).length,
+      loadingOverlayDetected: loadingOverlay,
+    };
+  });
+  const html = await page.content();
+  return {
+    label,
+    nodeCount: data.nodeCount,
+    textLength: data.textLength,
+    eventWordCount: data.eventWordCount,
+    scrollContainerCount: data.scrollContainerCount,
+    frameworkHydrationDetected: data.frameworkHydrationDetected,
+    iframes: data.iframes,
+    openShadowRoots: data.openShadowRoots,
+    loadingOverlayDetected: data.loadingOverlayDetected,
+    ...(detectBlockedStateFromHtml(html) ? { blockedState: detectBlockedStateFromHtml(html) } : {}),
+  };
+}
+
+async function waitForDomStability(page: PageLike, samples: BrowserObservationSample[]): Promise<void> {
+  let previous = "";
+  let stable = 0;
+  for (let index = 0; index < 5; index += 1) {
+    await page.waitForTimeout(index === 0 ? 600 : 900);
+    const html = await page.content();
+    const fingerprint = pageFingerprint(html);
+    const sample = await sampleBrowserDom(page, `stability-${index + 1}`);
+    samples.push(sample);
+    if (fingerprint === previous) stable += 1;
+    else stable = 0;
+    previous = fingerprint;
+    if (stable >= 1 && sample.eventWordCount > 0) return;
+    if (sample.blockedState) return;
+  }
+}
+
+async function scrollNestedContainers(page: PageLike): Promise<number> {
+  return page.evaluate(() => {
+    const elements = [...document.querySelectorAll("body *")] as HTMLElement[];
+    const scrollers = elements.filter((element) => {
+      const style = getComputedStyle(element);
+      return element.scrollHeight > element.clientHeight + 80 && /(auto|scroll|overlay)/i.test(style.overflowY);
+    }).slice(0, 6);
+    for (const element of scrollers) {
+      element.scrollTop = Math.min(element.scrollTop + element.clientHeight * 1.5, element.scrollHeight);
+    }
+    return scrollers.length;
+  });
+}
+
+function actionPriority(action: CandidateAction): number {
+  const effectPriority: Record<string, number> = {
+    load_more: 5,
+    next_page: 4,
+    infinite_scroll: 3,
+    change_filter: 2,
+    change_sort: 2,
+    open_detail: 1,
+  };
+  return (effectPriority[action.proposedEffect] ?? 0) * 10 + action.confidence;
 }
 
 function numericPageParam(url: string): { param: string; page: number } | undefined {
@@ -384,6 +502,9 @@ async function observeBrowserArtifacts(
   actionsDiscovered: number;
   actionsExecuted: number;
   identitiesAfterActions: number[];
+  identityGrowthAfterActions: number[];
+  actionTrace: NonNullable<AcquisitionDiagnostics["actionTrace"]>;
+  browserObservation?: BrowserObservation;
   skippedReason?: string;
 }> {
   if (!experiment.browserAllowed) {
@@ -395,6 +516,8 @@ async function observeBrowserArtifacts(
       actionsDiscovered: 0,
       actionsExecuted: 0,
       identitiesAfterActions: [],
+      identityGrowthAfterActions: [],
+      actionTrace: [],
       skippedReason: "browser observation disabled by manifest",
     };
   }
@@ -404,18 +527,56 @@ async function observeBrowserArtifacts(
   let browserPages = 0;
   let actionsDiscovered = 0;
   let actionsExecuted = 0;
+  const actionTrace: NonNullable<AcquisitionDiagnostics["actionTrace"]> = [];
   const identitiesAfterActions: number[] = [];
+  const identityGrowthAfterActions: number[] = [];
   const attemptedActionIds = new Set<string>();
+  const attemptedFingerprintByAction = new Map<string, string>();
+  const seenIdentityKeys = new Set<string>();
+  const domSamples: BrowserObservationSample[] = [];
+  let networkJsonResponses = 0;
+  let observation: BrowserObservation | undefined;
 
   async function captureDomSnapshot(input: {
     page: {
       content(): Promise<string>;
       title(): Promise<string>;
+      screenshot(options: { type: "jpeg"; quality: number; fullPage: boolean; timeout: number }): Promise<Buffer>;
+      evaluate<T>(fn: () => T | Promise<T>): Promise<T>;
     };
     sourceUrl: string;
   }): Promise<string> {
     const html = await input.page.content();
     if (byteLength(html) <= experiment.maxPayloadBytes) {
+      const screenshot = await input.page.screenshot({ type: "jpeg", quality: 45, fullPage: false, timeout: 5_000 }).catch(() => undefined);
+      const visualNodes = await (input.page.evaluate as unknown as (expression: string) => Promise<Array<{
+        nodeId: number;
+        text: string;
+        boundingBox: { x: number; y: number; width: number; height: number };
+      }>>)(`(() => {
+        const clean = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+        return [...document.querySelectorAll("body *")]
+          .map((element, index) => {
+            if (/^(script|style|noscript|template|svg|path|meta|link)$/i.test(element.tagName)) return undefined;
+            const text = clean(element.innerText);
+            if (!text) return undefined;
+            const style = getComputedStyle(element);
+            const box = element.getBoundingClientRect();
+            if (element.hidden || element.getAttribute("aria-hidden") === "true" || style.display === "none" || style.visibility === "hidden" || box.width <= 0 || box.height <= 0) return undefined;
+            return {
+              nodeId: index + 1,
+              text: text.slice(0, 180),
+              boundingBox: {
+                x: Math.round(box.x),
+                y: Math.round(box.y),
+                width: Math.round(box.width),
+                height: Math.round(box.height)
+              }
+            };
+          })
+          .filter(Boolean)
+          .slice(0, 800);
+      })()`).catch(() => []);
       artifacts.push(
         makeArtifact({
           kind: "dom_snapshot",
@@ -426,6 +587,8 @@ async function observeBrowserArtifacts(
             title: await input.page.title().catch(() => ""),
             textLength: html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length,
             html,
+            ...(screenshot ? { screenshotBase64: screenshot.toString("base64"), screenshotMediaType: "image/jpeg" } : {}),
+            visualNodes,
           },
           rawBytes: byteLength(html),
           acquisitionMode: "browser",
@@ -447,6 +610,7 @@ async function observeBrowserArtifacts(
           if (!text || byteLength(text) > experiment.maxPayloadBytes) return;
           const payload = parseJsonSafe(text, experiment.maxPayloadBytes);
           if (payload === undefined) return;
+          networkJsonResponses += 1;
           artifacts.push(
             makeArtifact({
               kind: "network_json",
@@ -462,34 +626,54 @@ async function observeBrowserArtifacts(
         })();
       });
 
-      await page.goto(experiment.inputUrl, { waitUntil: "networkidle", timeout: 20_000 });
-      await page.waitForTimeout(750);
+      const listenersAttachedBeforeNavigation = true;
+      await page.goto(experiment.inputUrl, { waitUntil: "domcontentloaded", timeout: 20_000 });
+      domSamples.push(await sampleBrowserDom(page, "after-domcontentloaded"));
+      await page.waitForLoadState("networkidle", { timeout: 12_000 }).catch(() => undefined);
+      await waitForDomStability(page, domSamples);
+      const scrolledContainers = await scrollNestedContainers(page);
+      if (scrolledContainers > 0) {
+        await page.waitForTimeout(900);
+        domSamples.push(await sampleBrowserDom(page, "after-nested-scroll"));
+      }
+      const lowSignalSamples = domSamples.filter((sample) => sample.eventWordCount < 3);
+      const finalBlockedState = (domSamples.at(-1) as BrowserObservationSample & { blockedState?: string } | undefined)?.blockedState;
+      const persistentBlockedState = lowSignalSamples.length === domSamples.length ? finalBlockedState : undefined;
       browserPages += 1;
       let html = await captureDomSnapshot({ page, sourceUrl: page.url() });
       let previousFingerprint = pageFingerprint(html);
+      visibleIdentityKeys(html, page.url()).forEach((key) => seenIdentityKeys.add(key));
       const maxActions = Math.max(0, experiment.maxBrowserActions ?? 0);
+      observation = {
+        listenersAttachedBeforeNavigation,
+        initialDocumentUrl: experiment.inputUrl,
+        finalRenderedUrl: page.url(),
+        domSamples,
+        networkJsonResponses,
+        frameworkHydrationDetected: domSamples.some((sample) => "frameworkHydrationDetected" in sample),
+        nestedScrollContainers: Math.max(0, ...domSamples.map((sample) => sample.scrollContainerCount)),
+        iframes: 0,
+        openShadowRoots: 0,
+        loadingOverlayDetected: false,
+        ...(persistentBlockedState ? { blockedState: persistentBlockedState } : {}),
+      };
 
       for (let transition = 0; transition < maxActions; transition += 1) {
         if (artifacts.length + nextArtifactIndex >= experiment.maxRequests) break;
-        const effectPriority: Record<string, number> = {
-          load_more: 4,
-          next_page: 3,
-          infinite_scroll: 2,
-          open_detail: 1,
-        };
         const actions = enumerateCandidateActionsFromHtml(html, page.url())
           .filter(
             (action) =>
               !action.disabled &&
-              !attemptedActionIds.has(action.elementId) &&
+              (!attemptedActionIds.has(action.elementId) || action.elementId === "synthetic:scroll") &&
               action.confidence >= 0.55 &&
               (action.proposedEffect === "next_page" ||
                 action.proposedEffect === "load_more" ||
                 action.proposedEffect === "infinite_scroll" ||
-                action.proposedEffect === "open_detail") &&
+                action.proposedEffect === "change_filter" ||
+                action.proposedEffect === "change_sort") &&
               (!action.href || isSafePublicOrigin(action.href, experiment.allowedOrigins)),
           )
-          .sort((left, right) => (effectPriority[right.proposedEffect] ?? 0) - (effectPriority[left.proposedEffect] ?? 0) || right.confidence - left.confidence);
+          .sort((left, right) => actionPriority(right) - actionPriority(left));
         actionsDiscovered += actions.length;
         const action = actions[0];
         if (!action) break;
@@ -508,14 +692,40 @@ async function observeBrowserArtifacts(
           await page.waitForLoadState("networkidle", { timeout: 12_000 }).catch(() => undefined);
           await page.waitForTimeout(500);
         }
+        await waitForDomStability(page, domSamples);
+        const nested = await scrollNestedContainers(page);
+        if (nested > 0) {
+          await page.waitForTimeout(700);
+        }
         html = await captureDomSnapshot({ page, sourceUrl: page.url() });
         const nextFingerprint = pageFingerprint(html);
-        const identityEstimate = visibleIdentityEstimate(html, page.url());
-        if (nextFingerprint === previousFingerprint) continue;
+        const identityKeys = visibleIdentityKeys(html, page.url());
+        const progression = verifyActionStateProgression({
+          actionId: action.elementId,
+          beforeFingerprint: previousFingerprint,
+          afterFingerprint: nextFingerprint,
+          seenIdentityKeys,
+          nextIdentityKeys: identityKeys,
+          attemptedFingerprintByAction,
+        });
+        actionTrace.push({
+          actionId: action.elementId,
+          effect: action.proposedEffect,
+          accepted: progression.accepted,
+          newIdentityCount: progression.newIdentityKeys.length,
+          rejectedReasons: progression.reasons,
+        });
+        attemptedFingerprintByAction.set(action.elementId, previousFingerprint);
+        if (!progression.accepted) {
+          if (action.elementId === "synthetic:scroll") break;
+          continue;
+        }
+        identityKeys.forEach((key) => seenIdentityKeys.add(key));
         previousFingerprint = nextFingerprint;
         actionsExecuted += 1;
         browserPages += 1;
-        identitiesAfterActions.push(identityEstimate);
+        identitiesAfterActions.push(identityKeys.size);
+        identityGrowthAfterActions.push(progression.newIdentityKeys.length);
       }
     },
     { timeoutMs: 25_000, headless: true },
@@ -529,6 +739,9 @@ async function observeBrowserArtifacts(
     actionsDiscovered,
     actionsExecuted,
     identitiesAfterActions,
+    identityGrowthAfterActions,
+    actionTrace,
+    ...(observation ? { browserObservation: observation } : {}),
   };
 }
 
@@ -563,12 +776,15 @@ export async function acquireGenericArtifacts(
           requestsMade: 1 + browserFallback.requestsMade,
           browserPages: browserFallback.browserPages,
           bytesInspected: browserFallback.artifacts.reduce((total, artifact) => total + artifact.byteSize, 0),
-          blockedReason: undefined,
           rssLinks: [],
           sitemapLinks: [],
           actionsDiscovered: browserFallback.actionsDiscovered,
           actionsExecuted: browserFallback.actionsExecuted,
           identitiesAfterActions: browserFallback.identitiesAfterActions,
+          identityGrowthAfterActions: browserFallback.identityGrowthAfterActions,
+          actionTrace: browserFallback.actionTrace,
+          ...(browserFallback.browserObservation ? { browserObservation: browserFallback.browserObservation } : {}),
+          blockedReason: browserFallback.browserObservation?.blockedState,
         },
       };
     }
@@ -602,6 +818,9 @@ export async function acquireGenericArtifacts(
   let actionsDiscovered = 0;
   let actionsExecuted = 0;
   let identitiesAfterActions: number[] = [];
+  let identityGrowthAfterActions: number[] = [];
+  let actionTrace: NonNullable<AcquisitionDiagnostics["actionTrace"]> = [];
+  let browserObservation: BrowserObservation | undefined;
 
   attemptedLayers.push("framework state");
   if (!staticArtifactsSufficient(artifacts) || (experiment.maxBrowserActions ?? 0) > 0) {
@@ -619,6 +838,9 @@ export async function acquireGenericArtifacts(
       actionsDiscovered += observed.actionsDiscovered;
       actionsExecuted += observed.actionsExecuted;
       identitiesAfterActions = identitiesAfterActions.concat(observed.identitiesAfterActions);
+      identityGrowthAfterActions = identityGrowthAfterActions.concat(observed.identityGrowthAfterActions);
+      actionTrace = actionTrace.concat(observed.actionTrace);
+      browserObservation = observed.browserObservation;
       if (observed.skippedReason) skippedLayers.push(observed.skippedReason);
     }
   } else {
@@ -654,6 +876,10 @@ export async function acquireGenericArtifacts(
       actionsDiscovered,
       actionsExecuted,
       identitiesAfterActions,
+      identityGrowthAfterActions,
+      actionTrace,
+      ...(browserObservation ? { browserObservation } : {}),
+      ...(browserObservation?.blockedState ? { blockedReason: browserObservation.blockedState } : {}),
       bytesInspected: artifacts.reduce((total, artifact) => total + artifact.byteSize, 0),
       rssLinks: staticResult.rssLinks,
       sitemapLinks: staticResult.sitemapLinks,
