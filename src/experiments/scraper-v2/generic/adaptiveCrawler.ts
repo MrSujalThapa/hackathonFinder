@@ -112,11 +112,25 @@ export function scheduleAdaptiveSources(input: {
 }
 
 function constrainSource(source: SourceExperiment, plan: CrawlPlan): SourceExperiment {
+  const expected = source.expectedMinimumEventCount ?? 0;
+  const coverageScale =
+    plan.profile === "light"
+      ? 1
+      : expected >= 100
+        ? 1
+        : expected >= 50
+          ? 0.75
+          : expected > 0
+            ? 0.45
+            : 0.65;
+  const pageCap = Math.max(1, Math.ceil(plan.maxPagesPerSource * coverageScale));
+  const actionCap = expected >= 100 ? 0 : Math.max(0, Math.ceil(plan.maxBrowserActionsPerSource * coverageScale));
+  const requestCap = Math.max(4, Math.ceil(plan.maxRequestsPerSource * coverageScale));
   return {
     ...source,
-    maxPages: Math.min(source.maxPages, plan.maxPagesPerSource),
-    maxRequests: Math.min(source.maxRequests, plan.maxRequestsPerSource),
-    maxBrowserActions: Math.min(source.maxBrowserActions ?? plan.maxBrowserActionsPerSource, plan.maxBrowserActionsPerSource),
+    maxPages: Math.min(source.maxPages, pageCap),
+    maxRequests: Math.min(source.maxRequests, requestCap),
+    maxBrowserActions: Math.min(source.maxBrowserActions ?? actionCap, actionCap),
   };
 }
 

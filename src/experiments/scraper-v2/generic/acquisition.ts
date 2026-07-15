@@ -255,6 +255,77 @@ async function scrollNestedContainers(page: PageLike): Promise<number> {
   });
 }
 
+type ScrollProbeState = {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  cardCount: number;
+  loadingDetected: boolean;
+};
+
+async function scrollProbeState(page: PageLike): Promise<ScrollProbeState> {
+  return page.evaluate(() => {
+    const elements = [...document.querySelectorAll("body *")] as HTMLElement[];
+    const visible = elements.filter((element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    });
+    const scrollers = elements
+      .filter((element) => {
+        const style = getComputedStyle(element);
+        return element.scrollHeight > element.clientHeight + 80 && /(auto|scroll|overlay)/i.test(style.overflowY);
+      })
+      .sort((left, right) => (right.scrollHeight - right.clientHeight) - (left.scrollHeight - left.clientHeight));
+    const target = scrollers[0] ?? document.scrollingElement ?? document.documentElement;
+    const text = document.body?.innerText ?? "";
+    const cardCount = visible.filter((element) => {
+      const value = element.innerText?.replace(/\s+/g, " ").trim() ?? "";
+      if (value.length < 20 || value.length > 1_500) return false;
+      return /\b(hackathon|challenge|event|deadline|register|apply|prize|build)\b/i.test(value);
+    }).length;
+    return {
+      scrollTop: Math.round(target.scrollTop),
+      scrollHeight: Math.round(target.scrollHeight),
+      clientHeight: Math.round(target.clientHeight),
+      cardCount,
+      loadingDetected: /\b(loading|loading more|please wait|fetching|showing more)\b/i.test(text),
+    };
+  });
+}
+
+async function scrollPrimaryContainer(page: PageLike): Promise<ScrollProbeState> {
+  return page.evaluate(() => {
+    const elements = [...document.querySelectorAll("body *")] as HTMLElement[];
+    const scrollers = elements
+      .filter((element) => {
+        const style = getComputedStyle(element);
+        return element.scrollHeight > element.clientHeight + 80 && /(auto|scroll|overlay)/i.test(style.overflowY);
+      })
+      .sort((left, right) => (right.scrollHeight - right.clientHeight) - (left.scrollHeight - left.clientHeight));
+    const target = scrollers[0] ?? document.scrollingElement ?? document.documentElement;
+    target.scrollTop = Math.min(target.scrollTop + Math.max(target.clientHeight * 1.2, 900), target.scrollHeight);
+    const visible = elements.filter((element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    });
+    const text = document.body?.innerText ?? "";
+    const cardCount = visible.filter((element) => {
+      const value = element.innerText?.replace(/\s+/g, " ").trim() ?? "";
+      if (value.length < 20 || value.length > 1_500) return false;
+      return /\b(hackathon|challenge|event|deadline|register|apply|prize|build)\b/i.test(value);
+    }).length;
+    return {
+      scrollTop: Math.round(target.scrollTop),
+      scrollHeight: Math.round(target.scrollHeight),
+      clientHeight: Math.round(target.clientHeight),
+      cardCount,
+      loadingDetected: /\b(loading|loading more|please wait|fetching|showing more)\b/i.test(text),
+    };
+  });
+}
+
 function actionPriority(action: CandidateAction): number {
   const effectPriority: Record<string, number> = {
     load_more: 5,
@@ -546,6 +617,7 @@ async function observeBrowserArtifacts(
   identitiesAfterActions: number[];
   identityGrowthAfterActions: number[];
   actionTrace: NonNullable<AcquisitionDiagnostics["actionTrace"]>;
+  scrollTrace: NonNullable<AcquisitionDiagnostics["scrollTrace"]>;
   browserObservation?: BrowserObservation;
   skippedReason?: string;
 }> {
@@ -560,6 +632,7 @@ async function observeBrowserArtifacts(
       identitiesAfterActions: [],
       identityGrowthAfterActions: [],
       actionTrace: [],
+      scrollTrace: [],
       skippedReason: "browser observation disabled by manifest",
     };
   }
@@ -570,6 +643,7 @@ async function observeBrowserArtifacts(
   let actionsDiscovered = 0;
   let actionsExecuted = 0;
   const actionTrace: NonNullable<AcquisitionDiagnostics["actionTrace"]> = [];
+  const scrollTrace: NonNullable<AcquisitionDiagnostics["scrollTrace"]> = [];
   const identitiesAfterActions: number[] = [];
   const identityGrowthAfterActions: number[] = [];
   const attemptedFingerprintByAction = new Map<string, string>();
@@ -708,7 +782,6 @@ async function observeBrowserArtifacts(
               action.confidence >= 0.55 &&
               (action.proposedEffect === "next_page" ||
                 action.proposedEffect === "load_more" ||
-                action.proposedEffect === "infinite_scroll" ||
                 action.proposedEffect === "change_filter" ||
                 action.proposedEffect === "change_sort") &&
               (!action.href || isSafePublicOrigin(action.href, experiment.allowedOrigins)),
@@ -753,6 +826,65 @@ async function observeBrowserArtifacts(
         identitiesAfterActions.push(identityKeys.size);
         identityGrowthAfterActions.push(progression.newIdentityKeys.length);
       }
+
+      let scrollNoGrowth = 0;
+      for (let attempt = 0; actionsExecuted < maxActions && scrollNoGrowth < 3; attempt += 1) {
+        if (artifacts.length + nextArtifactIndex >= experiment.maxRequests) break;
+        const beforeScroll = await scrollProbeState(page);
+        const couldMove = beforeScroll.scrollTop + beforeScroll.clientHeight < beforeScroll.scrollHeight - 8;
+        await page.mouse.wheel(0, 2_400).catch(() => undefined);
+        const afterScroll = await scrollPrimaryContainer(page);
+        await page.waitForTimeout(afterScroll.loadingDetected ? 1_000 : 700);
+        await page.waitForLoadState("networkidle", { timeout: 2_500 }).catch(() => undefined);
+        html = await captureDomSnapshot({ page, sourceUrl: page.url() });
+        const nextFingerprint = actionStateFingerprint(html, page.url());
+        const identityKeys = visibleIdentityKeys(html, page.url());
+        const actionId = `synthetic:scroll:${attempt + 1}`;
+        const progression = verifyActionStateProgression({
+          actionId,
+          beforeFingerprint: previousFingerprint,
+          afterFingerprint: nextFingerprint,
+          seenIdentityKeys,
+          nextIdentityKeys: identityKeys,
+          attemptedFingerprintByAction,
+        });
+        const rejectedReasons = [...progression.reasons];
+        const scrollMoved = afterScroll.scrollTop > beforeScroll.scrollTop || afterScroll.scrollHeight > beforeScroll.scrollHeight;
+        if (!scrollMoved && !afterScroll.loadingDetected) rejectedReasons.push("scroll position and height did not advance");
+        const accepted = progression.accepted && scrollMoved;
+        scrollTrace.push({
+          attempt: attempt + 1,
+          accepted,
+          identityCount: identityKeys.size,
+          newIdentityCount: progression.newIdentityKeys.length,
+          cardCount: afterScroll.cardCount,
+          scrollTop: afterScroll.scrollTop,
+          scrollHeight: afterScroll.scrollHeight,
+          loadingDetected: afterScroll.loadingDetected,
+          fingerprintChanged: previousFingerprint !== nextFingerprint,
+          rejectedReasons,
+        });
+        actionTrace.push({
+          actionId,
+          effect: "infinite_scroll",
+          accepted,
+          newIdentityCount: progression.newIdentityKeys.length,
+          rejectedReasons,
+        });
+        attemptedFingerprintByAction.set(actionId, previousFingerprint);
+        if (!accepted) {
+          scrollNoGrowth += 1;
+          if (!couldMove && !afterScroll.loadingDetected && !scrollMoved) break;
+          continue;
+        }
+        scrollNoGrowth = 0;
+        identityKeys.forEach((key) => seenIdentityKeys.add(key));
+        previousFingerprint = nextFingerprint;
+        actionsExecuted += 1;
+        browserPages += 1;
+        identitiesAfterActions.push(identityKeys.size);
+        identityGrowthAfterActions.push(progression.newIdentityKeys.length);
+      }
     },
     { timeoutMs: 25_000, headless: true },
   );
@@ -767,6 +899,7 @@ async function observeBrowserArtifacts(
     identitiesAfterActions,
     identityGrowthAfterActions,
     actionTrace,
+    scrollTrace,
     ...(observation ? { browserObservation: observation } : {}),
   };
 }
@@ -811,6 +944,7 @@ export async function acquireGenericArtifacts(
           identitiesAfterActions: browserFallback.identitiesAfterActions,
           identityGrowthAfterActions: browserFallback.identityGrowthAfterActions,
           actionTrace: browserFallback.actionTrace,
+          scrollTrace: browserFallback.scrollTrace,
           ...(browserFallback.browserObservation ? { browserObservation: browserFallback.browserObservation } : {}),
           blockedReason: browserFallback.browserObservation?.blockedState,
         },
@@ -850,11 +984,27 @@ export async function acquireGenericArtifacts(
   let identitiesAfterActions: number[] = [];
   let identityGrowthAfterActions: number[] = [];
   let actionTrace: NonNullable<AcquisitionDiagnostics["actionTrace"]> = [];
+  let scrollTrace: NonNullable<AcquisitionDiagnostics["scrollTrace"]> = [];
   let browserObservation: BrowserObservation | undefined;
 
   attemptedLayers.push("framework state");
-  if (!staticArtifactsSufficient(artifacts) || (experiment.maxBrowserActions ?? 0) > 0) {
-    attemptedLayers.push(staticArtifactsSufficient(artifacts) ? "browser action probe" : "browser observation");
+  attemptedLayers.push("generic page-param pagination");
+  const paginated = await acquirePageParamArtifacts({
+    experiment,
+    artifacts,
+    nextArtifactIndex: artifacts.length,
+  });
+  if (paginated.artifacts.length > 0) {
+    artifacts = artifacts.concat(paginated.artifacts).slice(0, experiment.maxRequests);
+  } else if (paginated.stopReason === "no_page_param") {
+    skippedLayers.push("page-param pagination skipped because no safe numeric page parameter was observed");
+  }
+  requestsMade += paginated.requestsMade;
+  pagesRequested = Math.max(pagesRequested, paginated.pagesRequested);
+  paginationStopReason = paginated.stopReason;
+
+  if (!staticArtifactsSufficient(artifacts)) {
+    attemptedLayers.push("browser observation");
     const observed = await observeBrowserArtifacts(experiment, artifacts.length).catch((error) => {
       skippedLayers.push(
         `browser observation failed: ${error instanceof Error ? error.message.split("\n")[0] : "unknown error"}`,
@@ -870,27 +1020,26 @@ export async function acquireGenericArtifacts(
       identitiesAfterActions = identitiesAfterActions.concat(observed.identitiesAfterActions);
       identityGrowthAfterActions = identityGrowthAfterActions.concat(observed.identityGrowthAfterActions);
       actionTrace = actionTrace.concat(observed.actionTrace);
+      scrollTrace = scrollTrace.concat(observed.scrollTrace);
       browserObservation = observed.browserObservation;
       if (observed.skippedReason) skippedLayers.push(observed.skippedReason);
+      if (paginationStopReason !== "page_cap" && paginationStopReason !== "request_cap") {
+        const browserPaginated = await acquirePageParamArtifacts({
+          experiment,
+          artifacts,
+          nextArtifactIndex: artifacts.length,
+        });
+        if (browserPaginated.artifacts.length > 0) {
+          artifacts = artifacts.concat(browserPaginated.artifacts).slice(0, experiment.maxRequests);
+        }
+        requestsMade += browserPaginated.requestsMade;
+        pagesRequested = Math.max(pagesRequested, browserPaginated.pagesRequested);
+        paginationStopReason = browserPaginated.stopReason;
+      }
     }
   } else {
     skippedLayers.push("browser observation skipped because static artifacts were sufficient");
   }
-
-  attemptedLayers.push("generic page-param pagination");
-  const paginated = await acquirePageParamArtifacts({
-    experiment,
-    artifacts,
-    nextArtifactIndex: artifacts.length,
-  });
-  if (paginated.artifacts.length > 0) {
-    artifacts = artifacts.concat(paginated.artifacts).slice(0, experiment.maxRequests);
-  } else if (paginated.stopReason === "no_page_param") {
-    skippedLayers.push("page-param pagination skipped because no safe numeric page parameter was observed");
-  }
-  requestsMade += paginated.requestsMade;
-  pagesRequested = Math.max(pagesRequested, paginated.pagesRequested);
-  paginationStopReason = paginated.stopReason;
 
   return {
     artifacts,
@@ -910,6 +1059,7 @@ export async function acquireGenericArtifacts(
       identitiesAfterActions,
       identityGrowthAfterActions,
       actionTrace,
+      scrollTrace,
       ...(browserObservation ? { browserObservation } : {}),
       ...(browserObservation?.blockedState ? { blockedReason: browserObservation.blockedState } : {}),
       bytesInspected: artifacts.reduce((total, artifact) => total + artifact.byteSize, 0),

@@ -99,6 +99,41 @@ describe("phase 5.6 coverage and pagination correctness", () => {
     assert.equal(estimate.confidence, "strong");
   });
 
+  it("does not treat rejected scroll probes with extra visible cards as complete", () => {
+    const leads = Array.from({ length: 18 }, (_item, index) => lead(`Event ${index}`, index));
+    const estimate = estimateAvailableEventCount({
+      artifacts: [],
+      leads,
+      diagnostics: {
+        finalUrl: experiment.inputUrl,
+        attemptedLayers: [],
+        skippedLayers: [],
+        requestsMade: 1,
+        browserPages: 2,
+        bytesInspected: 1_000,
+        rssLinks: [],
+        sitemapLinks: [],
+        paginationStopReason: "no_growth",
+        scrollTrace: [{
+          attempt: 1,
+          accepted: false,
+          identityCount: 32,
+          newIdentityCount: 0,
+          cardCount: 59,
+          scrollTop: 545,
+          scrollHeight: 920,
+          loadingDetected: false,
+          fingerprintChanged: false,
+          rejectedReasons: ["no new stable identities appeared"],
+        }],
+      },
+    });
+
+    assert.equal(estimate.estimatedAvailableRecords, 59);
+    assert.equal(estimate.method, "visible_count");
+    assert.ok(estimate.contradictions.some((message) => /visible_count=59.*pagination_derived=18/.test(message)));
+  });
+
   it("uses visible event-like table rows as a live source-total signal", () => {
     const rows = Array.from({ length: 25 }, (_item, index) =>
       `<tr><td>Hackathon ${index}</td><td>Online</td><td>Aug ${index + 1}, 2026</td></tr>`,

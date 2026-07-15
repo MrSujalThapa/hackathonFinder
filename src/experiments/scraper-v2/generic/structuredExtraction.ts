@@ -527,6 +527,9 @@ export function formatGenericStructuredExtractionResult(
   if (result.acquisition.actionTrace?.length) {
     lines.push(`  action trace              ${result.acquisition.actionTrace.map((item) => `${item.actionId}/${item.effect}/${item.accepted ? "accepted" : "rejected"}/+${item.newIdentityCount}${item.rejectedReasons.length ? `(${item.rejectedReasons.join("|")})` : ""}`).join("; ")}`);
   }
+  if (result.acquisition.scrollTrace?.length) {
+    lines.push(`  scroll trace              ${result.acquisition.scrollTrace.map((item) => `#${item.attempt}/${item.accepted ? "accepted" : "rejected"}/ids=${item.identityCount}/+${item.newIdentityCount}/cards=${item.cardCount}/top=${item.scrollTop}/height=${item.scrollHeight}/loading=${item.loadingDetected ? "yes" : "no"}${item.rejectedReasons.length ? `(${item.rejectedReasons.join("|")})` : ""}`).join("; ")}`);
+  }
   lines.push(`  checkpoint loaded         ${result.acquisition.checkpointLoaded ? "yes" : "no"}`);
   lines.push(`  checkpoint saved          ${result.acquisition.checkpointSaved ? "yes" : "no"}`);
   lines.push(`  browser pages             ${result.acquisition.browserPages}`);

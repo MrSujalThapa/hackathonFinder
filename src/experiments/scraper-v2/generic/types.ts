@@ -217,6 +217,18 @@ export type AcquisitionDiagnostics = {
     newIdentityCount: number;
     rejectedReasons: string[];
   }>;
+  scrollTrace?: Array<{
+    attempt: number;
+    accepted: boolean;
+    identityCount: number;
+    newIdentityCount: number;
+    cardCount: number;
+    scrollTop: number;
+    scrollHeight: number;
+    loadingDetected: boolean;
+    fingerprintChanged: boolean;
+    rejectedReasons: string[];
+  }>;
   browserObservation?: {
     listenersAttachedBeforeNavigation: boolean;
     initialDocumentUrl?: string;

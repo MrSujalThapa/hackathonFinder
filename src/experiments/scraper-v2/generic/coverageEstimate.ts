@@ -131,6 +131,22 @@ function collectPaginationEstimate(input: {
   diagnostics?: AcquisitionDiagnostics;
 }): CandidateEstimate[] {
   const out: CandidateEstimate[] = [];
+  const maxScrollCardCount = Math.max(0, ...(input.diagnostics?.scrollTrace ?? []).map((item) => item.cardCount));
+  const acceptedActions = (input.diagnostics?.actionTrace ?? []).filter((item) => item.accepted).length;
+  if (
+    input.diagnostics?.paginationStopReason === "no_growth" &&
+    acceptedActions < 2 &&
+    maxScrollCardCount >= input.observedValidEvents + 10
+  ) {
+    out.push({
+      estimatedAvailableRecords: maxScrollCardCount,
+      method: "visible_count",
+      confidence: "inferred",
+      evidence: [`browser scroll probe observed ${maxScrollCardCount} event-like visible containers`],
+      contradictions: [],
+      priority: 2,
+    });
+  }
   if (input.diagnostics?.paginationStopReason === "no_growth" && input.observedValidEvents > 0) {
     out.push({
       estimatedAvailableRecords: input.observedValidEvents,
