@@ -232,6 +232,7 @@ function toCard(record: MockRecord): CandidateCard {
     name: record.name,
     summary: record.summary,
     source: record.source,
+    sourceIds: record.sourceIds,
     officialUrl: record.officialUrl,
     applyUrl: record.applyUrl,
     socialUrl: record.socialUrl,
@@ -278,6 +279,10 @@ function sortRecords(
   return copy;
 }
 
+function recordHasSource(record: MockRecord, source: string): boolean {
+  return record.source === source || Boolean(record.sourceIds?.[source]);
+}
+
 export function createMockCandidateRepository(): CandidateRepository {
   return {
     async listCandidates(params: ListCandidatesParams = {}): Promise<ListCandidatesResult> {
@@ -286,8 +291,13 @@ export function createMockCandidateRepository(): CandidateRepository {
       if (params.status) {
         records = records.filter((item) => item.status === params.status);
       }
+      if (params.statuses && params.statuses.length > 0) {
+        const statuses = new Set(params.statuses);
+        records = records.filter((item) => statuses.has(item.status));
+      }
       if (params.source) {
-        records = records.filter((item) => item.source === params.source);
+        const source = params.source;
+        records = records.filter((item) => recordHasSource(item, source));
       }
       if (params.q) {
         const needle = params.q.toLowerCase();
@@ -315,6 +325,18 @@ export function createMockCandidateRepository(): CandidateRepository {
         "found_at",
       );
       return records.slice(0, capped).map(toCard);
+    },
+
+    async listPendingSources(): Promise<string[]> {
+      const sources = new Set<string>();
+      for (const record of getStore().values()) {
+        if (record.status !== "NEW" && record.status !== "NEEDS_REVIEW") continue;
+        sources.add(record.source);
+        for (const key of Object.keys(record.sourceIds ?? {})) {
+          sources.add(key);
+        }
+      }
+      return [...sources].sort();
     },
 
     async getCandidate(id: string) {

@@ -4,16 +4,18 @@
  * Requires:
  * - app server already running
  * - owner auth configured
- * - SMOKE_OWNER_PASSWORD set
+ * - APP_PASSWORD set in the environment or .env.local
  * - preferably USE_MOCK_CANDIDATES=true for non-destructive local smoke
  */
 import { chromium } from "playwright";
+import { loadLocalEnv } from "../src/cli/loadEnv";
 
 async function main(): Promise<void> {
+  loadLocalEnv();
   const baseUrl = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
-  const password = process.env.SMOKE_OWNER_PASSWORD;
+  const password = process.env.APP_PASSWORD;
   if (!password) {
-    throw new Error("Set SMOKE_OWNER_PASSWORD for smoke:prod.");
+    throw new Error("Set APP_PASSWORD for smoke:prod.");
   }
 
   const browser = await chromium.launch({ headless: true });
@@ -36,7 +38,9 @@ async function main(): Promise<void> {
     const name = (await card.locator("h2").first().textContent())?.trim();
     if (!name) throw new Error("Queue card missing candidate name");
 
-    await page.getByRole("button", { name: "Approve" }).click();
+    // Queue is swipe/keyboard-first — no visible Approve button row.
+    await card.focus().catch(() => undefined);
+    await page.keyboard.press("ArrowRight");
     let found = false;
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const approvedApi = await page.request.get(

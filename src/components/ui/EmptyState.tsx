@@ -7,14 +7,11 @@ type EmptyStateProps = {
 
 export function EmptyState({ title, description, hint, action }: EmptyStateProps) {
   return (
-    <div
-      className="hf-card flex w-full max-w-md flex-col items-center border-dashed px-6 py-12 text-center"
-      role="status"
-    >
+    <div className="w-full max-w-xl py-8 text-left" role="status">
       <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
       <p className="mt-2 text-sm leading-relaxed text-muted">{description}</p>
       {hint ? (
-        <pre className="mt-4 w-full overflow-x-auto rounded-[var(--radius-lg)] bg-inset px-3 py-2 text-left text-[11px] text-sky-200/90">
+        <pre className="mt-4 w-full overflow-x-auto rounded-[var(--radius-md)] bg-inset px-3 py-2 text-left text-[11px] text-sky-200/90">
           {hint}
         </pre>
       ) : null}

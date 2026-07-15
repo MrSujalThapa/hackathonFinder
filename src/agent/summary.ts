@@ -15,7 +15,10 @@ import type {
 import type { EvidenceType } from "@/lib/supabase/database.types";
 import type { AddEvidenceInput } from "@/core/candidates/types";
 import { normalizeDatePart } from "@/core/dedupe";
+import { applicationDeadlineFor, eventEndFor, eventStartFor } from "@/core/dates";
 import { deterministicCandidateSummary } from "@/core/candidateSummary";
+import { formatPerformanceSummary } from "@/discovery/performance";
+import { formatPersistenceShadowSummary } from "@/discovery/persistence/comparePersistenceResults";
 
 export function mapEvidenceType(type: HackathonEvidence["type"]): EvidenceType {
   switch (type) {
@@ -45,8 +48,8 @@ export function eventToUpsertInput(
     city: event.city,
     country: event.country,
     mode: event.mode,
-    startDate: event.startDate,
-    deadline: event.deadline,
+    startDate: eventStartFor(event),
+    deadline: applicationDeadlineFor(event),
     sourceIds: event.sourceIds,
   });
 
@@ -61,9 +64,9 @@ export function eventToUpsertInput(
     officialUrl: event.officialUrl ?? null,
     applyUrl: event.applyUrl ?? null,
     socialUrl: event.socialUrl ?? null,
-    startDate: event.startDate ?? null,
-    endDate: event.endDate ?? null,
-    deadline: event.deadline ?? null,
+    startDate: eventStartFor(event) ?? null,
+    endDate: eventEndFor(event) ?? null,
+    deadline: applicationDeadlineFor(event) ?? null,
     location: event.location ?? null,
     mode: event.mode ?? null,
     city: event.city ?? null,
@@ -103,8 +106,9 @@ export function deadlineStateFor(
   event: HackathonEvent,
   now = new Date(),
 ): AcceptedCandidate["deadlineState"] {
-  const deadline = normalizeDatePart(event.deadline);
-  if (!deadline) return event.deadline ? "unclear" : "missing";
+  const applicationDeadline = applicationDeadlineFor(event);
+  const deadline = normalizeDatePart(applicationDeadline);
+  if (!deadline) return applicationDeadline ? "unclear" : "missing";
   const today = now.toISOString().slice(0, 10);
   return deadline < today ? "closed" : "open";
 }
@@ -112,18 +116,50 @@ export function deadlineStateFor(
 export function buildAcceptedSummary(
   accepted: AcceptedCandidate[],
 ): AgentRunSummary["acceptedCandidates"] {
-  return accepted.map((item) => ({
-    name: item.event.name,
-    score: item.score.score,
-    location: formatLocation(item.event),
-    deadline: item.event.deadline ?? item.event.startDate ?? "unclear",
-    status: item.status,
-    classification: item.classification,
-    sourceAuthority: item.sourceAuthority ?? sourceAuthority(item.event.source),
-    deadlineState: item.deadlineState,
-    hasOfficialUrl: item.hasOfficialUrl ?? Boolean(item.event.officialUrl),
-    hasApplyUrl: item.hasApplyUrl ?? Boolean(item.event.applyUrl),
-  }));
+  return accepted.map((item) => {
+    const applicationDeadline = applicationDeadlineFor(item.event);
+    if (applicationDeadline && item.deadlineState === "missing") {
+      throw new Error(
+        `Contradictory deadline state for ${item.event.name}: concrete application deadline with missing deadline state.`,
+      );
+    }
+
+    const evidenceBits = [
+      item.hasOfficialUrl || item.event.officialUrl ? "Official listing" : null,
+      item.event.parsedDateEvidence?.some(
+        (entry) => entry.sourceType === "schedule" || entry.sourceType === "detail",
+      )
+        ? "official dates page"
+        : item.event.displayedDateRange || item.event.submissionDeadline
+          ? "visible schedule evidence"
+          : null,
+    ].filter(Boolean);
+
+    return {
+      name: item.event.name,
+      score: item.score.score,
+      location: formatLocation(item.event),
+      deadline: applicationDeadline ?? "Unknown",
+      eventStartDate: eventStartFor(item.event),
+      eventEndDate: eventEndFor(item.event),
+      applicationDeadline,
+      submissionDeadline: item.event.submissionDeadline,
+      judgingStartDate: item.event.judgingStartDate,
+      judgingEndDate: item.event.judgingEndDate,
+      displayedDateRange: item.event.displayedDateRange,
+      participationMode: item.event.eventLocation?.mode ?? item.event.mode,
+      eligibility: item.event.eligibility,
+      themes: item.event.themes,
+      source: item.event.source,
+      status: item.status,
+      classification: item.classification,
+      sourceAuthority: item.sourceAuthority ?? sourceAuthority(item.event.source),
+      deadlineState: item.deadlineState,
+      hasOfficialUrl: item.hasOfficialUrl ?? Boolean(item.event.officialUrl),
+      hasApplyUrl: item.hasApplyUrl ?? Boolean(item.event.applyUrl),
+      evidenceSummary: evidenceBits.join(" + ") || "Listing evidence",
+    };
+  });
 }
 
 export function emptyQualityStats(): DiscoveryQualityStats {
@@ -144,9 +180,9 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   console.log("========================");
   console.log(`Raw command: ${summary.rawCommand}`);
   if (summary.dryRun) {
-    console.log("[DRY RUN — NO DATABASE CHANGES]");
+    console.log("[DRY RUN - NO DATABASE CHANGES]");
   } else {
-    console.log("[LIVE MODE — WRITING TO SUPABASE]");
+    console.log("[LIVE MODE - WRITING TO SUPABASE]");
   }
   console.log("");
 
@@ -213,6 +249,30 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   console.log(`- duration: ${summary.durationMs}ms`);
   console.log("");
 
+  console.log("Collection:");
+  console.log(`- raw leads: ${summary.rawLeads}`);
+  console.log(`- duplicate merges: ${summary.crossSourceMerges}`);
+  console.log(`- unique events: ${summary.uniqueLeads}`);
+  console.log("");
+
+  console.log("Review:");
+  console.log(`- ready for queue: ${summary.accepted - summary.needsReview}`);
+  console.log(`- needs human review: ${summary.needsReview}`);
+  console.log(`- invalid rejected: ${summary.rejected}`);
+  console.log("");
+
+  console.log("Persistence:");
+  if (summary.dryRun) {
+    console.log(`- would create: ${summary.wouldCreate}`);
+    console.log(`- would update: ${summary.wouldUpdate}`);
+    console.log(`- queue-visible: ${summary.wouldCreate + summary.wouldUpdate}`);
+  } else {
+    console.log(`- created: ${summary.created}`);
+    console.log(`- updated: ${summary.updated}`);
+    console.log(`- queue-visible: ${summary.created + summary.updated}`);
+  }
+  console.log("");
+
   console.log("Quality filters:");
   console.log(`- individual events: ${summary.quality.individualEvents}`);
   console.log(`- directories filtered: ${summary.quality.directoriesFiltered}`);
@@ -243,11 +303,24 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   }
 
   if (summary.sourceStats.length > 0) {
-    console.log("Source stats:");
+    console.log("Sources:");
     for (const stats of summary.sourceStats) {
-      console.log(
-        `- ${stats.source}: leads ${stats.leadsFound}, accepted ${stats.accepted}, rejected ${stats.rejected}, duration ${stats.durationMs}ms`,
-      );
+      const outcome =
+        stats.outcome === "degraded"
+          ? "degraded"
+          : stats.outcome === "failed"
+            ? "failed"
+            : stats.outcome === "auth_required"
+              ? "auth required"
+              : stats.outcome === "skipped"
+                ? "skipped"
+                : "";
+      console.log(`- ${stats.source}:`);
+      console.log(`  discovered: ${stats.leadsFound}`);
+      console.log(`  queue-ready: ${stats.queueReady}`);
+      console.log(`  needs review: ${stats.needsReview}`);
+      console.log(`  invalid rejected: ${stats.invalidRejected}`);
+      if (outcome) console.log(`  outcome: ${outcome}`);
       for (const warning of stats.warnings) {
         console.log(`  warning: ${warning}`);
       }
@@ -255,37 +328,65 @@ export function printAgentSummary(summary: AgentRunSummary): void {
         console.log(`  error: ${error}`);
       }
     }
+    console.log(
+      `- executed sources: ${summary.sourceAccounting.executedSources.join(", ") || "(none)"}`,
+    );
+    console.log(
+      `- skipped sources: ${summary.sourceAccounting.skippedSources.join(", ") || "(none)"}`,
+    );
+    console.log(
+      `- failed sources: ${summary.sourceAccounting.failedSources.join(", ") || "(none)"}`,
+    );
+    console.log(
+      `- degraded sources: ${summary.sourceAccounting.degradedSources.join(", ") || "(none)"}`,
+    );
+    console.log(
+      `- auth-required sources: ${summary.sourceAccounting.authRequiredSources.join(", ") || "(none)"}`,
+    );
     console.log("");
   }
 
   if (summary.acceptedCandidates.length > 0) {
     console.log("Accepted:");
     summary.acceptedCandidates.forEach((candidate, index) => {
-      const base = `${index + 1}. ${candidate.name} — score ${candidate.score} — ${candidate.location} — deadline ${candidate.deadline}`;
-      console.log(base);
+      const eventDates = candidate.eventStartDate
+        ? candidate.eventEndDate && candidate.eventEndDate !== candidate.eventStartDate
+          ? `${candidate.eventStartDate} to ${candidate.eventEndDate}`
+          : candidate.eventStartDate
+        : "Unknown";
+      console.log(`${index + 1}. ${candidate.name} - score ${candidate.score}`);
+      console.log(`   Event: ${eventDates}`);
+      console.log(`   Applications close: ${candidate.applicationDeadline ?? "Unknown"}`);
+      if (candidate.submissionDeadline) {
+        console.log(`   Submission deadline: ${candidate.submissionDeadline}`);
+      }
+      console.log(`   Location: ${candidate.location}`);
+      console.log(`   Mode: ${candidate.participationMode ?? "unknown"}`);
+      console.log(`   Eligibility: ${candidate.eligibility ?? "Unknown"}`);
+      console.log(`   Status: ${candidate.status}`);
+      console.log(`   Source: ${candidate.source ?? "unknown"}`);
       if (summary.verbose) {
         console.log(
           `   status=${candidate.status} classification=${candidate.classification ?? "n/a"} authority=${candidate.sourceAuthority ?? "n/a"} deadlineState=${candidate.deadlineState ?? "n/a"} official=${candidate.hasOfficialUrl ? "yes" : "no"} apply=${candidate.hasApplyUrl ? "yes" : "no"}`,
         );
       } else {
         console.log(
-          `   ${candidate.classification ?? "EVENT"} · deadline ${candidate.deadlineState ?? "n/a"} · apply ${candidate.hasApplyUrl ? "yes" : "no"}`,
+          `   ${candidate.classification ?? "EVENT"} - applications ${candidate.deadlineState ?? "n/a"} - apply ${candidate.hasApplyUrl ? "yes" : "no"}`,
         );
       }
     });
     console.log("");
   }
-
   if (summary.rejectedCandidates.length > 0) {
     console.log("Rejected:");
     const rejected = summary.verbose
       ? summary.rejectedCandidates
       : summary.rejectedCandidates.slice(0, 25);
     for (const item of rejected) {
-      console.log(`- ${item.name} — ${item.reason}`);
+      console.log(`- ${item.name} - ${item.reason}`);
     }
     if (!summary.verbose && summary.rejectedCandidates.length > 25) {
-      console.log(`- … ${summary.rejectedCandidates.length - 25} more (use --verbose)`);
+      console.log(`- ... ${summary.rejectedCandidates.length - 25} more (use --verbose)`);
     }
     console.log("");
   }
@@ -302,6 +403,20 @@ export function printAgentSummary(summary: AgentRunSummary): void {
     console.log("Errors:");
     for (const error of summary.errors) {
       console.log(`- ${error}`);
+    }
+    console.log("");
+  }
+
+  if (summary.performance) {
+    for (const line of formatPerformanceSummary(summary.performance)) {
+      console.log(line);
+    }
+    console.log("");
+  }
+
+  if (summary.persistenceShadow) {
+    for (const line of formatPersistenceShadowSummary(summary.persistenceShadow)) {
+      console.log(line);
     }
     console.log("");
   }
@@ -339,6 +454,13 @@ export function emptySummary(
     acceptedCandidates: [],
     rejectedCandidates: [],
     sourceStats: [],
+    sourceAccounting: {
+      executedSources: [],
+      skippedSources: [],
+      failedSources: [],
+      degradedSources: [],
+      authRequiredSources: [],
+    },
     warnings: [],
     errors: [],
   };

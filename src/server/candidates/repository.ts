@@ -20,16 +20,25 @@ import {
   mergeCandidateRows,
 } from "@/server/candidates/mappers";
 
-function decodeCursor(cursor: string): { foundAt: string; id: string } {
-  const [foundAt, id] = Buffer.from(cursor, "base64url").toString("utf8").split("|");
+function decodeCursor(cursor: string): { score?: number; foundAt: string; id: string } {
+  const parts = Buffer.from(cursor, "base64url").toString("utf8").split("|");
+  if (parts.length === 3) {
+    const [scoreRaw, foundAt, id] = parts;
+    const score = Number(scoreRaw);
+    if (!Number.isFinite(score) || !foundAt || !id) {
+      throw new Error("Invalid cursor.");
+    }
+    return { score, foundAt, id };
+  }
+  const [foundAt, id] = parts;
   if (!foundAt || !id) {
     throw new Error("Invalid cursor.");
   }
   return { foundAt, id };
 }
 
-function encodeCursor(foundAt: string, id: string): string {
-  return Buffer.from(`${foundAt}|${id}`, "utf8").toString("base64url");
+function encodeCursor(row: { score: number | null; found_at: string; id: string }): string {
+  return Buffer.from(`${row.score ?? 0}|${row.found_at}|${row.id}`, "utf8").toString("base64url");
 }
 
 /** Columns required for CandidateCard mapping — avoids pulling description/fingerprint blobs. */
@@ -40,6 +49,7 @@ const CANDIDATE_CARD_SELECT = [
   "name",
   "summary",
   "source",
+  "source_ids",
   "official_url",
   "apply_url",
   "social_url",
@@ -61,6 +71,12 @@ const CANDIDATE_CARD_SELECT = [
   "sheet_row_id",
   "sheet_appended_at",
 ].join(",");
+
+export function sourceFilterClause(source: string): string {
+  // source is validated by the API schema before it reaches the repository.
+  const sourceIdKey = source.replaceAll('"', '\\"');
+  return `source.eq.${source},source_ids->>"${sourceIdKey}".not.is.null`;
+}
 
 export async function listCandidates(
   params: ListCandidatesParams = {},
@@ -94,8 +110,12 @@ export async function listCandidates(
     query = query.eq("status", params.status);
   }
 
+  if (params.statuses && params.statuses.length > 0) {
+    query = query.in("status", params.statuses);
+  }
+
   if (params.source) {
-    query = query.eq("source", params.source);
+    query = query.or(sourceFilterClause(params.source));
   }
 
   if (params.q) {
@@ -105,16 +125,28 @@ export async function listCandidates(
   if (params.offset != null && params.offset > 0) {
     query = query.range(params.offset, params.offset + limit);
   } else if (params.cursor) {
-    const { foundAt, id } = decodeCursor(params.cursor);
-    query = query.or(
-      `found_at.lt.${foundAt},and(found_at.eq.${foundAt},id.lt.${id})`,
-    );
+    const { score, foundAt, id } = decodeCursor(params.cursor);
+    if (sort === "score" && typeof score === "number") {
+      query = query.or(
+        `score.lt.${score},and(score.eq.${score},found_at.lt.${foundAt}),and(score.eq.${score},found_at.eq.${foundAt},id.lt.${id})`,
+      );
+    } else {
+      query = query.or(
+        `found_at.lt.${foundAt},and(found_at.eq.${foundAt},id.lt.${id})`,
+      );
+    }
   }
 
   const { data, error, count } = await query;
 
   if (error) {
-    throw new Error(`Failed to list candidates: ${error.message}`);
+    const queryError = new Error(`Failed to list candidates: ${error.message}`);
+    queryError.name = "CandidateQueryError";
+    Object.assign(queryError, {
+      dbCode: error.code,
+      dbMessage: error.message,
+    });
+    throw queryError;
   }
 
   type CandidateRow = Database["public"]["Tables"]["candidates"]["Row"];
@@ -127,9 +159,33 @@ export async function listCandidates(
   return {
     candidates,
     nextCursor:
-      hasMore && last ? encodeCursor(last.found_at, last.id) : undefined,
+      hasMore && last ? encodeCursor(last) : undefined,
     total: count ?? undefined,
   };
+}
+
+export async function listPendingSources(): Promise<string[]> {
+  const supabase = createServiceSupabaseClient();
+  const { data, error } = await supabase
+    .from("candidates")
+    .select("source,source_ids")
+    .in("status", ["NEW", "NEEDS_REVIEW"]);
+
+  if (error) {
+    throw new Error(`Failed to list pending sources: ${error.message}`);
+  }
+
+  const sources = new Set<string>();
+  for (const row of data ?? []) {
+    if (row.source) sources.add(row.source);
+    const sourceIds = row.source_ids;
+    if (sourceIds && typeof sourceIds === "object" && !Array.isArray(sourceIds)) {
+      for (const key of Object.keys(sourceIds)) {
+        if (key) sources.add(key);
+      }
+    }
+  }
+  return [...sources].sort();
 }
 
 export async function getCandidate(id: string) {

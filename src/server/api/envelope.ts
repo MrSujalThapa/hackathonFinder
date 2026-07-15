@@ -12,14 +12,55 @@ export const candidateStatusSchema = z.enum([
   "ERROR",
 ]);
 
+const BUILTIN_DISCOVERY_SOURCE_IDS = new Set([
+  "mlh",
+  "web",
+  "hacklist",
+  "devpost",
+  "luma",
+  "hakku",
+  "mock",
+]);
+
+export function isValidDiscoverySourceId(value: string): boolean {
+  if (value.length > 96 || /\s|[\\/]|[\u0000-\u001f\u007f]/.test(value)) return false;
+  if (BUILTIN_DISCOVERY_SOURCE_IDS.has(value)) return true;
+  return /^custom:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
+}
+
 export const listCandidatesQuerySchema = z.object({
   status: candidateStatusSchema.optional(),
+  statuses: z
+    .string()
+    .optional()
+    .transform((value, ctx) => {
+      if (!value?.trim()) return undefined;
+      const parsed: CandidateStatus[] = [];
+      for (const raw of value.split(",")) {
+        const status = candidateStatusSchema.safeParse(raw.trim());
+        if (!status.success) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Invalid candidate status: ${raw}`,
+          });
+          return z.NEVER;
+        }
+        parsed.push(status.data);
+      }
+      return [...new Set(parsed)];
+    }),
   limit: z.coerce.number().int().min(1).max(50).optional().default(20),
   cursor: z.string().min(1).optional(),
   offset: z.coerce.number().int().min(0).optional(),
-  source: z.string().min(1).optional(),
+  source: z.string().min(1).refine(isValidDiscoverySourceId, "Invalid source id").optional(),
   sort: z.enum(["score", "found_at", "name"]).optional().default("score"),
   q: z.string().optional(),
+  requestPurpose: z
+    .string()
+    .trim()
+    .max(64)
+    .regex(/^[a-z0-9_-]+$/i, "Invalid request purpose")
+    .optional(),
 });
 
 export const candidateIdSchema = z.string().uuid("Invalid candidate id");
@@ -30,6 +71,7 @@ export const decisionBodySchema = z.object({
 
 export type ApiErrorCode =
   | "VALIDATION_ERROR"
+  | "CANDIDATE_QUERY_FAILED"
   | "CANDIDATE_NOT_FOUND"
   | "INTERNAL_ERROR"
   | "MOCK_MODE_REQUIRED"

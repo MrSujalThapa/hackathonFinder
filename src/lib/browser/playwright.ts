@@ -10,6 +10,22 @@ export type WithPlaywrightOptions = {
   headless?: boolean;
 };
 
+export {
+  withPersistentPlaywright,
+  type PersistentPlaywrightSession,
+  type WithPersistentPlaywrightOptions,
+} from "@/lib/browser/persistent";
+
+export {
+  resolveBrowserProfileRoot,
+  resolveHakkuProfileDir,
+  resolveHakkuProfileName,
+  resolveSourceProfileDir,
+  redactProfilePaths,
+  DEFAULT_BROWSER_PROFILE_ROOT,
+  DEFAULT_HAKKU_PROFILE_NAME,
+} from "@/lib/browser/profilePaths";
+
 export function isPlaywrightBrowserMissingError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const message = error.message.toLowerCase();
@@ -22,6 +38,17 @@ export function isPlaywrightBrowserMissingError(error: unknown): boolean {
 
 export function formatPlaywrightInstallHint(): string {
   return "Playwright Chromium is not installed. Run: npx playwright install chromium";
+}
+
+export function readHakkuBrowserHeadless(
+  env: NodeJS.ProcessEnv = process.env,
+  fallback = true,
+): boolean {
+  const raw = env.HAKKU_BROWSER_HEADLESS?.trim().toLowerCase();
+  if (!raw) return fallback;
+  if (["1", "true", "yes", "on"].includes(raw)) return true;
+  if (["0", "false", "no", "off"].includes(raw)) return false;
+  return fallback;
 }
 
 export async function withPlaywright<T>(

@@ -1,5 +1,6 @@
 import type { CandidateCard } from "@/core/candidates/types";
 import type { CandidateMode } from "@/lib/supabase/database.types";
+import { deriveEventTemporalStatus } from "@/core/dates";
 
 export function formatDateRange(
   start: string | null,
@@ -19,6 +20,24 @@ export function formatDate(value: string): string {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+export function formatTemporalStatus(candidate: CandidateCard): string {
+  const status = deriveEventTemporalStatus({
+    startDate: candidate.startDate,
+    endDate: candidate.endDate,
+    timezone: "UTC",
+  });
+  switch (status) {
+    case "UPCOMING":
+      return "Upcoming";
+    case "ONGOING":
+      return "Ongoing";
+    case "FINISHED":
+      return "Finished";
+    case "UNKNOWN":
+      return "Date unclear";
+  }
 }
 
 export function formatLocation(candidate: CandidateCard): string {
@@ -55,7 +74,21 @@ export function hostnameFromUrl(url: string | null): string | null {
 
 /** Display label for a candidate source slug (never mutate storage values). */
 export function formatSourceLabel(source: string): string {
-  switch (source.toLowerCase()) {
+  const normalized = source.toLowerCase();
+  if (/^custom:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalized)) {
+    const slug = source.slice("custom:".length);
+    const knownCustomLabels: Record<string, string> = {
+      hackathonmap: "Hackathon Map",
+      hackathonradar: "Hackathon Radar",
+    };
+    if (knownCustomLabels[slug]) return knownCustomLabels[slug];
+    return slug
+      .split(/[-_]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
+  switch (normalized) {
     case "mock":
       return "Mock";
     case "hacklist":

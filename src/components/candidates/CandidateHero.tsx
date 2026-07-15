@@ -1,32 +1,34 @@
 import type { CandidateCard } from "@/core/candidates/types";
 import { formatSourceLabel } from "@/lib/candidates/format";
+import { StatusStamp } from "@/components/blueprint/StatusStamp";
+import { SourceStamp } from "@/components/blueprint/SourceStamp";
 
-export function CandidateHero({ candidate }: { candidate: CandidateCard }) {
+/** Quiet status strip — drafting stamps, no decorative gradient hero. */
+export function CandidateHero({
+  candidate,
+  sourceLabels = {},
+}: {
+  candidate: CandidateCard;
+  sourceLabels?: Record<string, string>;
+}) {
+  const needsReview = candidate.status === "NEEDS_REVIEW";
+  const uniqueSourceIds = [
+    ...new Set([
+      candidate.source,
+      ...Object.keys(candidate.sourceIds ?? {}),
+    ].filter(Boolean)),
+  ];
   return (
-    <div
-      className="relative h-36 overflow-hidden sm:h-44"
-      style={{
-        background:
-          "linear-gradient(145deg, var(--hero-from) 0%, #0b1220 45%, var(--hero-to) 100%)",
-      }}
-    >
-      <div
-        className="absolute inset-0 opacity-40"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 20% 20%, rgba(56,189,248,0.35), transparent 45%), radial-gradient(circle at 80% 10%, rgba(34,197,94,0.2), transparent 40%)",
-        }}
-      />
-      <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-card to-transparent" />
-      <div className="absolute right-4 top-4">
-        <span className="rounded-full border border-white/12 bg-black/40 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/90">
-          {formatSourceLabel(candidate.source)}
-        </span>
-      </div>
-      <div className="absolute bottom-3 left-5 right-5">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
-          {candidate.status.replaceAll("_", " ")}
-        </p>
+    <div className="border-b border-border-subtle px-5 pb-3 pt-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusStamp tone={needsReview ? "warn" : "default"}>
+          {needsReview ? "Needs review" : candidate.status.replaceAll("_", " ")}
+        </StatusStamp>
+        {uniqueSourceIds.map((source) => (
+          <SourceStamp key={source}>
+            {sourceLabels[source] ?? formatSourceLabel(source)}
+          </SourceStamp>
+        ))}
       </div>
     </div>
   );

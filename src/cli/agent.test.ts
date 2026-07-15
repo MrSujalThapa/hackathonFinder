@@ -94,6 +94,19 @@ describe("parseAgentArgs", () => {
     assert.equal(options.maxAgentCalls, 5);
   });
 
+  it("parses review-policy flag", () => {
+    const options = parseAgentArgs([
+      "node",
+      "agent.ts",
+      "find upcoming hackathons",
+      "--",
+      "--review-policy=broad",
+      "--dry-run",
+    ]);
+
+    assert.equal(options.reviewPolicy, "broad");
+  });
+
   it("rejects simultaneous agent and deterministic flags", () => {
     assert.throws(
       () =>

@@ -1,0 +1,417 @@
+import type { AddActionInput } from "@/core/candidates/types";
+import { performance } from "node:perf_hooks";
+import type { Database } from "@/lib/supabase/database.types";
+import { createServiceSupabaseClient } from "@/lib/supabase/createServiceClient";
+import type {
+  CandidateInsert,
+  CandidateRow,
+  EvidenceCreate,
+  EvidenceRow,
+  EvidenceUpdate,
+  PersistencePlan,
+} from "@/discovery/persistence/persistencePlan";
+
+type CandidateActionInsert = Database["public"]["Tables"]["candidate_actions"]["Insert"];
+type CandidateUpdateRow = CandidateInsert & { id: string };
+type EvidenceUpdateRow = EvidenceUpdate["payload"] & {
+  id: string;
+  candidate_id: string;
+  type: EvidenceUpdate["type"];
+  url_key: string;
+};
+
+export type BatchPersistenceMetrics = {
+  databaseCalls: number;
+  chunks: Record<string, number>;
+  retries: number;
+  splitBatches: number;
+};
+
+export type BatchPersistenceChunkSizes = {
+  candidateLookup: number;
+  candidateWrite: number;
+  evidenceLookup: number;
+  evidenceWrite: number;
+  actionWrite: number;
+};
+
+export type BatchPersistenceRepositoryOptions = {
+  chunkSizes?: Partial<BatchPersistenceChunkSizes>;
+  maxSplitDepth?: number;
+};
+
+export type BatchPersistenceAdapter = {
+  selectCandidatesByFingerprints(fingerprints: string[]): Promise<CandidateRow[]>;
+  insertCandidates(rows: CandidateInsert[]): Promise<CandidateRow[]>;
+  upsertCandidateUpdates(rows: CandidateUpdateRow[]): Promise<CandidateRow[]>;
+  selectEvidenceByCandidateIds(candidateIds: string[]): Promise<EvidenceRow[]>;
+  insertEvidence(rows: EvidenceCreate["row"][]): Promise<EvidenceRow[]>;
+  upsertEvidenceUpdates(rows: EvidenceUpdateRow[]): Promise<EvidenceRow[]>;
+  insertActions(rows: CandidateActionInsert[]): Promise<unknown[]>;
+};
+
+export type BatchPersistenceWriteResult = {
+  createdCandidates: CandidateRow[];
+  updatedCandidates: CandidateRow[];
+  createdEvidence: EvidenceRow[];
+  updatedEvidence: EvidenceRow[];
+  createdActions: unknown[];
+  metrics: BatchPersistenceMetrics;
+  progress: BatchPersistenceWriteProgress;
+  timings: {
+    candidateCreatesMs: number;
+    candidateUpdatesMs: number;
+    evidenceCreatesMs: number;
+    evidenceUpdatesMs: number;
+    actionsMs: number;
+    totalMs: number;
+  };
+};
+
+export type BatchPersistenceWriteProgress = {
+  writesStarted: boolean;
+  candidateWritesCompleted: boolean;
+  evidenceWritesCompleted: boolean;
+  actionWritesCompleted: boolean;
+};
+
+export class BatchPersistenceWriteError extends Error {
+  constructor(
+    message: string,
+    readonly progress: BatchPersistenceWriteProgress,
+    readonly partialResult: Omit<BatchPersistenceWriteResult, "progress">,
+    readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = "BatchPersistenceWriteError";
+  }
+}
+
+const DEFAULT_CHUNK_SIZES: BatchPersistenceChunkSizes = {
+  candidateLookup: 250,
+  candidateWrite: 250,
+  evidenceLookup: 250,
+  evidenceWrite: 500,
+  actionWrite: 500,
+};
+
+function chunksOf<T>(items: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function emptyMetrics(): BatchPersistenceMetrics {
+  return {
+    databaseCalls: 0,
+    chunks: {},
+    retries: 0,
+    splitBatches: 0,
+  };
+}
+
+export class BatchPersistenceRepository {
+  private readonly chunkSizes: BatchPersistenceChunkSizes;
+  private readonly maxSplitDepth: number;
+
+  constructor(
+    private readonly adapter: BatchPersistenceAdapter,
+    options: BatchPersistenceRepositoryOptions = {},
+  ) {
+    this.chunkSizes = { ...DEFAULT_CHUNK_SIZES, ...(options.chunkSizes ?? {}) };
+    this.maxSplitDepth = options.maxSplitDepth ?? 3;
+  }
+
+  async fetchCandidatesByFingerprints(
+    fingerprints: string[],
+    metrics = emptyMetrics(),
+  ): Promise<{ rows: CandidateRow[]; metrics: BatchPersistenceMetrics }> {
+    const unique = [...new Set(fingerprints)].sort();
+    const rows: CandidateRow[] = [];
+    for (const chunk of chunksOf(unique, this.chunkSizes.candidateLookup)) {
+      metrics.databaseCalls += 1;
+      metrics.chunks.candidateLookup = (metrics.chunks.candidateLookup ?? 0) + 1;
+      rows.push(...(await this.adapter.selectCandidatesByFingerprints(chunk)));
+    }
+    return { rows, metrics };
+  }
+
+  async fetchEvidenceByCandidateIds(
+    candidateIds: string[],
+    metrics = emptyMetrics(),
+  ): Promise<{ rows: EvidenceRow[]; metrics: BatchPersistenceMetrics }> {
+    const unique = [...new Set(candidateIds)].sort();
+    const rows: EvidenceRow[] = [];
+    for (const chunk of chunksOf(unique, this.chunkSizes.evidenceLookup)) {
+      metrics.databaseCalls += 1;
+      metrics.chunks.evidenceLookup = (metrics.chunks.evidenceLookup ?? 0) + 1;
+      rows.push(...(await this.adapter.selectEvidenceByCandidateIds(chunk)));
+    }
+    return { rows, metrics };
+  }
+
+  estimateWriteCalls(plan: PersistencePlan): number {
+    return (
+      chunksOf(plan.candidateCreates, this.chunkSizes.candidateWrite).length +
+      chunksOf(plan.candidateUpdates, this.chunkSizes.candidateWrite).length +
+      chunksOf(plan.evidenceCreates, this.chunkSizes.evidenceWrite).length +
+      chunksOf(plan.evidenceUpdates, this.chunkSizes.evidenceWrite).length +
+      chunksOf(plan.actionsToCreate, this.chunkSizes.actionWrite).length
+    );
+  }
+
+  async writePlan(plan: PersistencePlan): Promise<BatchPersistenceWriteResult> {
+    const totalStartedAt = performance.now();
+    const metrics = emptyMetrics();
+    const progress: BatchPersistenceWriteProgress = {
+      writesStarted: false,
+      candidateWritesCompleted: false,
+      evidenceWritesCompleted: false,
+      actionWritesCompleted: false,
+    };
+    let createdCandidates: CandidateRow[] = [];
+    let updatedCandidates: CandidateRow[] = [];
+    let createdEvidence: EvidenceRow[] = [];
+    let updatedEvidence: EvidenceRow[] = [];
+    let createdActions: unknown[] = [];
+    let candidateCreatesMs = 0;
+    let candidateUpdatesMs = 0;
+    let evidenceCreatesMs = 0;
+    let evidenceUpdatesMs = 0;
+    let actionsMs = 0;
+
+    const fail = (error: unknown): never => {
+      throw new BatchPersistenceWriteError(
+        error instanceof Error ? error.message : "Batch persistence write failed",
+        { ...progress },
+        {
+          createdCandidates,
+          updatedCandidates,
+          createdEvidence,
+          updatedEvidence,
+          createdActions,
+          metrics: { ...metrics, chunks: { ...metrics.chunks } },
+          timings: {
+            candidateCreatesMs,
+            candidateUpdatesMs,
+            evidenceCreatesMs,
+            evidenceUpdatesMs,
+            actionsMs,
+            totalMs: Math.round(performance.now() - totalStartedAt),
+          },
+        },
+        error,
+      );
+    };
+
+    try {
+      progress.writesStarted = this.estimateWriteCalls(plan) > 0;
+      const candidateCreatesStartedAt = performance.now();
+      createdCandidates = await this.writeChunked(
+        "candidateInsert",
+        plan.candidateCreates.map((item) => item.row),
+        this.chunkSizes.candidateWrite,
+        (rows) => this.adapter.insertCandidates(rows),
+        metrics,
+      );
+      candidateCreatesMs = Math.round(performance.now() - candidateCreatesStartedAt);
+      const candidateUpdatesStartedAt = performance.now();
+      updatedCandidates = await this.writeChunked(
+        "candidateUpdate",
+        plan.candidateUpdates.map((item) => ({
+          ...item.existing,
+          ...item.payload,
+          id: item.id,
+          fingerprint: item.fingerprint,
+        })),
+        this.chunkSizes.candidateWrite,
+        (rows) => this.adapter.upsertCandidateUpdates(rows),
+        metrics,
+      );
+      candidateUpdatesMs = Math.round(performance.now() - candidateUpdatesStartedAt);
+      progress.candidateWritesCompleted = true;
+
+      const createdCandidateIdByFingerprint = new Map(
+        createdCandidates.map((candidate) => [candidate.fingerprint, candidate.id]),
+      );
+      const evidenceCreatesStartedAt = performance.now();
+      createdEvidence = await this.writeChunked(
+        "evidenceInsert",
+        plan.evidenceCreates.map((item) => ({
+          ...item.row,
+          candidate_id:
+            item.candidateId ??
+            createdCandidateIdByFingerprint.get(item.candidateFingerprint) ??
+            item.row.candidate_id,
+        })),
+        this.chunkSizes.evidenceWrite,
+        (rows) => this.adapter.insertEvidence(rows),
+        metrics,
+      );
+      evidenceCreatesMs = Math.round(performance.now() - evidenceCreatesStartedAt);
+      const evidenceUpdatesStartedAt = performance.now();
+      updatedEvidence = await this.writeChunked(
+        "evidenceUpdate",
+        plan.evidenceUpdates.map((item) => ({
+          id: item.id,
+          candidate_id: item.candidateId ?? "__pending_candidate_id__",
+          type: item.type,
+          url_key: item.urlKey,
+          ...item.payload,
+        })),
+        this.chunkSizes.evidenceWrite,
+        (rows) => this.adapter.upsertEvidenceUpdates(rows),
+        metrics,
+      );
+      evidenceUpdatesMs = Math.round(performance.now() - evidenceUpdatesStartedAt);
+      progress.evidenceWritesCompleted = true;
+
+      const actionsStartedAt = performance.now();
+      createdActions = await this.writeChunked(
+        "actionInsert",
+        plan.actionsToCreate.map((item) => actionRow(item.candidateId, item.action)),
+        this.chunkSizes.actionWrite,
+        (rows) => this.adapter.insertActions(rows),
+        metrics,
+      );
+      actionsMs = Math.round(performance.now() - actionsStartedAt);
+      progress.actionWritesCompleted = true;
+    } catch (error) {
+      fail(error);
+    }
+
+    return {
+      createdCandidates,
+      updatedCandidates,
+      createdEvidence,
+      updatedEvidence,
+      createdActions,
+      metrics,
+      progress,
+      timings: {
+        candidateCreatesMs,
+        candidateUpdatesMs,
+        evidenceCreatesMs,
+        evidenceUpdatesMs,
+        actionsMs,
+        totalMs: Math.round(performance.now() - totalStartedAt),
+      },
+    };
+  }
+
+  private async writeChunked<TInput, TOutput>(
+    name: string,
+    rows: TInput[],
+    chunkSize: number,
+    write: (rows: TInput[]) => Promise<TOutput[]>,
+    metrics: BatchPersistenceMetrics,
+  ): Promise<TOutput[]> {
+    const out: TOutput[] = [];
+    for (const chunk of chunksOf(rows, chunkSize)) {
+      out.push(...(await this.writeWithSplitRetry(name, chunk, write, metrics, 0)));
+    }
+    return out;
+  }
+
+  private async writeWithSplitRetry<TInput, TOutput>(
+    name: string,
+    rows: TInput[],
+    write: (rows: TInput[]) => Promise<TOutput[]>,
+    metrics: BatchPersistenceMetrics,
+    depth: number,
+  ): Promise<TOutput[]> {
+    if (rows.length === 0) return [];
+    metrics.databaseCalls += 1;
+    metrics.chunks[name] = (metrics.chunks[name] ?? 0) + 1;
+    try {
+      return await write(rows);
+    } catch (error) {
+      if (rows.length <= 1 || depth >= this.maxSplitDepth) {
+        throw error;
+      }
+      metrics.retries += 1;
+      metrics.splitBatches += 1;
+      const midpoint = Math.ceil(rows.length / 2);
+      const left = await this.writeWithSplitRetry(name, rows.slice(0, midpoint), write, metrics, depth + 1);
+      const right = await this.writeWithSplitRetry(name, rows.slice(midpoint), write, metrics, depth + 1);
+      return [...left, ...right];
+    }
+  }
+}
+
+function actionRow(candidateId: string, action: AddActionInput): CandidateActionInsert {
+  return {
+    candidate_id: candidateId,
+    action: action.action,
+    previous_status: action.previousStatus ?? null,
+    new_status: action.newStatus ?? null,
+    reason: action.reason ?? null,
+    metadata: action.metadata ?? {},
+  };
+}
+
+function throwSupabaseError(label: string, error: { message: string } | null): void {
+  if (error) throw new Error(`${label}: ${error.message}`);
+}
+
+export function createSupabaseBatchPersistenceAdapter(): BatchPersistenceAdapter {
+  const supabase = createServiceSupabaseClient();
+  return {
+    async selectCandidatesByFingerprints(fingerprints) {
+      const { data, error } = await supabase.from("candidates").select("*").in("fingerprint", fingerprints);
+      throwSupabaseError("Failed to batch load candidates", error);
+      return (data ?? []) as CandidateRow[];
+    },
+    async insertCandidates(rows) {
+      const { data, error } = await supabase.from("candidates").insert(rows).select("*");
+      throwSupabaseError("Failed to batch insert candidates", error);
+      return (data ?? []) as CandidateRow[];
+    },
+    async upsertCandidateUpdates(rows) {
+      const { data, error } = await supabase
+        .from("candidates")
+        .upsert(rows as Database["public"]["Tables"]["candidates"]["Insert"][], {
+          onConflict: "id",
+        })
+        .select("*");
+      throwSupabaseError("Failed to batch update candidates", error);
+      return (data ?? []) as CandidateRow[];
+    },
+    async selectEvidenceByCandidateIds(candidateIds) {
+      const { data, error } = await supabase
+        .from("candidate_evidence")
+        .select("*")
+        .in("candidate_id", candidateIds);
+      throwSupabaseError("Failed to batch load evidence", error);
+      return (data ?? []) as EvidenceRow[];
+    },
+    async insertEvidence(rows) {
+      const { data, error } = await supabase.from("candidate_evidence").insert(rows).select("*");
+      throwSupabaseError("Failed to batch insert evidence", error);
+      return (data ?? []) as EvidenceRow[];
+    },
+    async upsertEvidenceUpdates(rows) {
+      const { data, error } = await supabase
+        .from("candidate_evidence")
+        .upsert(rows as Database["public"]["Tables"]["candidate_evidence"]["Insert"][], {
+          onConflict: "id",
+        })
+        .select("*");
+      throwSupabaseError("Failed to batch update evidence", error);
+      return (data ?? []) as EvidenceRow[];
+    },
+    async insertActions(rows) {
+      const { data, error } = await supabase.from("candidate_actions").insert(rows).select("*");
+      throwSupabaseError("Failed to batch insert actions", error);
+      return data ?? [];
+    },
+  };
+}
+
+export function createBatchPersistenceRepository(
+  options: BatchPersistenceRepositoryOptions = {},
+): BatchPersistenceRepository {
+  return new BatchPersistenceRepository(createSupabaseBatchPersistenceAdapter(), options);
+}

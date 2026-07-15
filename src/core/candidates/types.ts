@@ -13,6 +13,7 @@ export type CandidateCard = {
   name: string;
   summary: string | null;
   source: string;
+  sourceIds?: Record<string, unknown>;
   officialUrl: string | null;
   applyUrl: string | null;
   socialUrl: string | null;
@@ -79,6 +80,7 @@ export type CandidateDetail = CandidateCard & {
 
 export type ListCandidatesParams = {
   status?: CandidateStatus;
+  statuses?: CandidateStatus[];
   limit?: number;
   cursor?: string;
   offset?: number;

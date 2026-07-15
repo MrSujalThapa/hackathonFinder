@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { GET as listCandidates } from "@/app/api/candidates/route";
+import { GET as listCandidateSources } from "@/app/api/candidates/sources/route";
 import { GET as getCandidate } from "@/app/api/candidates/[id]/route";
 import { POST as approveCandidate } from "@/app/api/candidates/[id]/approve/route";
 import { POST as rejectCandidate } from "@/app/api/candidates/[id]/reject/route";
@@ -85,6 +86,7 @@ function createMockRepo(
         name: item.name,
         summary: item.summary,
         source: item.source,
+        sourceIds: item.sourceIds,
         officialUrl: item.officialUrl,
         applyUrl: item.applyUrl,
         socialUrl: item.socialUrl,
@@ -109,8 +111,15 @@ function createMockRepo(
       if (params.status) {
         candidates = candidates.filter((c) => c.status === params.status);
       }
+      if (params.statuses?.length) {
+        const statuses = new Set(params.statuses);
+        candidates = candidates.filter((c) => statuses.has(c.status));
+      }
       if (params.source) {
-        candidates = candidates.filter((c) => c.source === params.source);
+        const source = params.source;
+        candidates = candidates.filter(
+          (c) => c.source === source || Boolean(c.sourceIds?.[source]),
+        );
       }
       const limit = params.limit ?? 20;
       return {
@@ -135,6 +144,7 @@ function createMockRepo(
         name: updated.name,
         summary: updated.summary,
         source: updated.source,
+        sourceIds: updated.sourceIds,
         officialUrl: updated.officialUrl,
         applyUrl: updated.applyUrl,
         socialUrl: updated.socialUrl,
@@ -175,6 +185,7 @@ function createMockRepo(
         name: updated.name,
         summary: updated.summary,
         source: updated.source,
+        sourceIds: updated.sourceIds,
         officialUrl: updated.officialUrl,
         applyUrl: updated.applyUrl,
         socialUrl: updated.socialUrl,
@@ -196,6 +207,17 @@ function createMockRepo(
         sheetRowId: updated.sheetRowId,
         sheetAppendedAt: updated.sheetAppendedAt,
       };
+    },
+    async listPendingSources() {
+      const sources = new Set<string>();
+      for (const candidate of store.values()) {
+        if (candidate.status !== "NEW" && candidate.status !== "NEEDS_REVIEW") continue;
+        sources.add(candidate.source);
+        for (const key of Object.keys(candidate.sourceIds ?? {})) {
+          sources.add(key);
+        }
+      }
+      return [...sources].sort();
     },
   };
 }
@@ -219,6 +241,32 @@ describe("GET /api/candidates", () => {
     assert.equal(body.data.candidates[0].name, "HackTO AI Challenge");
   });
 
+  it("returns combined pending queue total across NEW and NEEDS_REVIEW", async () => {
+    const store = new Map<string, CandidateDetail>();
+    for (let index = 0; index < 196; index += 1) {
+      const id = `${String(index).padStart(8, "0")}-1111-4111-8111-111111111111`;
+      store.set(
+        id,
+        baseDetail({
+          id,
+          status: index < 22 ? "NEW" : "NEEDS_REVIEW",
+          name: `Candidate ${index}`,
+          score: 196 - index,
+        }),
+      );
+    }
+    setCandidateRepositoryForTests(createMockRepo(store));
+
+    const response = await listCandidates(
+      new Request("http://localhost/api/candidates?statuses=NEW,NEEDS_REVIEW&limit=30"),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.error, null);
+    assert.equal(body.data.candidates.length, 30);
+    assert.equal(body.data.total, 196);
+  });
+
   it("returns 400 for invalid status", async () => {
     setCandidateRepositoryForTests(createMockRepo(new Map()));
     const response = await listCandidates(
@@ -227,6 +275,162 @@ describe("GET /api/candidates", () => {
     assert.equal(response.status, 400);
     const body = await response.json();
     assert.equal(body.error.code, "VALIDATION_ERROR");
+  });
+
+  it("returns pending source options from primary and merged source ids", async () => {
+    const store = new Map([
+      [
+        SAMPLE_ID,
+        baseDetail({
+          source: "hakku",
+          sourceIds: { hakku: "h1", luma: "l1" },
+          status: "NEEDS_REVIEW",
+        }),
+      ],
+    ]);
+    setCandidateRepositoryForTests(createMockRepo(store));
+
+    const response = await listCandidateSources(
+      new Request("http://localhost/api/candidates/sources"),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.data.sources, ["hakku", "luma"]);
+  });
+
+  it("filters candidates by merged source ids", async () => {
+    const store = new Map([
+      [
+        SAMPLE_ID,
+        baseDetail({
+          source: "hakku",
+          sourceIds: { hakku: "h1", luma: "l1" },
+          status: "NEEDS_REVIEW",
+        }),
+      ],
+    ]);
+    setCandidateRepositoryForTests(createMockRepo(store));
+
+    const response = await listCandidates(
+      new Request("http://localhost/api/candidates?statuses=NEW,NEEDS_REVIEW&source=luma"),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.data.candidates.length, 1);
+    assert.equal(body.data.candidates[0].source, "hakku");
+    assert.equal(body.data.total, 1);
+  });
+
+  it("accepts encoded custom source filters and matches merged provenance", async () => {
+    const store = new Map([
+      [
+        SAMPLE_ID,
+        baseDetail({
+          source: "web",
+          sourceIds: { web: "w1", "custom:hackathonmap": "map-1" },
+          status: "NEEDS_REVIEW",
+        }),
+      ],
+    ]);
+    setCandidateRepositoryForTests(createMockRepo(store));
+
+    const response = await listCandidates(
+      new Request(
+        "http://localhost/api/candidates?statuses=NEW,NEEDS_REVIEW&source=custom%3Ahackathonmap",
+      ),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.data.candidates.length, 1);
+    assert.equal(body.data.candidates[0].source, "web");
+    assert.equal(body.data.total, 1);
+  });
+
+  it("keeps legacy candidates with missing sourceIds from breaking unfiltered queue fetches", async () => {
+    const store = new Map([
+      [
+        SAMPLE_ID,
+        baseDetail({
+          source: "mlh",
+          sourceIds: undefined as never,
+          status: "NEW",
+        }),
+      ],
+    ]);
+    setCandidateRepositoryForTests(createMockRepo(store));
+
+    const response = await listCandidates(
+      new Request("http://localhost/api/candidates?statuses=NEW,NEEDS_REVIEW&limit=30&sort=score"),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.error, null);
+    assert.equal(body.data.candidates.length, 1);
+  });
+
+  it("accepts valid score cursors for queue pagination", async () => {
+    const store = new Map([[SAMPLE_ID, baseDetail()]]);
+    setCandidateRepositoryForTests(createMockRepo(store));
+    const cursor = Buffer.from(
+      "82|2026-07-01T12:00:00.000Z|11111111-1111-4111-8111-111111111111",
+      "utf8",
+    ).toString("base64url");
+
+    const response = await listCandidates(
+      new Request(
+        `http://localhost/api/candidates?statuses=NEW,NEEDS_REVIEW&limit=30&sort=score&cursor=${cursor}`,
+      ),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.error, null);
+  });
+
+  it("returns 400 for malformed cursors", async () => {
+    setCandidateRepositoryForTests({
+      ...createMockRepo(new Map()),
+      async listCandidates(params = {}) {
+        if (params.cursor) throw new Error("Invalid cursor.");
+        return { candidates: [], total: 0 };
+      },
+    });
+
+    const response = await listCandidates(
+      new Request("http://localhost/api/candidates?cursor=%5Bobject%20Object%5D"),
+    );
+    assert.equal(response.status, 400);
+    const body = await response.json();
+    assert.equal(body.error.code, "VALIDATION_ERROR");
+  });
+
+  it("returns safe request-id diagnostics when candidate query fails", async () => {
+    setCandidateRepositoryForTests({
+      ...createMockRepo(new Map()),
+      async listCandidates() {
+        throw new Error("Failed to list candidates: simulated database failure");
+      },
+    });
+
+    const response = await listCandidates(
+      new Request("http://localhost/api/candidates?statuses=NEW,NEEDS_REVIEW", {
+        headers: { "x-request-id": "queue-test-request" },
+      }),
+    );
+    assert.equal(response.status, 500);
+    const body = await response.json();
+    assert.equal(body.error.code, "CANDIDATE_QUERY_FAILED");
+    assert.equal(body.error.details.requestId, "queue-test-request");
+    assert.match(body.error.message, /request id/i);
+  });
+
+  it("rejects malformed custom source filters", async () => {
+    setCandidateRepositoryForTests(createMockRepo(new Map()));
+    for (const source of ["custom:bad/slug", "custom:", "other:hackathonmap"]) {
+      const response = await listCandidates(
+        new Request(`http://localhost/api/candidates?source=${encodeURIComponent(source)}`),
+      );
+      assert.equal(response.status, 400, source);
+    }
   });
 });
 

@@ -1,0 +1,39 @@
+{
+  "sessionValid": {
+    "url": "https://tryhakku.vercel.app/swipe",
+    "title": "Hakku — Swipe",
+    "bodyText": "Swipe through upcoming hackathons. Prize pool and apply links available.",
+    "hasSwipeCards": true,
+    "hasPasswordField": false
+  },
+  "loginRedirect": {
+    "url": "https://tryhakku.vercel.app/login",
+    "title": "Welcome back",
+    "bodyText": "Welcome back. Enter your credentials to sign in. Password required.",
+    "hasSwipeCards": false,
+    "hasPasswordField": true
+  },
+  "unknownFeed": {
+    "url": "https://tryhakku.vercel.app/",
+    "title": "Hakku",
+    "bodyText": "Loading…",
+    "hasSwipeCards": false,
+    "hasPasswordField": false
+  },
+  "cards": [
+    {
+      "title": "Agent Commerce Hackathon",
+      "url": "https://example.com/agent-hack",
+      "text": "Build AI agents for commerce workflows.",
+      "links": ["https://example.com/agent-hack/apply"],
+      "tags": ["AI", "Online", "Upcoming"]
+    },
+    {
+      "title": "Legacy Blockchain Meetup",
+      "url": "https://example.com/old-hack",
+      "text": "This event has ended.",
+      "links": ["https://example.com/old-hack"],
+      "tags": ["Web3", "Ended"]
+    }
+  ]
+}

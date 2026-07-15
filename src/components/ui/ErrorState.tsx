@@ -10,12 +10,9 @@ export function ErrorState({
   onRetry,
 }: ErrorStateProps) {
   return (
-    <div
-      className="flex w-full max-w-md flex-col items-center rounded-[var(--radius-xl)] border border-[color-mix(in_oklab,var(--accent-danger)_30%,transparent)] bg-[color-mix(in_oklab,var(--accent-danger)_8%,transparent)] px-6 py-10 text-center"
-      role="alert"
-    >
+    <div className="w-full max-w-xl py-8 text-left" role="alert">
       <h2 className="text-lg font-semibold tracking-tight text-red-100">{title}</h2>
-      <p className="mt-2 text-sm leading-relaxed text-red-100/70">{message}</p>
+      <p className="mt-2 text-sm leading-relaxed text-red-100/75">{message}</p>
       {onRetry ? (
         <button
           type="button"

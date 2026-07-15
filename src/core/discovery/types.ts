@@ -1,4 +1,41 @@
+import type { DiscoveryPerformanceSummary } from "@/discovery/performance";
+import type { PersistenceShadowSummary } from "@/discovery/persistence/comparePersistenceResults";
+
 export type DiscoveryMode = "online" | "in-person" | "hybrid" | "unknown";
+export type ReviewPolicy = "broad" | "balanced" | "strict";
+export type DiscoveryProfile = "light" | "standard" | "deep" | "exhaustive";
+export type LocationConstraint = "event_location" | "participant_eligibility" | "none";
+export type RemotePolicy = "exclude" | "include" | "only" | "inferred_open";
+
+export type ParsedDateEvidence = {
+  value: string | null;
+  kind:
+    | "event_start"
+    | "event_end"
+    | "registration_open"
+    | "registration_deadline"
+    | "application_deadline"
+    | "submission_open"
+    | "submission_deadline"
+    | "judging_start"
+    | "judging_end"
+    | "result_announcement";
+  confidence: "high" | "medium" | "low";
+  sourceUrl: string;
+  sourceText?: string;
+  retrievedAt?: string;
+  sourceType?: "listing" | "detail" | "schedule" | "api" | "text";
+};
+
+export type EventLocation = {
+  mode: "in_person" | "remote" | "hybrid" | "unknown";
+  venue?: string;
+  city?: string;
+  region?: string;
+  country?: string;
+  rawText?: string;
+  confidence: "high" | "medium" | "low";
+};
 
 export type SourceName =
   | "hacklist"
@@ -10,9 +47,11 @@ export type SourceName =
   | "x"
   | "mock";
 
+export type DiscoverySourceId = SourceName | `custom:${string}`;
+
 export type RawLead = {
   id: string;
-  source: SourceName;
+  source: DiscoverySourceId;
   title?: string;
   url?: string;
   text?: string;
@@ -37,16 +76,30 @@ export type HackathonEvidence = {
 
 export type HackathonEvent = {
   name: string;
-  source: SourceName;
+  source: DiscoverySourceId;
   officialUrl?: string;
   applyUrl?: string;
   socialUrl?: string;
+  eventStartDate?: string;
+  eventEndDate?: string;
+  registrationOpenDate?: string;
+  registrationDeadline?: string;
+  applicationDeadline?: string;
+  submissionOpenDate?: string;
+  submissionDeadline?: string;
+  judgingStartDate?: string;
+  judgingEndDate?: string;
+  resultAnnouncementDate?: string;
+  displayedDateRange?: string;
+  parsedDateEvidence?: ParsedDateEvidence[];
   startDate?: string;
   endDate?: string;
   deadline?: string;
   location?: string;
   mode?: DiscoveryMode;
+  eventLocation?: EventLocation;
   city?: string;
+  region?: string;
   country?: string;
   prize?: string;
   themes: string[];
@@ -59,6 +112,10 @@ export type HackathonEvent = {
 export type DiscoveryPreferences = {
   rawCommand: string;
   locations: string[];
+  locationConstraint?: LocationConstraint;
+  remotePolicy?: RemotePolicy;
+  onsiteOnly?: boolean;
+  profile?: DiscoveryProfile;
   dateFrom?: string;
   dateTo?: string;
   themes: string[];
@@ -67,6 +124,7 @@ export type DiscoveryPreferences = {
   includeRemote: boolean;
   includeInPerson: boolean;
   maxResults: number;
+  reviewPolicy?: ReviewPolicy;
 };
 
 export type ScoringResult = {
@@ -87,9 +145,27 @@ export type VerificationResult = {
 
 export type RejectedCandidate = {
   name: string;
-  source: SourceName;
+  source: DiscoverySourceId;
   stage: "verification" | "scoring";
   reason: string;
+};
+
+export type ReviewDisposition = {
+  eventValidity: "valid" | "invalid" | "uncertain";
+  eventType:
+    | "hackathon"
+    | "tech_event"
+    | "ai_event"
+    | "builder_event"
+    | "startup_event"
+    | "competition"
+    | "meetup"
+    | "unknown";
+  hackathonLikelihood: "high" | "medium" | "low";
+  metadataCompleteness: "high" | "medium" | "low";
+  sourceConfidence: "high" | "medium" | "low";
+  disposition: "NEW" | "NEEDS_REVIEW" | "REJECTED";
+  reasons: string[];
 };
 
 export type AcceptedCandidate = {
@@ -174,16 +250,31 @@ export type AgentRunSummary = {
     score: number;
     location: string;
     deadline: string;
+    eventStartDate?: string;
+    eventEndDate?: string;
+    applicationDeadline?: string;
+    submissionDeadline?: string;
+    judgingStartDate?: string;
+    judgingEndDate?: string;
+    displayedDateRange?: string;
+    participationMode?: string;
+    eligibility?: string;
+    themes?: string[];
+    source?: DiscoverySourceId;
     status: string;
     classification?: EventPageClassification;
     sourceAuthority?: number;
     deadlineState?: string;
     hasOfficialUrl?: boolean;
     hasApplyUrl?: boolean;
+    evidenceSummary?: string;
   }>;
   rejectedCandidates: RejectedCandidate[];
   sourceStats: SourceRunStats[];
+  sourceAccounting: SourceAccounting;
   agent?: AgentRunObservability;
+  performance?: DiscoveryPerformanceSummary;
+  persistenceShadow?: PersistenceShadowSummary;
   warnings: string[];
   errors: string[];
 };
@@ -212,11 +303,30 @@ export type AgentRunObservability = {
 };
 
 export type SourceRunStats = {
-  source: SourceName;
+  source: DiscoverySourceId;
   leadsFound: number;
+  queueReady: number;
+  needsReview: number;
+  invalidRejected: number;
   accepted: number;
   rejected: number;
   errors: string[];
   warnings: string[];
   durationMs: number;
+  outcome: SourceOutcome;
+};
+
+export type SourceOutcome =
+  | "executed"
+  | "skipped"
+  | "failed"
+  | "auth_required"
+  | "degraded";
+
+export type SourceAccounting = {
+  executedSources: DiscoverySourceId[];
+  skippedSources: DiscoverySourceId[];
+  failedSources: DiscoverySourceId[];
+  degradedSources: DiscoverySourceId[];
+  authRequiredSources: DiscoverySourceId[];
 };

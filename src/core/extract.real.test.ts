@@ -22,7 +22,7 @@ describe("extractHackathonEvent real leads", () => {
     assert.ok(event!.evidence.some((item) => item.url));
   });
 
-  it("extracts Toronto location and online mode from Devpost-style leads", () => {
+  it("extracts Toronto location and in-person mode from Devpost-style leads", () => {
     const html = fs.readFileSync(
       path.join(process.cwd(), "src/collectors/__fixtures__/devpost.html"),
       "utf8",
@@ -35,21 +35,23 @@ describe("extractHackathonEvent real leads", () => {
     assert.ok(event);
     assert.equal(event!.city, "Toronto");
     assert.equal(event!.country, "Canada");
-    assert.ok(event!.startDate);
+    assert.ok(event!.location);
+    assert.equal(event!.eventLocation?.mode, "in_person");
   });
 
-  it("derives deadline from days-left text", () => {
+  it("derives registration deadline from days-left text", () => {
     const event = extractHackathonEvent({
       id: "hacklist-deadline",
       source: "hacklist",
       title: "Deadline Hack",
       url: "https://example.com/hack",
-      text: "Registration closes soon — 5 days left",
+      text: "Registration closes soon - 5 days left",
       links: ["https://example.com/hack"],
       postedAt: new Date().toISOString(),
       metadata: {},
     });
 
-    assert.ok(event?.deadline);
+    assert.ok(event?.registrationDeadline);
+    assert.equal(event?.deadline, event?.registrationDeadline);
   });
 });

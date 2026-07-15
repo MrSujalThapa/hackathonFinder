@@ -5,6 +5,7 @@ import type {
   CandidateDetail,
   CandidateEvidence,
 } from "@/core/candidates/types";
+import { sourceAuthority } from "@/core/dedupe";
 
 type CandidateRow = Database["public"]["Tables"]["candidates"]["Row"];
 type EvidenceRow = Database["public"]["Tables"]["candidate_evidence"]["Row"];
@@ -19,6 +20,7 @@ export function mapCandidateRow(row: CandidateRow): CandidateCard {
     name: row.name,
     summary: row.summary,
     source: row.source,
+    sourceIds: (row.source_ids as Record<string, unknown>) ?? {},
     officialUrl: row.official_url,
     applyUrl: row.apply_url,
     socialUrl: row.social_url,
@@ -130,13 +132,11 @@ export function mergeSourceIds(
   };
 }
 
-/** Prefer a live source over mock when merging duplicate fingerprints. */
+/** Prefer authoritative sources, while keeping custom sources above generic web. */
 export function mergeSourceField(existing: string, incoming: string): string {
-  const next = incoming || existing;
-  if (incoming === "mock" && existing && existing !== "mock") {
-    return existing;
-  }
-  return next;
+  if (!incoming) return existing;
+  if (!existing) return incoming;
+  return sourceAuthority(incoming) > sourceAuthority(existing) ? incoming : existing;
 }
 
 export function candidateRowFromUpsertInput(

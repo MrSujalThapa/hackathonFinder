@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hackathon Finder — Design Lab (non-production)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0a0c; --surface: #111114; --panel: #16161a; --inset: #0d0d10;
+      --hairline: #2a2a32; --hairline-strong: #3a3a46;
+      --text: #f2f2f4; --muted: #8e8e9a;
+      --approve: #3dcf7a; --save: #6ec8ff; --reject: #9aa3b2; --warn: #e0a54f; --danger: #f07178;
+      --sans: "IBM Plex Sans", system-ui, sans-serif;
+      --serif: "Source Serif 4", Georgia, serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); }
+    .lab-banner { background: #2a2114; color: #f0d9a8; padding: 8px 16px; font-size: 12px; border-bottom: 1px solid #4a3a20; }
+    .frame { border: 1px solid var(--hairline); background: var(--bg); margin: 24px auto; overflow: hidden; }
+    .frame.w390 { width: 390px; min-height: 844px; }
+    .frame.w768 { width: 768px; min-height: 1024px; }
+    .frame.w1440 { width: 1440px; min-height: 1000px; }
+    .label { max-width: 1440px; margin: 40px auto 8px; padding: 0 16px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+    .shell { display: flex; min-height: inherit; }
+    .side { width: 224px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--hairline); padding: 24px 12px; display: none; }
+    .w1440 .side { display: flex; flex-direction: column; gap: 4px; }
+    .brand { font-weight: 600; font-size: 17px; padding: 0 8px 16px; }
+    .brand small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; margin-top: 4px; }
+    .nav a { display: flex; gap: 10px; padding: 10px 12px; border-radius: 8px; color: var(--muted); text-decoration: none; }
+    .nav a.active { background: #1c1c22; color: var(--text); }
+    .main { flex: 1; padding: 20px 16px 88px; }
+    .w1440 .main { padding: 28px 32px 32px; }
+    .eyebrow { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+    h1 { font-size: 24px; margin: 0 0 6px; font-weight: 600; }
+    .lede { color: var(--muted); margin: 0 0 20px; max-width: 36rem; }
+    .review-card { background: var(--panel); border: 1px solid var(--hairline); border-radius: 12px; padding: 16px; max-width: 440px; box-shadow: 0 12px 32px rgba(0,0,0,.35); }
+    .status { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--save); margin-bottom: 8px; }
+    .status.warn { color: var(--warn); }
+    .title { font-family: var(--serif); font-size: 22px; line-height: 1.25; margin: 0 0 6px; font-weight: 600; }
+    .meta { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .summary { margin: 14px 0; color: #d8d8de; }
+    .facts { display: grid; gap: 8px; margin: 12px 0; font-size: 13px; color: var(--muted); }
+    .facts strong { color: var(--text); font-weight: 500; }
+    .evidence-mini { border-left: 2px solid var(--approve); padding-left: 10px; font-size: 12px; color: var(--muted); margin: 12px 0 16px; }
+    .decision { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
+    .btn { min-height: 44px; border-radius: 8px; border: 1px solid var(--hairline); background: transparent; color: var(--text); font: 500 13px var(--sans); }
+    .btn.approve { border-color: color-mix(in oklab, var(--approve) 50%, transparent); color: var(--approve); }
+    .btn.save { border-color: color-mix(in oklab, var(--save) 45%, transparent); color: var(--save); }
+    .btn.reject { color: var(--reject); }
+    .bottom-nav { position: sticky; bottom: 0; display: flex; justify-content: space-between; border-top: 1px solid var(--hairline); background: color-mix(in oklab, var(--bg) 94%, transparent); padding: 8px 6px; font-size: 10px; color: var(--muted); }
+    .w1440 .bottom-nav { display: none; }
+    .doc { display: grid; gap: 24px; }
+    .w1440 .doc { grid-template-columns: minmax(0, 42rem) 18rem; align-items: start; }
+    .doc-main { background: var(--panel); border: 1px solid var(--hairline); border-radius: 12px; padding: 20px; }
+    .doc-rail { display: grid; gap: 12px; }
+    .rail-box { background: var(--inset); border: 1px solid var(--hairline); border-radius: 8px; padding: 12px; font-size: 13px; }
+    .section-label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+    .source { border-left: 2px solid var(--hairline); padding: 10px 0 10px 12px; margin-bottom: 8px; }
+    .source.official { border-left-color: var(--approve); }
+    .source.apply { border-left-color: var(--save); }
+    .source.directory { border-left-color: #7a8494; }
+    .ask { border-top: 1px solid var(--hairline); padding-top: 16px; margin-top: 16px; }
+    .ask input { width: 100%; min-height: 44px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--inset); color: var(--text); padding: 0 12px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+    .chip { border: 1px solid var(--hairline); border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--muted); }
+    .answer { background: var(--inset); border-radius: 8px; padding: 12px; margin-top: 12px; }
+    .login { max-width: 420px; margin: 10vh auto; background: var(--panel); border: 1px solid var(--hairline); border-radius: 12px; padding: 24px; }
+    .login h1 { font-family: var(--serif); font-size: 28px; }
+    .primary { width: 100%; min-height: 44px; margin-top: 16px; border: 0; border-radius: 8px; background: var(--save); color: #0b1220; font-weight: 600; }
+    .notice { border: 1px solid color-mix(in oklab, var(--warn) 40%, transparent); background: color-mix(in oklab, var(--warn) 10%, transparent); border-radius: 8px; padding: 12px; color: #f3ddb0; }
+    .row { border-bottom: 1px solid var(--hairline); padding: 14px 0; display: flex; justify-content: space-between; gap: 12px; }
+    .empty { max-width: 36rem; }
+    .sk { height: 10px; background: #222228; border-radius: 999px; margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <div class="lab-banner">Design lab only — not linked from production navigation. Editorial operations workspace mockups.</div>
+
+  <p class="label">Login · 390</p>
+  <section class="frame w390" data-shot="login-390">
+    <div class="main">
+      <div class="login">
+        <div class="eyebrow">Owner access</div>
+        <h1>Hackathon Radar</h1>
+        <p class="lede">Sign in to review candidates and investigate evidence.</p>
+        <label>Owner password</label>
+        <input style="width:100%;min-height:44px;margin-top:8px;border-radius:8px;border:1px solid var(--hairline);background:var(--inset);color:var(--text);padding:0 12px" />
+        <button class="primary" type="button">Sign in</button>
+      </div>
+    </div>
+  </section>
+
+  <p class="label">Queue · 390</p>
+  <section class="frame w390" data-shot="queue-390">
+    <div class="main">
+      <div class="eyebrow">Review</div>
+      <h1>Queue</h1>
+      <p class="lede">1 of 15 · Web</p>
+      <article class="review-card">
+        <div class="status">New · Web</div>
+        <h2 class="title">NYC Agentic AI Hackathon</h2>
+        <p class="meta">Online · Nov 21–23, 2025</p>
+        <p class="summary">Weekend build for agent tooling and cloud workflows. Hosted with MongoDB NYC. Free to attend.</p>
+        <div class="facts">
+          <div>Deadline <strong>unclear</strong></div>
+          <div>Eligibility <strong>open / students welcome</strong></div>
+        </div>
+        <div class="evidence-mini">Official · mongodb.com/community — Verified Jul 1</div>
+        <div class="decision">
+          <button class="btn reject" type="button">Reject</button>
+          <button class="btn save" type="button">Save</button>
+          <button class="btn approve" type="button">Approve</button>
+        </div>
+      </article>
+    </div>
+    <nav class="bottom-nav"><span>Queue</span><span>Approved</span><span>Saved</span><span>Rejected</span><span>Settings</span></nav>
+  </section>
+
+  <p class="label">Queue · 1440</p>
+  <section class="frame w1440" data-shot="queue-1440">
+    <div class="shell">
+      <aside class="side">
+        <div class="brand">Hackathon Radar<small>Review workspace</small></div>
+        <nav class="nav">
+          <a class="active" href="#">Queue · 15</a>
+          <a href="#">Approved</a>
+          <a href="#">Saved</a>
+          <a href="#">Rejected</a>
+          <a href="#">Settings</a>
+        </nav>
+      </aside>
+      <div class="main">
+        <div class="eyebrow">Review</div>
+        <h1>Queue</h1>
+        <p class="lede">One candidate at a time. Keyboard: ← reject · → approve · S save.</p>
+        <article class="review-card">
+          <div class="status">New · Web</div>
+          <h2 class="title">NYC Agentic AI Hackathon</h2>
+          <p class="meta">Online · Nov 21–23, 2025</p>
+          <p class="summary">Weekend build for agent tooling and cloud workflows. Hosted with MongoDB NYC. Free to attend.</p>
+          <div class="facts">
+            <div>Deadline <strong>unclear</strong></div>
+            <div>Apply <strong>official site linked</strong></div>
+          </div>
+          <div class="evidence-mini">Official · mongodb.com — Authority high · Seen 3×</div>
+          <div class="decision">
+            <button class="btn reject" type="button">Reject</button>
+            <button class="btn save" type="button">Save</button>
+            <button class="btn approve" type="button">Approve</button>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <p class="label">Candidate detail · 1440</p>
+  <section class="frame w1440" data-shot="detail-1440">
+    <div class="shell">
+      <aside class="side">
+        <div class="brand">Hackathon Radar<small>Review workspace</small></div>
+        <nav class="nav"><a href="#">Queue</a><a class="active" href="#">Candidate</a></nav>
+      </aside>
+      <div class="main">
+        <div class="eyebrow">Candidate</div>
+        <h1 style="font-family:var(--serif)">Waterloo Builders Weekend</h1>
+        <p class="lede">In-person campus hackathon for students building AI and cloud prototypes. Teams of 1–4. Judging emphasizes usefulness over novelty.</p>
+        <div class="doc">
+          <div class="doc-main">
+            <p class="section-label">Overview</p>
+            <p>Long-form description stays readable. Missing prize amounts are marked unknown rather than invented. Conflicting dates between the directory listing and the official page are called out below.</p>
+            <p class="section-label" style="margin-top:20px">Sources</p>
+            <div class="source official"><strong>Official</strong> · waterloo.edu/hack · Authority 5 · Verified Jul 8 · Seen 4×</div>
+            <div class="source apply"><strong>Apply</strong> · waterloo.edu/hack/apply · Authority 4 · Verified Jul 8</div>
+            <div class="source directory"><strong>Directory</strong> · mlh.io · Authority 3 · Verified Jul 2</div>
+            <div class="ask">
+              <p class="section-label">Ask anything about this event</p>
+              <p style="color:var(--muted);font-size:12px;margin:0 0 8px">Suggestions are shortcuts, not limits.</p>
+              <div class="chips"><span class="chip">Am I eligible as a Waterloo student?</span><span class="chip">Are teams required?</span></div>
+              <input placeholder="e.g. Does the application deadline differ from the event date?" />
+              <div class="answer">
+                <strong>Confirmed:</strong> Students at University of Waterloo are eligible.<br />
+                <span style="color:var(--muted)">Sources: official page · live check</span>
+              </div>
+            </div>
+            <p class="section-label" style="margin-top:20px">Activity</p>
+            <p style="color:var(--muted);font-size:13px">Saved · Jul 10 · Candidate refreshed 9 times · <u>View technical history</u></p>
+          </div>
+          <aside class="doc-rail">
+            <div class="rail-box"><p class="section-label">Facts</p>Sep 13–15, 2026<br />Deadline Aug 15<br />In person · Waterloo<br />Score 86</div>
+            <div class="rail-box notice">Needs review: official/apply conflict on deadline wording.</div>
+            <div class="rail-box">
+              <div class="decision" style="grid-template-columns:1fr">
+                <button class="btn approve" type="button">Approve</button>
+                <button class="btn save" type="button">Save</button>
+                <button class="btn reject" type="button">Reject</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="label">Candidate detail · 390 · NEEDS_REVIEW</p>
+  <section class="frame w390" data-shot="needs-review-390">
+    <div class="main">
+      <div class="status warn">Needs review · Social</div>
+      <h1 style="font-family:var(--serif);font-size:22px">Vague campus meetup listing</h1>
+      <p class="meta">Location unclear · Dates unclear</p>
+      <div class="notice" style="margin:16px 0">Not confident enough for normal scoring. Check links before approving.</div>
+      <p class="summary">Short social post only. Application page missing. Prize and eligibility unknown.</p>
+      <div class="source directory"><strong>Social</strong> · low authority · last verified Jul 3</div>
+      <div class="ask"><input placeholder="What information is still uncertain?" /></div>
+      <div class="decision" style="margin-top:16px">
+        <button class="btn reject" type="button">Reject</button>
+        <button class="btn save" type="button">Save</button>
+        <button class="btn approve" type="button">Approve</button>
+      </div>
+    </div>
+    <nav class="bottom-nav"><span>Queue</span><span>Approved</span><span>Saved</span><span>Rejected</span><span>Settings</span></nav>
+  </section>
+
+  <p class="label">Empty / loading / error · 768</p>
+  <section class="frame w768" data-shot="states-768">
+    <div class="main">
+      <div class="empty">
+        <div class="eyebrow">Review</div>
+        <h1>Queue</h1>
+        <p class="lede">No new hackathons to review. Run discovery when you are ready for the next batch.</p>
+        <hr style="border:0;border-top:1px solid var(--hairline);margin:28px 0" />
+        <p class="section-label">Loading</p>
+        <div class="sk" style="width:70%"></div><div class="sk" style="width:90%"></div><div class="sk" style="width:55%"></div>
+        <hr style="border:0;border-top:1px solid var(--hairline);margin:28px 0" />
+        <p class="section-label">Recoverable error</p>
+        <div class="notice" style="border-color:color-mix(in oklab,var(--danger) 40%,transparent);background:color-mix(in oklab,var(--danger) 10%,transparent);color:#f5c4c8">Something went wrong — fetch failed. <u>Try again</u></div>
+      </div>
+    </div>
+  </section>
+
+  <p class="label">Approved list · 1440</p>
+  <section class="frame w1440" data-shot="approved-1440">
+    <div class="shell">
+      <aside class="side"><div class="brand">Hackathon Radar<small>Review workspace</small></div><nav class="nav"><a href="#">Queue</a><a class="active" href="#">Approved</a></nav></aside>
+      <div class="main">
+        <div class="eyebrow">History</div>
+        <h1>Approved</h1>
+        <div class="row"><div><strong>Waterloo Builders Weekend</strong><div class="meta">Sep 13–15 · Waterloo</div></div><button class="btn" type="button">Restore</button></div>
+        <div class="row"><div><strong>Remote Agent Hack</strong><div class="meta">Aug 5–7 · Online</div></div><button class="btn" type="button">Restore</button></div>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

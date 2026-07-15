@@ -40,6 +40,7 @@ function cloneMap<V>(map: Map<string, V>): Map<string, V> {
 
 class CandidateClientStore {
   private queue: CandidateCard[] = [];
+  private queueTotal: number | null = null;
   private approved = new Map<string, CandidateCard>();
   private rejected = new Map<string, CandidateCard>();
   private saved = new Map<string, CandidateCard>();
@@ -92,7 +93,7 @@ class CandidateClientStore {
 
   getCounts(): ClientStoreCounts {
     return {
-      queue: this.queue.length,
+      queue: this.queueTotal ?? this.queue.length,
       approved: this.approved.size,
       rejected: this.rejected.size,
       saved: this.saved.size,
@@ -118,8 +119,9 @@ class CandidateClientStore {
     this.notify();
   }
 
-  replaceQueue(cards: CandidateCard[]): void {
+  replaceQueue(cards: CandidateCard[], total?: number): void {
     this.queue = cards.slice();
+    this.queueTotal = total ?? cards.length;
     this.notify();
   }
 
@@ -156,6 +158,9 @@ class CandidateClientStore {
     if (removed.status === "NEW" || isQueueStatus(removed.status)) {
       addSeenId(id);
     }
+    if (this.queueTotal != null && isQueueStatus(removed.status)) {
+      this.queueTotal = Math.max(0, this.queueTotal - 1);
+    }
     this.notify();
     return removed;
   }
@@ -163,12 +168,16 @@ class CandidateClientStore {
   insertIntoQueue(card: CandidateCard): void {
     removeSeenId(card.id);
     this.removeFromHistoryMaps(card.id);
+    const alreadyQueued = this.queue.some((item) => item.id === card.id);
     this.queue = this.queue.filter((item) => item.id !== card.id);
     const queued: CandidateCard = {
       ...card,
       status: isQueueStatus(card.status) ? card.status : "NEW",
     };
     this.queue.unshift(queued);
+    if (this.queueTotal != null && !alreadyQueued) {
+      this.queueTotal += 1;
+    }
     this.detailById.set(queued.id, {
       ...(this.detailById.get(queued.id) ?? {}),
       ...queued,
@@ -184,11 +193,13 @@ class CandidateClientStore {
   }): void {
     const { id, previousStatus, newStatus, card } = args;
     const nextCard: CandidateCard = { ...card, status: newStatus };
+    const wasQueue = isQueueStatus(previousStatus);
+    const isQueue = isQueueStatus(newStatus);
 
     this.removeFromQueueInternal(id);
     this.removeFromHistoryMaps(id);
 
-    if (isQueueStatus(newStatus)) {
+    if (isQueue) {
       removeSeenId(id);
       this.queue = this.queue.filter((item) => item.id !== id);
       this.queue.unshift(nextCard);
@@ -199,6 +210,14 @@ class CandidateClientStore {
       const bucket = historyBucket(newStatus);
       if (bucket) {
         this.historyMap(bucket).set(id, nextCard);
+      }
+    }
+
+    if (this.queueTotal != null) {
+      if (wasQueue && !isQueue) {
+        this.queueTotal = Math.max(0, this.queueTotal - 1);
+      } else if (!wasQueue && isQueue) {
+        this.queueTotal += 1;
       }
     }
 
@@ -230,6 +249,7 @@ class CandidateClientStore {
   /** Test helper — clears all buckets. */
   reset(): void {
     this.queue = [];
+    this.queueTotal = null;
     this.approved.clear();
     this.rejected.clear();
     this.saved.clear();
@@ -270,8 +290,8 @@ export function restoreSnapshot(snap: ClientStoreSnapshot): void {
   store.restoreSnapshot(snap);
 }
 
-export function replaceQueue(cards: CandidateCard[]): void {
-  store.replaceQueue(cards);
+export function replaceQueue(cards: CandidateCard[], total?: number): void {
+  store.replaceQueue(cards, total);
 }
 
 export function replaceBucket(

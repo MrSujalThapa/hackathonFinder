@@ -36,27 +36,55 @@ export type ListCandidatesResponse = {
   total: number | null;
 };
 
+export type CandidateSourcesResponse = {
+  sources: string[];
+  sourceMetadata?: Array<{
+    id: string;
+    label: string;
+    kind: "custom";
+  }>;
+};
+
 export async function fetchCandidates(params: {
   status?: string;
+  statuses?: string[];
   limit?: number;
   source?: string;
   q?: string;
   sort?: string;
   cursor?: string;
+  requestPurpose?: string;
 }): Promise<ListCandidatesResponse> {
   return timedAsync("client.list_fetch", async () => {
     const search = new URLSearchParams();
     if (params.status) search.set("status", params.status);
+    if (params.statuses?.length) search.set("statuses", params.statuses.join(","));
     if (params.limit != null) search.set("limit", String(params.limit));
     if (params.source) search.set("source", params.source);
     if (params.q) search.set("q", params.q);
     if (params.sort) search.set("sort", params.sort);
-    if (params.cursor) search.set("cursor", params.cursor);
+    if (
+      typeof params.cursor === "string" &&
+      params.cursor.length > 0 &&
+      params.cursor !== "undefined" &&
+      params.cursor !== "null" &&
+      params.cursor !== "[object Object]"
+    ) {
+      search.set("cursor", params.cursor);
+    }
+    if (params.requestPurpose) search.set("requestPurpose", params.requestPurpose);
 
     const response = await fetch(`/api/candidates?${search.toString()}`, {
       cache: "no-store",
     });
     return parseEnvelope<ListCandidatesResponse>(response);
+  });
+}
+
+export async function fetchCandidateSources(): Promise<CandidateSourcesResponse> {
+  return timedAsync("client.pending_sources_fetch", async () => {
+    const response = await fetch("/api/candidates/sources", { cache: "no-store" });
+    return parseEnvelope<CandidateSourcesResponse>(response);
   });
 }
 
@@ -127,6 +155,19 @@ export async function syncApprovedSheets(
 export type AskCandidateResponse = {
   answer: string;
   confidence: "low" | "medium" | "high";
+  certainty?: "confirmed" | "inferred" | "conflicting" | "unknown";
+  liveVerification?: boolean;
+  kind?: "factual" | "decision";
+  decision?: {
+    recommendation: "strong_yes" | "yes" | "maybe" | "no" | "strong_no";
+    headline: string;
+    reasons: string[];
+    concerns: string[];
+    missingInformation: string[];
+    nextStep: string;
+    confidence: "high" | "medium" | "low";
+    citations: Array<{ url: string; label: string }>;
+  } | null;
   sources: Array<{ url: string; label: string }>;
   updatedCandidate: CandidateDetail;
 };

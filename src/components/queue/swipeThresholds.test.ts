@@ -8,8 +8,11 @@ describe("swipe thresholds", () => {
     assert.ok(SWIPE_THRESHOLDS.horizontal > 80);
   });
 
-  it("uses a dedicated upward save threshold", () => {
-    assert.equal(SWIPE_THRESHOLDS.save, 90);
-    assert.ok(SWIPE_THRESHOLDS.save > 50);
+  it("does not expose an upward save swipe threshold", () => {
+    assert.equal(
+      "save" in SWIPE_THRESHOLDS,
+      false,
+      "save is keyboard/menu only — no upward swipe",
+    );
   });
 });

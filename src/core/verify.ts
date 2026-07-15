@@ -1,10 +1,14 @@
 import type { HackathonEvent, VerificationResult } from "@/core/discovery/types";
 import { normalizeDatePart } from "@/core/dedupe";
 import {
+  applicationDeadlineFor,
+  deriveEventTemporalStatus,
+  eventEndFor,
+  eventStartFor,
   isDeadlineClosed,
-  isEventEnded,
   isStaleTitleYear,
   todayIso,
+  timezoneForLocation,
 } from "@/core/dates";
 
 function isValidIsoDate(value?: string): boolean {
@@ -43,7 +47,7 @@ export function verifyHackathonEvent(
     };
   }
 
-  if (isDeadlineClosed(event.deadline, now)) {
+  if (isDeadlineClosed(applicationDeadlineFor(event), now)) {
     return {
       valid: false,
       confidence: "high",
@@ -53,7 +57,14 @@ export function verifyHackathonEvent(
     };
   }
 
-  if (isEventEnded(event, now)) {
+  const temporalStatus = deriveEventTemporalStatus({
+    startDate: eventStartFor(event),
+    endDate: eventEndFor(event),
+    timezone: timezoneForLocation(event),
+    now,
+  });
+
+  if (temporalStatus === "FINISHED") {
     return {
       valid: false,
       confidence: "high",
@@ -61,6 +72,9 @@ export function verifyHackathonEvent(
       reasons: ["Event already ended"],
       redFlags: ["Event already ended"],
     };
+  }
+  if (temporalStatus === "UNKNOWN") {
+    redFlags.push("Date unclear");
   }
 
   if (isStaleTitleYear(event.name, event, now)) {
@@ -93,8 +107,11 @@ export function verifyHackathonEvent(
     };
   }
 
-  if (!isValidIsoDate(event.deadline) && !isValidIsoDate(event.startDate)) {
-    redFlags.push("Date or deadline unclear");
+  if (!isValidIsoDate(applicationDeadlineFor(event))) {
+    redFlags.push("Applications close: Unknown");
+  }
+  if (!isValidIsoDate(eventStartFor(event))) {
+    redFlags.push("Event date unclear");
   }
 
   if (event.officialUrl) {
@@ -108,7 +125,7 @@ export function verifyHackathonEvent(
   }
 
   const confidence =
-    event.officialUrl && event.applyUrl && (event.deadline || event.startDate)
+    event.officialUrl && event.applyUrl && (applicationDeadlineFor(event) || eventStartFor(event))
       ? "high"
       : event.officialUrl || event.applyUrl
         ? "medium"

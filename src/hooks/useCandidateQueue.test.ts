@@ -130,6 +130,28 @@ describe("queue restore + seen integration", () => {
     assert.equal(getQueue()[0]?.id, "solo");
   });
 
+  it("tracks authoritative pending total separately from loaded batch", () => {
+    replaceQueue(
+      Array.from({ length: 30 }, (_value, index) =>
+        card({ id: `loaded-${index}`, status: "NEW", score: 100 - index }),
+      ),
+      196,
+    );
+
+    assert.equal(getQueue().length, 30);
+    assert.equal(getCounts().queue, 196);
+
+    applyStatusChange({
+      id: "loaded-0",
+      previousStatus: "NEW",
+      newStatus: "APPROVED",
+      card: card({ id: "loaded-0", status: "APPROVED" }),
+    });
+
+    assert.equal(getQueue().length, 29);
+    assert.equal(getCounts().queue, 195);
+  });
+
   it("seen state does not hide authoritative NEW after unsee", () => {
     const id = "auth";
     addSeenId(id);

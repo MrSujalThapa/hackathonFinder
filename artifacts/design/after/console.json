@@ -1,0 +1,456 @@
+{
+  "step": 15,
+  "capturedAt": "2026-07-12T19:54:41.786Z",
+  "checks": [
+    {
+      "id": "no-more-details-button",
+      "pass": true,
+      "detail": "No More details button on queue captures"
+    },
+    {
+      "id": "no-permanent-keyboard-banner",
+      "pass": true,
+      "detail": "No permanent Keyboard banner on queue"
+    },
+    {
+      "id": "no-visible-reject-save-approve-row",
+      "pass": true,
+      "detail": "No visible Reject/Save/Approve buttons on queue card"
+    },
+    {
+      "id": "keyboard-shortcuts-help-exists",
+      "pass": true,
+      "detail": "Keyboard shortcuts help (?) control present"
+    },
+    {
+      "id": "no-horizontal-overflow",
+      "pass": true,
+      "detail": "No horizontal overflow across captures"
+    },
+    {
+      "id": "keyboard-shortcuts-panel-content",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "id": "candidate-detail-reachable",
+      "pass": true,
+      "detail": "Opened http://localhost:3000/candidate/aaaaaaaa-aaaa-4aaa-8aaa-000000000004"
+    },
+    {
+      "id": "ask-composer-placeholder",
+      "pass": true,
+      "detail": "placeholder=\"Ask about this event…\""
+    },
+    {
+      "id": "no-ask-anything-heading",
+      "pass": true,
+      "detail": "No Ask anything heading (visual)"
+    }
+  ],
+  "interactionNotes": [
+    "shortcuts-panel: ? Shortcuts Left arrow — reject Right arrow — approve S — save Enter — open details Escape — close actions menu",
+    "detail-open: http://localhost:3000/candidate/aaaaaaaa-aaaa-4aaa-8aaa-000000000001"
+  ],
+  "metrics": [
+    {
+      "label": "queue-at-rest",
+      "viewport": "390x844",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": true
+    },
+    {
+      "label": "queue-at-rest",
+      "viewport": "768x1024",
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": true
+    },
+    {
+      "label": "queue-at-rest",
+      "viewport": "1440x1000",
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": true
+    },
+    {
+      "label": "queue-at-rest",
+      "viewport": "1728x900",
+      "scrollWidth": 1728,
+      "clientWidth": 1728,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": true
+    },
+    {
+      "label": "approved",
+      "viewport": "390x844",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "approved",
+      "viewport": "768x1024",
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "approved",
+      "viewport": "1440x1000",
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "approved",
+      "viewport": "1728x900",
+      "scrollWidth": 1728,
+      "clientWidth": 1728,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "rejected",
+      "viewport": "390x844",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "rejected",
+      "viewport": "768x1024",
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "rejected",
+      "viewport": "1440x1000",
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "rejected",
+      "viewport": "1728x900",
+      "scrollWidth": 1728,
+      "clientWidth": 1728,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "saved",
+      "viewport": "390x844",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "saved",
+      "viewport": "768x1024",
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "saved",
+      "viewport": "1440x1000",
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "saved",
+      "viewport": "1728x900",
+      "scrollWidth": 1728,
+      "clientWidth": 1728,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "settings",
+      "viewport": "390x844",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "settings",
+      "viewport": "768x1024",
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "settings",
+      "viewport": "1440x1000",
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "settings",
+      "viewport": "1728x900",
+      "scrollWidth": 1728,
+      "clientWidth": 1728,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "candidate-detail",
+      "viewport": "390x844",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [
+        "Approve",
+        "Save",
+        "Reject"
+      ],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "ask-composer",
+      "viewport": "390x844",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [
+        "Approve",
+        "Save",
+        "Reject"
+      ],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "candidate-detail",
+      "viewport": "768x1024",
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [
+        "Approve",
+        "Save",
+        "Reject"
+      ],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "ask-composer",
+      "viewport": "768x1024",
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [
+        "Approve",
+        "Save",
+        "Reject"
+      ],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "candidate-detail",
+      "viewport": "1440x1000",
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [
+        "Approve",
+        "Save",
+        "Reject"
+      ],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "ask-composer",
+      "viewport": "1440x1000",
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [
+        "Approve",
+        "Save",
+        "Reject"
+      ],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "candidate-detail",
+      "viewport": "1728x900",
+      "scrollWidth": 1728,
+      "clientWidth": 1728,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [
+        "Approve",
+        "Save",
+        "Reject"
+      ],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    },
+    {
+      "label": "ask-composer",
+      "viewport": "1728x900",
+      "scrollWidth": 1728,
+      "clientWidth": 1728,
+      "overflowX": false,
+      "instructionalTexts": [],
+      "decisionButtonsVisible": [
+        "Approve",
+        "Save",
+        "Reject"
+      ],
+      "moreDetailsVisible": false,
+      "askAnythingHeading": false,
+      "keyboardBannerVisible": false,
+      "shortcutsHelpPresent": false
+    }
+  ],
+  "consoleLogs": [],
+  "failedRequests": [],
+  "detailConsoleLogs": []
+}

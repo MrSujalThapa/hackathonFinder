@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+/**
+ * CLI adapter — discovery logic lives in `@/discovery` via `runAgent`.
+ */
+
 import { loadLocalEnv } from "@/cli/loadEnv";
 import { runAgent } from "@/agent/runAgent";
 import { parseAgentArgs } from "@/cli/parseAgentArgs";
@@ -20,6 +24,7 @@ async function main(): Promise<void> {
     await runAgent(options.command, options.dryRun, {
       sources: options.sources,
       maxResults: options.maxResults,
+      reviewPolicy: options.reviewPolicy,
       allowMockWrites: options.allowMockWrites,
       sourceTimeoutMs: options.sourceTimeoutMs,
       totalTimeoutMs: options.totalTimeoutMs,

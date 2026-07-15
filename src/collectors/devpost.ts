@@ -1,6 +1,18 @@
+/**
+ * Devpost native hackathon collector.
+ *
+ * Why Playwright: `GET https://devpost.com/hackathons` returns a marketing shell
+ * without challenge tiles. Public listing cards (`a.tile-anchor`) are client-rendered.
+ * Playwright is used only for that public listing page — never for account login.
+ */
 import * as cheerio from "cheerio";
-import type { RawLead } from "@/core/discovery/types";
-import type { DiscoveryPreferences } from "@/core/discovery/types";
+import type {
+  DiscoveryPreferences,
+  DiscoveryProfile,
+  ParsedDateEvidence,
+  RawLead,
+} from "@/core/discovery/types";
+import { normalizeDatePart } from "@/core/dedupe";
 import type { Collector, CollectorInput, CollectorResult } from "@/collectors/types";
 import { emptyCollectorResult } from "@/collectors/types";
 import { fetchHtml } from "@/lib/http/fetchHtml";
@@ -9,9 +21,88 @@ import {
   isPlaywrightBrowserMissingError,
   withPlaywright,
 } from "@/lib/browser/playwright";
+import { collectUntilStable } from "@/lib/browser/collectUntilStable";
 import { normalizeUrl, normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
 const DEVPOST_BASE = "https://devpost.com";
+const DEVPOST_MAX_EVENTS = 100;
+const DEVPOST_MAX_PAGES = 20;
+const DEVPOST_MAX_SCROLLS_PER_PAGE = 6;
+const DEVPOST_SCROLL_NO_GROWTH_LIMIT = 2;
+const DEVPOST_SCROLL_WAIT_MS = 800;
+const DEVPOST_PAGE_TIMEOUT_MS = 12_000;
+const DEVPOST_PAGE_CONCURRENCY = 3;
+const DEVPOST_DETAIL_TIMEOUT_MS = 7_000;
+const DEVPOST_DETAIL_CONCURRENCY = 3;
+
+export type DevpostProfileBudget = {
+  maxCards: number;
+  maxPages: number;
+  detailLimit: number;
+};
+
+export function devpostBudgetForProfile(
+  profile: DiscoveryProfile | undefined,
+  requestedMaxResults: number,
+): DevpostProfileBudget {
+  const requested = Math.max(1, requestedMaxResults);
+  switch (profile) {
+    case "exhaustive":
+      return { maxCards: Math.max(requested, 1_000), maxPages: 150, detailLimit: 120 };
+    case "deep":
+      return { maxCards: Math.max(requested, 500), maxPages: 80, detailLimit: 80 };
+    case "standard":
+      return { maxCards: Math.max(requested, 180), maxPages: 35, detailLimit: 36 };
+    case "light":
+    default:
+      return { maxCards: Math.max(requested, DEVPOST_MAX_EVENTS), maxPages: DEVPOST_MAX_PAGES, detailLimit: 18 };
+  }
+}
+
+export function buildDevpostListingsUrl(page: number): string {
+  const pageNumber = Math.max(1, Math.floor(page));
+  return `${DEVPOST_BASE}/hackathons?status[]=upcoming&status[]=open&page=${pageNumber}`;
+}
+export const DEVPOST_OPEN_UPCOMING_URL = buildDevpostListingsUrl(1);
+export function buildDevpostApiUrl(page: number): string {
+  const pageNumber = Math.max(1, Math.floor(page));
+  return `${DEVPOST_BASE}/api/hackathons?status[]=upcoming&status[]=open&page=${pageNumber}`;
+}
+
+export function buildDevpostDatesUrl(url: string): string | undefined {
+  const canonical = canonicalizeDevpostUrl(url);
+  if (!canonical || !isDevpostHackathonUrl(canonical)) return undefined;
+  try {
+    const parsed = new URL(canonical);
+    parsed.pathname = `${parsed.pathname.replace(/\/+$/, "")}/details/dates`;
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+export type DevpostFailureHint =
+  | "network"
+  | "anti_bot"
+  | "rate_limit"
+  | "browser_missing"
+  | "page_load"
+  | "redirected"
+  | "listing_container_missing"
+  | "selector_parser_failure"
+  | "lazy_loading_timeout"
+  | "zero_matching_results"
+  | "no_current_events";
+
+export type DevpostLazyLoadStopReason =
+  | "end_marker_reached"
+  | "no_additional_cards"
+  | "maximum_scrolls_reached"
+  | "maximum_cards_reached"
+  | "timeout"
+  | "parser_failure";
 
 type ParsedDevpostCard = {
   title: string;
@@ -20,59 +111,410 @@ type ParsedDevpostCard = {
   prize?: string;
   dateText?: string;
   location?: string;
+  status?: string;
+  organizer?: string;
   links: string[];
 };
 
-function buildDevpostSearchUrl(preferences: DiscoveryPreferences): string {
-  const params = new URLSearchParams();
-  params.append("status[]", "upcoming");
-  params.append("challenge_type[]", "online");
-  params.append("challenge_type[]", "in-person");
+type DevpostApiHackathon = {
+  id?: number | string;
+  title?: string;
+  url?: string;
+  displayed_location?: { location?: string; icon?: string };
+  open_state?: string;
+  time_left_to_submission?: string;
+  submission_period_dates?: string;
+  themes?: Array<{ name?: string }>;
+  prize_amount?: string;
+  organization_name?: string;
+  winners_announced?: boolean;
+  start_a_submission_url?: string;
+};
 
-  if (preferences.includeRemote) {
-    params.append("challenge_type[]", "online");
+type DevpostApiPayload = {
+  hackathons?: DevpostApiHackathon[];
+  meta?: {
+    total_count?: number;
+    per_page?: number;
+  };
+};
+
+export type DevpostApiPageResult = {
+  requestedPage: number;
+  requestedUrl: string;
+  finalUrl: string;
+  activePage: number;
+  leads: RawLead[];
+  cardCount: number;
+  fingerprint: string;
+  firstUrls: string[];
+  lastUrls: string[];
+  hasNext: boolean;
+  nextPage?: number;
+  status: "completed" | "degraded" | "failed";
+  stopReason?: string;
+  error?: string;
+};
+
+export function describeDevpostFailure(hint: DevpostFailureHint, detail?: string): string {
+  switch (hint) {
+    case "network":
+      return `Devpost network failure${detail ? `: ${detail}` : ""}`;
+    case "anti_bot":
+      return `Devpost blocked or anti-bot response${detail ? `: ${detail}` : ""}`;
+    case "rate_limit":
+      return `Devpost rate limit${detail ? `: ${detail}` : ""}`;
+    case "browser_missing":
+      return detail ?? formatPlaywrightInstallHint();
+    case "page_load":
+      return `Devpost page failed to load${detail ? `: ${detail}` : ""}`;
+    case "redirected":
+      return `Devpost filtered URL redirected unexpectedly${detail ? `: ${detail}` : ""}`;
+    case "listing_container_missing":
+      return `Devpost listing container missing${detail ? `: ${detail}` : ""}`;
+    case "selector_parser_failure":
+      return `Devpost selector/parser failure: UI may have changed${detail ? ` (${detail})` : ""}`;
+    case "lazy_loading_timeout":
+      return `Devpost lazy-loading timeout${detail ? `: ${detail}` : ""}`;
+    case "no_current_events":
+      return "Devpost returned no current/upcoming hackathons.";
+    case "zero_matching_results":
+      return "Devpost returned no matching hackathon cards.";
   }
-
-  const searchTerms = [...preferences.themes, ...preferences.locations]
-    .filter((term) => !/^(canada|remote|online)$/i.test(term))
-    .slice(0, 3);
-
-  if (searchTerms.length > 0) {
-    params.set("search", searchTerms.join(" "));
-  }
-
-  return `${DEVPOST_BASE}/hackathons?${params.toString()}`;
 }
 
-function isDevpostHackathonUrl(url: string): boolean {
+/** Canonical challenge URL without tracking query params. */
+export function canonicalizeDevpostUrl(url: string): string | undefined {
+  const normalized = normalizeUrl(url, DEVPOST_BASE);
+  if (!normalized) return undefined;
+  try {
+    const parsed = new URL(normalized);
+    parsed.hash = "";
+    parsed.search = "";
+    return parsed.toString().replace(/\/$/, "") + "/";
+  } catch {
+    return normalized;
+  }
+}
+
+export function isRejectedDevpostUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname.toLowerCase();
+
+    if (
+      host === "info.devpost.com" ||
+      host === "help.devpost.com" ||
+      host === "secure.devpost.com" ||
+      host === "support.devpost.com" ||
+      host === "api.devpost.com"
+    ) {
+      return true;
+    }
+
+    if (host === "devpost.com" || host === "www.devpost.com") {
+      if (
+        path === "/" ||
+        path === "/hackathons" ||
+        path.startsWith("/hackathons/") ||
+        path.startsWith("/software") ||
+        path.startsWith("/portfolio") ||
+        path.startsWith("/settings") ||
+        path.startsWith("/users") ||
+        path.startsWith("/follows") ||
+        path.startsWith("/notifications") ||
+        path.startsWith("/challenges/search")
+      ) {
+        return true;
+      }
+      // Bare user profile pages: /username
+      if (/^\/[^/]+\/?$/.test(path) && !path.includes(".")) {
+        return true;
+      }
+    }
+
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+export function isDevpostHackathonUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     const host = parsed.hostname.toLowerCase();
     if (!host.endsWith("devpost.com")) return false;
-
-    const blockedHosts = new Set([
-      "info.devpost.com",
-      "help.devpost.com",
-      "secure.devpost.com",
-      "support.devpost.com",
-      "api.devpost.com",
-    ]);
-    if (blockedHosts.has(host)) return false;
-
-    if (host === "devpost.com" || host === "www.devpost.com") {
-      return (
-        /^\/[^/]+\/?$/.test(parsed.pathname) &&
-        !["/hackathons", "/software", "/settings", "/follows", "/notifications"].includes(
-          parsed.pathname.replace(/\/$/, "") || "/",
-        )
-      );
-    }
+    if (isRejectedDevpostUrl(url)) return false;
 
     // Challenge subdomain pages like ai-agent-summit.devpost.com
-    return true;
+    if (host !== "devpost.com" && host !== "www.devpost.com") {
+      return true;
+    }
+
+    // Rare path-style challenge pages under www
+    return /^\/[^/]+\/?$/.test(parsed.pathname);
   } catch {
     return false;
   }
+}
+
+function isEndedStatus(status: string | undefined, text: string): boolean {
+  const blob = `${status ?? ""} ${text}`.toLowerCase();
+  return /\b(ended|closed|archived|winners\s+announced)\b/.test(blob) &&
+    !/\b(upcoming|open|live)\b/.test(blob);
+}
+
+/**
+ * Source-specific public listing queries: Canada, Toronto, remote, AI, upcoming.
+ */
+export function buildDevpostSearchUrls(preferences: DiscoveryPreferences): string[] {
+  void preferences;
+  return [DEVPOST_OPEN_UPCOMING_URL];
+}
+
+function parseDevpostDateValue(raw: string | undefined, fallbackYear = new Date().getUTCFullYear()): string | undefined {
+  if (!raw) return undefined;
+  const compact = raw
+    .replace(/\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?(?:\s+[A-Z]{2,4})?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!/\b20\d{2}\b/.test(compact) && /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b/i.test(compact)) {
+    return normalizeDatePart(`${compact}, ${fallbackYear}`) ?? undefined;
+  }
+  return normalizeDatePart(compact) ?? undefined;
+}
+
+export type DevpostDateRange = {
+  displayedDateRange: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+export function parseDevpostDisplayedDateRange(
+  value: string | undefined,
+  now: Date = new Date(),
+): DevpostDateRange | undefined {
+  const displayedDateRange = value?.replace(/\s+/g, " ").trim();
+  if (!displayedDateRange) return undefined;
+  const text = displayedDateRange.replace(/[–—]/g, "-");
+  const yearMatch = text.match(/\b(20\d{2})\b/g);
+  const fallbackYear = yearMatch
+    ? Number.parseInt(yearMatch[yearMatch.length - 1]!, 10)
+    : now.getUTCFullYear();
+  const match = text.match(
+    /\b([A-Za-z]{3,9})\s+(\d{1,2})(?:,?\s*(20\d{2}))?\s*(?:-|to|through|until)\s*(?:([A-Za-z]{3,9})\s+)?(\d{1,2})(?:,?\s*(20\d{2}))?\b/i,
+  );
+  if (!match) return { displayedDateRange };
+  const startYear = Number.parseInt(match[3] ?? String(fallbackYear), 10);
+  const endYear = Number.parseInt(match[6] ?? match[3] ?? String(fallbackYear), 10);
+  const startMonth = match[1]!;
+  const endMonth = match[4] ?? startMonth;
+  return {
+    displayedDateRange,
+    startDate: parseDevpostDateValue(`${startMonth} ${match[2]}, ${startYear}`, fallbackYear),
+    endDate: parseDevpostDateValue(`${endMonth} ${match[5]}, ${endYear}`, fallbackYear),
+  };
+}
+
+function devpostDateEvidence(input: {
+  kind: ParsedDateEvidence["kind"];
+  value?: string;
+  confidence?: ParsedDateEvidence["confidence"];
+  sourceUrl: string;
+  sourceText?: string;
+  sourceType?: ParsedDateEvidence["sourceType"];
+}): ParsedDateEvidence | undefined {
+  if (!input.value) return undefined;
+  return {
+    kind: input.kind,
+    value: input.value,
+    confidence: input.confidence ?? "high",
+    sourceUrl: input.sourceUrl,
+    sourceText: input.sourceText,
+    sourceType: input.sourceType,
+    retrievedAt: new Date().toISOString(),
+  };
+}
+
+function displayedRangeMetadata(
+  dateText: string | undefined,
+  sourceUrl: string,
+  sourceType: ParsedDateEvidence["sourceType"],
+  semanticRole: "submission_period" | "uncertain",
+): Record<string, unknown> {
+  const range = parseDevpostDisplayedDateRange(dateText);
+  if (!range) return {};
+  const evidence = [
+    semanticRole === "submission_period"
+      ? devpostDateEvidence({
+          kind: "submission_open",
+          value: range.startDate,
+          sourceUrl,
+          sourceText: range.displayedDateRange,
+          sourceType,
+        })
+      : undefined,
+    semanticRole === "submission_period"
+      ? devpostDateEvidence({
+          kind: "submission_deadline",
+          value: range.endDate,
+          sourceUrl,
+          sourceText: range.displayedDateRange,
+          sourceType,
+        })
+      : undefined,
+  ].filter((item): item is ParsedDateEvidence => Boolean(item));
+  return {
+    displayedDateRange: range.displayedDateRange,
+    ...(semanticRole === "submission_period"
+      ? {
+          submissionOpenDate: range.startDate,
+          submissionDeadline: range.endDate,
+        }
+      : {}),
+    parsedDateEvidence: evidence.length > 0 ? evidence : undefined,
+    dateExtractionState: semanticRole === "submission_period" ? "submission_period_from_listing" : "displayed_range_only",
+  };
+}
+
+export type DevpostScheduleDates = {
+  eventStartDate?: string;
+  eventEndDate?: string;
+  registrationOpenDate?: string;
+  registrationDeadline?: string;
+  submissionOpenDate?: string;
+  submissionDeadline?: string;
+  judgingStartDate?: string;
+  judgingEndDate?: string;
+  resultAnnouncementDate?: string;
+  parsedDateEvidence: ParsedDateEvidence[];
+};
+
+const DEVPOST_SCHEDULE_LABELS: Array<{
+  key: keyof DevpostScheduleDates;
+  evidenceKind: ParsedDateEvidence["kind"];
+  label: RegExp;
+  endpoint: "begin" | "end" | "single";
+}> = [
+  { key: "eventStartDate", evidenceKind: "event_start", label: /\b(?:hackathon|event|challenge|competition)\b/i, endpoint: "begin" },
+  { key: "eventEndDate", evidenceKind: "event_end", label: /\b(?:hackathon|event|challenge|competition)\b/i, endpoint: "end" },
+  { key: "registrationOpenDate", evidenceKind: "registration_open", label: /\b(?:registration|applications?)\b/i, endpoint: "begin" },
+  { key: "registrationDeadline", evidenceKind: "registration_deadline", label: /\b(?:registration|applications?)\b/i, endpoint: "end" },
+  { key: "submissionOpenDate", evidenceKind: "submission_open", label: /\bsubmissions?\b/i, endpoint: "begin" },
+  { key: "submissionDeadline", evidenceKind: "submission_deadline", label: /\bsubmissions?\b/i, endpoint: "end" },
+  { key: "judgingStartDate", evidenceKind: "judging_start", label: /\bjudging\b/i, endpoint: "begin" },
+  { key: "judgingEndDate", evidenceKind: "judging_end", label: /\bjudging\b/i, endpoint: "end" },
+  { key: "resultAnnouncementDate", evidenceKind: "result_announcement", label: /\b(?:winners?|results?)\b/i, endpoint: "single" },
+];
+
+function scheduleDateRegex(endpoint: "begin" | "end" | "single"): RegExp {
+  const date = "([A-Za-z]{3,9}\\s+\\d{1,2}(?:,?\\s+20\\d{2})?)(?:\\s+at\\s+\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?(?:\\s+[A-Z]{2,4})?)?";
+  if (endpoint === "begin") return new RegExp(`\\b(?:begins?|starts?|opens?)\\s*:?\\s*${date}`, "i");
+  if (endpoint === "end") return new RegExp(`\\b(?:ends?|closes?|deadline)\\s*:?\\s*${date}`, "i");
+  return new RegExp(`\\b(?:announced?|posted|winners?|results?)\\s*:?\\s*${date}`, "i");
+}
+
+function orderedScheduleDates(segment: string, fallbackYear: number): string[] {
+  const dates = [
+    ...segment.matchAll(
+      /\b[A-Za-z]{3,9}\s+\d{1,2}(?:,?\s+20\d{2})?(?:\s+at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?(?:\s+[A-Z]{2,4})?)?/gi,
+    ),
+  ]
+    .map((match) => parseDevpostDateValue(match[0], fallbackYear))
+    .filter((value): value is string => Boolean(value));
+  return [...new Set(dates)];
+}
+
+function scheduleSegments($: cheerio.CheerioAPI): string[] {
+  const segments = $("section, article, li, tr, .challenge-timeline-item, .timeline-item, .phase")
+    .map((_index, node) =>
+      $(node)
+        .text()
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .get()
+    .filter((text) => text.length > 8);
+  if (segments.length > 0) return segments;
+  return [$.root().text().replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\s+/g, " ").trim()];
+}
+
+export function parseDevpostScheduleHtml(
+  html: string,
+  sourceUrl: string,
+  now: Date = new Date(),
+): DevpostScheduleDates {
+  const $ = cheerio.load(html);
+  const result: DevpostScheduleDates = { parsedDateEvidence: [] };
+  const fallbackYear = now.getUTCFullYear();
+  const segments = scheduleSegments($);
+
+  for (const segment of segments) {
+    const segmentDates = orderedScheduleDates(segment, fallbackYear);
+    for (const item of DEVPOST_SCHEDULE_LABELS) {
+      if (result[item.key] || !item.label.test(segment)) continue;
+      const match = segment.match(scheduleDateRegex(item.endpoint));
+      const value =
+        parseDevpostDateValue(match?.[1], fallbackYear) ??
+        (item.endpoint === "end" ? segmentDates[1] : segmentDates[0]);
+      if (!value) continue;
+      (result[item.key] as string | undefined) = value;
+      const evidence = devpostDateEvidence({
+        kind: item.evidenceKind,
+        value,
+        sourceUrl,
+        sourceText: segment.slice(0, 220),
+        sourceType: "schedule",
+      });
+      if (evidence) result.parsedDateEvidence.push(evidence);
+    }
+  }
+
+  return result;
+}
+
+function extractTileFields(
+  anchor: ReturnType<cheerio.CheerioAPI>,
+  $: cheerio.CheerioAPI,
+): Omit<ParsedDevpostCard, "url" | "links" | "title"> & { title: string } {
+  const title =
+    anchor.find("h2, h3, .title, .challenge-title").first().text().trim() ||
+    anchor.attr("title")?.trim() ||
+    "";
+
+  const status = anchor.find(".status-label, .hackathon-status").first().text().trim() || undefined;
+  const prize =
+    anchor.find(".prize-amount, .prize, .prizes").first().text().replace(/\s+/g, " ").trim() ||
+    undefined;
+  const location =
+    anchor.find(".info span, .location, .challenge-location").first().text().trim() ||
+    undefined;
+
+  const dateCandidates = anchor
+    .find("div, span, time")
+    .map((_i, node) => $(node).text().replace(/\s+/g, " ").trim())
+    .get()
+    .filter((text) =>
+      /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b/i.test(text) &&
+      /\d{4}|\d{1,2}/.test(text) &&
+      text.length < 40,
+    );
+  const dateText = dateCandidates[0];
+
+  const description =
+    anchor.find(".description, p").first().text().replace(/\s+/g, " ").trim() || undefined;
+
+  // Organizer often sits just before the date range in the tile text.
+  const organizer =
+    anchor
+      .find(".host, .organizer, .company-name")
+      .first()
+      .text()
+      .trim() || undefined;
+
+  return { title, status, prize, location, dateText, description, organizer };
 }
 
 export function parseDevpostHtml(html: string, maxResults: number): RawLead[] {
@@ -80,43 +522,61 @@ export function parseDevpostHtml(html: string, maxResults: number): RawLead[] {
   const cards: ParsedDevpostCard[] = [];
 
   const selectors = [
+    "a.tile-anchor",
+    "a.flex-row.tile-anchor",
     "a.block-wrapper-link",
     "a.challenge-listing",
-    "a.link-to-software",
-    "a[href*='.devpost.com/']",
   ];
+
+  const seenAnchors = new Set<unknown>();
 
   for (const selector of selectors) {
     $(selector).each((_index, element) => {
+      if (seenAnchors.has(element)) return;
+      seenAnchors.add(element);
+
       const anchor = $(element);
-      const href = normalizeUrl(anchor.attr("href") ?? "", DEVPOST_BASE);
+      const hrefRaw = normalizeUrl(anchor.attr("href") ?? "", DEVPOST_BASE);
+      const href = hrefRaw ? canonicalizeDevpostUrl(hrefRaw) : undefined;
       if (!href || !isDevpostHackathonUrl(href)) return;
 
-      const title =
-        anchor.find("h2, h3, .title, .challenge-title").first().text().trim() ||
-        anchor.attr("title")?.trim() ||
-        "";
-      if (!title || title.length < 4) return;
-      if (/^(log in|sign up|help desk|settings|about)$/i.test(title)) return;
+      const fields = extractTileFields(anchor, $);
+      if (!fields.title || fields.title.length < 3) return;
+      if (/^(log in|sign up|help desk|settings|about)$/i.test(fields.title)) return;
 
-      const meta = anchor.find(".challenge-list-meta, .meta, .challenge-list-meta-challenge").text();
-      const prize =
-        anchor.find(".prize, .prizes").first().text().trim() ||
-        meta.match(/\$[\d,]+[^|\n]*/)?.[0]?.trim();
-      const dateText =
-        anchor.find(".submission-period, .date-range, time").first().text().trim() ||
-        meta.match(/[A-Z][a-z]{2}\s+\d{1,2}[^|\n]*/)?.[0]?.trim();
-      const location =
-        anchor.find(".location, .challenge-location").first().text().trim() ||
-        meta.match(/Online|Remote|Toronto|Canada|Worldwide/i)?.[0]?.trim();
+      const blob = anchor.text();
+      if (isEndedStatus(fields.status, blob)) return;
 
       cards.push({
+        ...fields,
+        url: href,
+        links: uniqueUrls([href], DEVPOST_BASE),
+      });
+    });
+  }
+
+  // Fallback: subdomain challenge links without tile class (older markup / partial render)
+  if (cards.length === 0) {
+    $("a[href*='.devpost.com']").each((_index, element) => {
+      const anchor = $(element);
+      const hrefRaw = normalizeUrl(anchor.attr("href") ?? "", DEVPOST_BASE);
+      const href = hrefRaw ? canonicalizeDevpostUrl(hrefRaw) : undefined;
+      if (!href || !isDevpostHackathonUrl(href)) return;
+
+      const fields = extractTileFields(anchor, $);
+      const title =
+        fields.title ||
+        href
+          .replace(/^https?:\/\//i, "")
+          .replace(/\.devpost\.com\/.*/i, "")
+          .replace(/-/g, " ");
+      if (!title || title.length < 4) return;
+      if (isEndedStatus(fields.status, anchor.text())) return;
+
+      cards.push({
+        ...fields,
         title,
         url: href,
-        description: anchor.find(".description, p").first().text().trim() || undefined,
-        prize,
-        dateText,
-        location,
         links: uniqueUrls([href], DEVPOST_BASE),
       });
     });
@@ -130,16 +590,20 @@ export function parseDevpostHtml(html: string, maxResults: number): RawLead[] {
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const mode = /online|remote|virtual|worldwide/i.test(card.location ?? card.description ?? "")
+    const mode = /online|remote|virtual|worldwide/i.test(
+      `${card.location ?? ""} ${card.description ?? ""}`,
+    )
       ? "online"
-      : undefined;
+      : /hybrid/i.test(`${card.location ?? ""} ${card.description ?? ""}`)
+        ? "hybrid"
+        : undefined;
 
     leads.push({
       id: `devpost-${slugify(card.title)}`,
       source: "devpost",
       title: card.title,
       url: card.url,
-      text: [card.description, card.prize, card.dateText, card.location]
+      text: [card.description, card.prize, card.dateText, card.location, card.status]
         .filter(Boolean)
         .join(" — "),
       links: card.links,
@@ -147,9 +611,17 @@ export function parseDevpostHtml(html: string, maxResults: number): RawLead[] {
       metadata: {
         prize: card.prize,
         dateText: card.dateText,
+        ...displayedRangeMetadata(card.dateText, card.url, "listing", "uncertain"),
         location: card.location,
+        status: card.status,
+        organizer: card.organizer,
         mode,
         officialUrl: card.url,
+        applyUrl: card.url,
+        attribution: "devpost",
+        provenance: "native_devpost",
+        discoveryMode: "native_devpost",
+        sourceAuthority: "devpost",
         sourceIds: { devpost: slugify(card.title) },
       },
     });
@@ -160,25 +632,553 @@ export function parseDevpostHtml(html: string, maxResults: number): RawLead[] {
   return leads;
 }
 
-async function fetchDevpostWithPlaywright(
-  url: string,
+function cleanDevpostText(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return cheerio.load(value).text().replace(/\s+/g, " ").trim() || undefined;
+}
+
+export function devpostFingerprint(urls: string[]): string {
+  return [...new Set(urls.map((url) => canonicalizeDevpostUrl(url)).filter(Boolean) as string[])]
+    .sort()
+    .join("|");
+}
+
+export function parseDevpostApiPayload(
+  payload: DevpostApiPayload,
+  maxResults: number,
+): RawLead[] {
+  const leads: RawLead[] = [];
+  for (const item of payload.hackathons ?? []) {
+    if (leads.length >= maxResults) break;
+    const url = item.url ? canonicalizeDevpostUrl(item.url) : undefined;
+    if (!url || !isDevpostHackathonUrl(url) || isRejectedDevpostUrl(url)) continue;
+    const title = item.title?.trim();
+    if (!title) continue;
+    const status = item.open_state?.trim();
+    const dateText = item.submission_period_dates?.trim();
+    const location = item.displayed_location?.location?.trim();
+    const prize = cleanDevpostText(item.prize_amount);
+    const themes = (item.themes ?? [])
+      .map((theme) => theme.name?.trim())
+      .filter((theme): theme is string => Boolean(theme));
+    const text = [
+      item.time_left_to_submission,
+      dateText,
+      location,
+      prize,
+      item.organization_name,
+      themes.join(", "),
+    ]
+      .filter(Boolean)
+      .join(" - ");
+    if (isEndedStatus(status, text)) continue;
+
+    leads.push({
+      id: `devpost-${item.id ?? slugify(title)}`,
+      source: "devpost",
+      title,
+      url,
+      text,
+      links: uniqueUrls([url, item.start_a_submission_url].filter(Boolean) as string[], DEVPOST_BASE),
+      postedAt: new Date().toISOString(),
+      metadata: {
+        prize,
+        dateText,
+        ...displayedRangeMetadata(dateText, url, "api", "submission_period"),
+        location,
+        status,
+        organizer: item.organization_name,
+        themes,
+        mode:
+          location && /online|virtual|remote/i.test(location)
+            ? "online"
+            : location
+              ? "in-person"
+              : "unknown",
+        officialUrl: url,
+        applyUrl: item.start_a_submission_url ?? url,
+        attribution: "devpost",
+        provenance: "native_devpost",
+        discoveryMode: "native_devpost",
+        sourceAuthority: "devpost",
+        sourceIds: { devpost: item.id ?? slugify(title) },
+      },
+    });
+  }
+  return leads;
+}
+
+async function fetchDevpostApiPage(
+  pageNumber: number,
+  maxResults: number,
   timeoutMs: number,
-): Promise<{ html: string; warnings: string[] }> {
+): Promise<DevpostApiPageResult> {
+  const requestedUrl = buildDevpostApiUrl(pageNumber);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(requestedUrl, {
+      signal: controller.signal,
+      headers: { accept: "application/json, text/plain, */*" },
+    });
+    const finalUrl = response.url || requestedUrl;
+    if (!response.ok) {
+      return {
+        requestedPage: pageNumber,
+        requestedUrl,
+        finalUrl,
+        activePage: pageNumber,
+        leads: [],
+        cardCount: 0,
+        fingerprint: "",
+        firstUrls: [],
+        lastUrls: [],
+        hasNext: false,
+        status: "failed",
+        stopReason: `http_${response.status}`,
+        error: describeDevpostFailure("page_load", `HTTP ${response.status}`),
+      };
+    }
+    const payload = (await response.json()) as DevpostApiPayload;
+    const leads = parseDevpostApiPayload(payload, maxResults);
+    const urls = leads.map((lead) => lead.url).filter(Boolean) as string[];
+    const perPage = payload.meta?.per_page ?? (payload.hackathons ?? []).length;
+    const totalCount = payload.meta?.total_count ?? undefined;
+    const hasNext =
+      typeof totalCount === "number"
+        ? pageNumber * Math.max(perPage, 1) < totalCount
+        : (payload.hackathons ?? []).length > 0;
+    return {
+      requestedPage: pageNumber,
+      requestedUrl,
+      finalUrl,
+      activePage: pageNumber,
+      leads,
+      cardCount: (payload.hackathons ?? []).length,
+      fingerprint: devpostFingerprint(urls),
+      firstUrls: urls.slice(0, 3),
+      lastUrls: urls.slice(-3),
+      hasNext,
+      nextPage: hasNext ? pageNumber + 1 : undefined,
+      status: "completed",
+      stopReason: hasNext ? undefined : "no_next_page",
+    };
+  } catch (error) {
+    return {
+      requestedPage: pageNumber,
+      requestedUrl,
+      finalUrl: requestedUrl,
+      activePage: pageNumber,
+      leads: [],
+      cardCount: 0,
+      fingerprint: "",
+      firstUrls: [],
+      lastUrls: [],
+      hasNext: false,
+      status: "failed",
+      stopReason: "api_error",
+      error:
+        error instanceof Error
+          ? describeDevpostFailure("network", error.message)
+          : describeDevpostFailure("network"),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export type DevpostRenderedListing = {
+  html: string;
+  warnings: string[];
+  initialCardCount: number;
+  finalCardCount: number;
+  scrollAttempts: number;
+  noGrowthAttempts: number;
+  stopReason: DevpostLazyLoadStopReason;
+  finalUrl: string;
+  listingContainerFound: boolean;
+  emptyStateFound: boolean;
+};
+
+async function collectRenderedDevpostListing(
+  url: string,
+  pageNumber: number,
+  timeoutMs: number,
+  logger?: (message: string) => void,
+): Promise<DevpostRenderedListing> {
   const warnings: string[] = [];
+  const startedAt = Date.now();
 
-  const html = await withPlaywright(async ({ page }) => {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+  return withPlaywright(async ({ page }) => {
+    logger?.(`Opening filtered listings page ${pageNumber}...`);
+    const response = await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: timeoutMs,
+    });
+    if (!response || response.status() >= 400) {
+      throw new Error(
+        describeDevpostFailure("page_load", `HTTP ${response?.status() ?? "unknown"}`),
+      );
+    }
+
+    const finalUrl = page.url();
+    let redirected = !finalUrl.includes("/hackathons");
+    try {
+      const parsed = new URL(finalUrl);
+      const statuses = parsed.searchParams.getAll("status[]");
+      redirected =
+        redirected ||
+        !statuses.includes("upcoming") ||
+        !statuses.includes("open") ||
+        parsed.searchParams.get("page") !== String(pageNumber);
+    } catch {
+      redirected = true;
+    }
+    if (redirected) {
+      warnings.push(describeDevpostFailure("redirected", finalUrl));
+    }
+
+    await page.waitForLoadState("networkidle", { timeout: Math.min(timeoutMs, DEVPOST_PAGE_TIMEOUT_MS) }).catch(() => {
+      warnings.push(describeDevpostFailure("lazy_loading_timeout", "network idle not reached"));
+    });
+
+    const listingContainerFound =
+      (await page.locator(".hackathons, [class*='hackathon'], a.tile-anchor").count().catch(() => 0)) > 0;
+    const emptyStateFound =
+      (await page
+        .locator("text=/no hackathons|no results|nothing found/i")
+        .count()
+        .catch(() => 0)) > 0;
+
+    if (!listingContainerFound && !emptyStateFound) {
+      warnings.push(describeDevpostFailure("listing_container_missing"));
+    }
+
     await page
-      .locator("a[href*='.devpost.com/'], .challenge-list, #results-and-filters")
+      .locator("a.tile-anchor")
       .first()
-      .waitFor({ state: "attached", timeout: timeoutMs })
-      .catch(() => {
-        warnings.push("Devpost listing content did not fully render within timeout.");
-      });
-    return page.content();
-  }, { timeoutMs });
+      .waitFor({ state: "attached", timeout: Math.min(timeoutMs, 12_000) })
+      .catch(() => undefined);
 
-  return { html, warnings };
+    const uniqueCardCount = async () =>
+      page.locator("a.tile-anchor").evaluateAll((anchors) => {
+        const urls = anchors
+          .map((anchor) => (anchor as HTMLAnchorElement).href)
+          .filter(Boolean);
+        return new Set(urls).size;
+      });
+
+    const initialCardCount = await uniqueCardCount().catch(() => 0);
+    logger?.(`Page ${pageNumber}: initial listing batch loaded`);
+    logger?.(`Page ${pageNumber}: ${initialCardCount} event cards found`);
+
+    const collected = await collectUntilStable<string>({
+      collectItems: async () =>
+        page.locator("a.tile-anchor").evaluateAll((anchors) =>
+          anchors.map((anchor) => (anchor as HTMLAnchorElement).href).filter(Boolean),
+        ),
+      getKey: (url) => normalizeUrlForDedupe(url),
+      scroll: async () => {
+        await page.mouse.wheel(0, 2600).catch(() => undefined);
+      },
+      waitForIdle: async () => {
+        await page.waitForLoadState("networkidle", { timeout: DEVPOST_SCROLL_WAIT_MS }).catch(() => undefined);
+      },
+      maxItems: DEVPOST_MAX_EVENTS,
+      maxScrolls: DEVPOST_MAX_SCROLLS_PER_PAGE,
+      noGrowthLimit: DEVPOST_SCROLL_NO_GROWTH_LIMIT,
+      timeoutMs: Math.max(1_000, timeoutMs - (Date.now() - startedAt)),
+      waitMs: DEVPOST_SCROLL_WAIT_MS,
+      logger,
+      loadingMessage: `Page ${pageNumber}: loading more listings...`,
+      countMessage: (count) => `Page ${pageNumber}: ${count} event cards found`,
+    });
+
+    let stopReason: DevpostLazyLoadStopReason =
+      collected.stopReason === "max_items"
+        ? "maximum_cards_reached"
+        : collected.stopReason === "max_scrolls"
+          ? "maximum_scrolls_reached"
+          : collected.stopReason === "timeout"
+            ? "timeout"
+            : "no_additional_cards";
+    const endMarker =
+      (await page
+        .locator("text=/end of results|no more hackathons|no additional/i")
+        .count()
+        .catch(() => 0)) > 0;
+    if (endMarker) stopReason = "end_marker_reached";
+    if (stopReason === "timeout") {
+      warnings.push(describeDevpostFailure("lazy_loading_timeout"));
+    }
+    if (stopReason === "no_additional_cards") {
+      logger?.(`Page ${pageNumber}: no more cards found after ${collected.noGrowthAttempts} attempts`);
+    }
+
+    logger?.(`Page ${pageNumber}: lazy loading complete`);
+
+    return {
+      html: await page.content(),
+      warnings,
+      initialCardCount,
+      finalCardCount: collected.uniqueCount,
+      scrollAttempts: collected.scrollAttempts,
+      noGrowthAttempts: collected.noGrowthAttempts,
+      stopReason,
+      finalUrl: page.url(),
+      listingContainerFound,
+      emptyStateFound,
+    };
+  }, { timeoutMs });
+}
+
+function hasDevpostChallengePage(html: string): boolean {
+  return /captcha|cloudflare|verify you are human|access denied|blocked/i.test(html);
+}
+
+async function collectDevpostApiPages(
+  maxResults: number,
+  maxPages: number,
+  timeoutMs: number,
+  logger?: (message: string) => void,
+): Promise<{
+  leads: RawLead[];
+  pages: DevpostApiPageResult[];
+  duplicateUrls: number;
+  repeatedPages: number;
+  stopReason: string;
+}> {
+  const startedAt = Date.now();
+  const pages: DevpostApiPageResult[] = [];
+  const leads: RawLead[] = [];
+  const seenUrls = new Set<string>();
+  const seenFingerprints = new Map<string, number>();
+  let duplicateUrls = 0;
+  let repeatedPages = 0;
+  let stopReason = "no_next_page";
+
+  const mergePage = (page: DevpostApiPageResult) => {
+    pages.push(page);
+    if (page.fingerprint) {
+      const prior = seenFingerprints.get(page.fingerprint);
+      if (prior != null) {
+        repeatedPages += 1;
+        logger?.(`Page ${page.requestedPage} repeated page ${prior}`);
+        page.status = "degraded";
+        page.stopReason = "repeated_fingerprint";
+      } else {
+        seenFingerprints.set(page.fingerprint, page.requestedPage);
+      }
+    }
+
+    let added = 0;
+    let duplicateExisting = 0;
+    for (const lead of page.leads) {
+      if (leads.length >= maxResults) break;
+      const key = lead.url ? normalizeUrlForDedupe(lead.url) : lead.id;
+      if (seenUrls.has(key)) {
+        duplicateUrls += 1;
+        duplicateExisting += 1;
+        continue;
+      }
+      seenUrls.add(key);
+      leads.push(lead);
+      added += 1;
+    }
+    const capped = Math.max(0, page.leads.length - added - duplicateExisting);
+    logger?.(
+      `Page ${page.requestedPage}: ${page.cardCount} cards - ${added} new${duplicateExisting ? ` - ${duplicateExisting} duplicate` : ""}${capped ? ` - ${capped} capped` : ""}`,
+    );
+    logger?.(
+      `Page ${page.requestedPage} URL: requested ${page.requestedUrl}; final ${page.finalUrl}`,
+    );
+    if (page.firstUrls.length > 0) {
+      logger?.(
+        `Page ${page.requestedPage} fingerprint: first ${page.firstUrls[0]} last ${page.lastUrls.at(-1)}`,
+      );
+    }
+  };
+
+  logger?.("Fetching native API page 1...");
+  const first = await fetchDevpostApiPage(
+    1,
+    maxResults,
+    Math.min(timeoutMs, DEVPOST_PAGE_TIMEOUT_MS),
+  );
+  mergePage(first);
+  if (first.status === "failed") {
+    return { leads, pages, duplicateUrls, repeatedPages, stopReason: "api_page_failed" };
+  }
+
+  let nextPage = first.nextPage;
+  while (nextPage && leads.length < maxResults && nextPage <= maxPages) {
+    if (Date.now() - startedAt > timeoutMs) {
+      stopReason = "timeout";
+      break;
+    }
+    const batchPages = Array.from(
+      { length: Math.min(DEVPOST_PAGE_CONCURRENCY, maxPages - nextPage + 1) },
+      (_value, index) => nextPage! + index,
+    );
+    logger?.(`Fetching pages ${batchPages[0]}-${batchPages.at(-1)} concurrently`);
+    const remaining = Math.max(1_000, timeoutMs - (Date.now() - startedAt));
+    const batch = await Promise.allSettled(
+      batchPages.map((pageNumber) =>
+        fetchDevpostApiPage(
+          pageNumber,
+          maxResults,
+          Math.min(remaining, DEVPOST_PAGE_TIMEOUT_MS),
+        ),
+      ),
+    );
+    const results = batch
+      .map((item, index): DevpostApiPageResult => {
+        if (item.status === "fulfilled") return item.value;
+        const pageNumber = batchPages[index]!;
+        return {
+          requestedPage: pageNumber,
+          requestedUrl: buildDevpostApiUrl(pageNumber),
+          finalUrl: buildDevpostApiUrl(pageNumber),
+          activePage: pageNumber,
+          leads: [],
+          cardCount: 0,
+          fingerprint: "",
+          firstUrls: [],
+          lastUrls: [],
+          hasNext: false,
+          status: "failed",
+          stopReason: "api_error",
+          error: item.reason instanceof Error ? item.reason.message : "Devpost API page failed",
+        };
+      })
+      .sort((a, b) => a.requestedPage - b.requestedPage);
+
+    let batchHadNext = false;
+    let batchAdded = 0;
+    for (const page of results) {
+      const before = leads.length;
+      mergePage(page);
+      batchAdded += leads.length - before;
+      if (page.hasNext) batchHadNext = true;
+      if (leads.length >= maxResults) {
+        stopReason = "maximum_cards_reached";
+        break;
+      }
+    }
+    if (repeatedPages > 0) {
+      stopReason = "repeated_fingerprint";
+      break;
+    }
+    if (batchAdded === 0) {
+      stopReason = "no_additional_cards";
+      break;
+    }
+    if (!batchHadNext) {
+      stopReason = "no_next_page";
+      break;
+    }
+    nextPage = batchPages.at(-1)! + 1;
+  }
+
+  if (leads.length >= maxResults) stopReason = "maximum_cards_reached";
+  if (nextPage && nextPage > maxPages) stopReason = "maximum_pages_reached";
+  return { leads, pages, duplicateUrls, repeatedPages, stopReason };
+}
+
+function shouldFetchDevpostSchedule(lead: RawLead): boolean {
+  const metadata = lead.metadata ?? {};
+  return Boolean(
+    lead.url &&
+      isDevpostHackathonUrl(lead.url) &&
+      (!metadata.submissionDeadline ||
+        !metadata.submissionOpenDate ||
+        !metadata.judgingStartDate ||
+        !metadata.resultAnnouncementDate),
+  );
+}
+
+async function enrichDevpostSchedules(
+  leads: RawLead[],
+  options: {
+    limit: number;
+    timeoutMs: number;
+    startedAt: number;
+    logger?: (message: string) => void;
+  },
+): Promise<{ leads: RawLead[]; opened: number; failures: number; warnings: string[] }> {
+  const warnings: string[] = [];
+  const targetIds = new Set(
+    leads
+      .filter(shouldFetchDevpostSchedule)
+      .slice(0, options.limit)
+      .map((lead) => lead.id),
+  );
+  let opened = 0;
+  let failures = 0;
+  let next = 0;
+  const enriched = [...leads];
+
+  async function worker(): Promise<void> {
+    while (next < enriched.length) {
+      const index = next;
+      next += 1;
+      const lead = enriched[index]!;
+      if (!targetIds.has(lead.id) || !lead.url) continue;
+      if (Date.now() - options.startedAt > options.timeoutMs) break;
+      const datesUrl = buildDevpostDatesUrl(lead.url);
+      if (!datesUrl) continue;
+      const remaining = Math.min(
+        DEVPOST_DETAIL_TIMEOUT_MS,
+        Math.max(1_500, options.timeoutMs - (Date.now() - options.startedAt)),
+      );
+      try {
+        opened += 1;
+        options.logger?.(`Opening Devpost dates page ${opened}/${targetIds.size}: ${datesUrl}`);
+        const html = await fetchHtml(datesUrl, {
+          timeoutMs: remaining,
+          retries: 1,
+          headers: { Accept: "text/html,application/xhtml+xml" },
+        });
+        const schedule = parseDevpostScheduleHtml(html, datesUrl);
+        const existingEvidence = Array.isArray(lead.metadata?.parsedDateEvidence)
+          ? lead.metadata?.parsedDateEvidence
+          : [];
+        enriched[index] = {
+          ...lead,
+          links: uniqueUrls([...lead.links, datesUrl], DEVPOST_BASE),
+          metadata: {
+            ...lead.metadata,
+            ...Object.fromEntries(
+              Object.entries(schedule).filter(([key, value]) =>
+                key !== "parsedDateEvidence" && typeof value === "string" && value.length > 0,
+              ),
+            ),
+            parsedDateEvidence: [
+              ...(existingEvidence as ParsedDateEvidence[]),
+              ...schedule.parsedDateEvidence,
+            ],
+            dateExtractionState:
+              schedule.parsedDateEvidence.length > 0
+                ? "authoritative_dates_page"
+                : lead.metadata?.dateExtractionState,
+            datesUrl,
+          },
+        };
+      } catch (error) {
+        failures += 1;
+        warnings.push(
+          error instanceof Error
+            ? `Devpost dates enrichment failed for ${datesUrl}: ${error.message}`
+            : `Devpost dates enrichment failed for ${datesUrl}`,
+        );
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(DEVPOST_DETAIL_CONCURRENCY, targetIds.size) }, () => worker()),
+  );
+  return { leads: enriched, opened, failures, warnings };
 }
 
 export const devpostCollector: Collector = {
@@ -187,36 +1187,168 @@ export const devpostCollector: Collector = {
   async collect(input: CollectorInput): Promise<CollectorResult> {
     const startedAt = Date.now();
     const result = emptyCollectorResult("devpost", startedAt);
-    const searchUrl = buildDevpostSearchUrl(input.preferences);
+    const searchUrls = buildDevpostSearchUrls(input.preferences);
+    const seen = new Set<string>();
+    const budget = devpostBudgetForProfile(input.preferences.profile, input.maxResults);
+    const maxAccepted = budget.maxCards;
+    let pagesFetched = 0;
+    let initialCardCount = 0;
+    let finalCardCount = 0;
+    let detailPagesOpened = 0;
+    let detailFailures = 0;
+    const scrollAttempts = 0;
+    const noGrowthAttempts = 0;
+    const pageNoGrowthAttempts = 0;
+    let duplicateUrls = 0;
+    let parserFailures = 0;
+    let stopReason: DevpostLazyLoadStopReason | "maximum_pages_reached" = "no_additional_cards";
+
+    result.warnings.push(
+      "Devpost uses Playwright for public open/upcoming hackathon listings because static HTML may omit challenge tiles.",
+    );
 
     try {
-      let html = await fetchHtml(searchUrl, { timeoutMs: input.timeoutMs });
-      result.leads = parseDevpostHtml(html, input.maxResults);
-
-      if (result.leads.length === 0) {
-        try {
-          const rendered = await fetchDevpostWithPlaywright(searchUrl, input.timeoutMs);
-          html = rendered.html;
-          result.warnings.push(...rendered.warnings);
-          result.leads = parseDevpostHtml(html, input.maxResults);
-        } catch (error) {
-          if (isPlaywrightBrowserMissingError(error)) {
-            result.warnings.push(formatPlaywrightInstallHint());
-          } else {
-            result.warnings.push(
-              error instanceof Error ? error.message : "Devpost Playwright fallback failed",
-            );
-          }
+      void searchUrls;
+      input.logger?.("Using observed read-only Devpost API pagination...");
+      const api = await collectDevpostApiPages(maxAccepted, budget.maxPages, input.timeoutMs, input.logger);
+      const enriched = await enrichDevpostSchedules(api.leads, {
+        limit: budget.detailLimit,
+        timeoutMs: input.timeoutMs,
+        startedAt,
+        logger: input.logger,
+      });
+      result.leads = enriched.leads;
+      result.warnings.push(...enriched.warnings);
+      detailPagesOpened = enriched.opened;
+      detailFailures = enriched.failures;
+      pagesFetched = api.pages.length;
+      finalCardCount = api.pages.reduce((sum, page) => sum + page.cardCount, 0);
+      initialCardCount = api.pages[0]?.cardCount ?? 0;
+      duplicateUrls = api.duplicateUrls;
+      parserFailures = api.pages.filter((page) => page.status === "failed").length;
+      stopReason = api.stopReason as DevpostLazyLoadStopReason | "maximum_pages_reached";
+      for (const page of api.pages) {
+        if (page.error) result.warnings.push(page.error);
+        result.warnings.push(`page_${page.requestedPage}_requested=${page.requestedUrl}`);
+        result.warnings.push(`page_${page.requestedPage}_final=${page.finalUrl}`);
+        result.warnings.push(`page_${page.requestedPage}_cards=${page.cardCount}`);
+        result.warnings.push(`page_${page.requestedPage}_fingerprint=${page.fingerprint.slice(0, 160)}`);
+        if (page.stopReason) {
+          result.warnings.push(`page_${page.requestedPage}_stop_reason=${page.stopReason}`);
         }
       }
 
-      if (result.leads.length === 0) {
-        result.warnings.push("Devpost returned no hackathon cards.");
+      result.metrics = {
+        pagesFetched,
+        playwrightPages: 0,
+        initialCardCount,
+        finalCardCount,
+        detailPagesOpened,
+        detailFailures,
+        maxCards: budget.maxCards,
+        maxPages: budget.maxPages,
+        detailLimit: budget.detailLimit,
+        scrollAttempts,
+        noGrowthAttempts,
+        pageNoGrowthAttempts,
+        duplicateUrls,
+        parserFailures,
+        repeatedPages: api.repeatedPages,
+        leadsEmitted: result.leads.length,
+        searchUrls: pagesFetched,
+      };
+      result.warnings.push(`stop_reason=${stopReason}`);
+      result.warnings.push(`profile_budget_cards=${budget.maxCards}`);
+      result.warnings.push(`profile_budget_pages=${budget.maxPages}`);
+      result.warnings.push(`profile_budget_detail_limit=${budget.detailLimit}`);
+      result.warnings.push(`details_opened=${detailPagesOpened}`);
+      result.warnings.push(`detail_failures=${detailFailures}`);
+      result.warnings.push(`unique_cards=${finalCardCount}`);
+      result.warnings.push(`scrolls=${scrollAttempts}`);
+      result.warnings.push(`no_growth_attempts=${noGrowthAttempts}`);
+      result.warnings.push(`page_no_growth_attempts=${pageNoGrowthAttempts}`);
+      result.warnings.push(`duplicates=${duplicateUrls}`);
+
+      if (result.leads.length === 0 && result.errors.length === 0) {
+        const searchUrl = searchUrls[0] ?? DEVPOST_OPEN_UPCOMING_URL;
+        const remaining = Math.max(1_000, input.timeoutMs - (Date.now() - startedAt));
+        const rendered = await collectRenderedDevpostListing(
+          searchUrl,
+          1,
+          Math.min(remaining, DEVPOST_PAGE_TIMEOUT_MS),
+          input.logger,
+        );
+        result.warnings.push(...rendered.warnings);
+        finalCardCount = Math.max(finalCardCount, rendered.finalCardCount);
+        const fallback = await enrichDevpostSchedules(
+          parseDevpostHtml(rendered.html, maxAccepted),
+          {
+            limit: budget.detailLimit,
+            timeoutMs: input.timeoutMs,
+            startedAt,
+            logger: input.logger,
+          },
+        );
+        result.warnings.push(...fallback.warnings);
+        detailPagesOpened += fallback.opened;
+        detailFailures += fallback.failures;
+        for (const lead of fallback.leads) {
+          const key = lead.url ? normalizeUrlForDedupe(lead.url) : lead.id;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          result.leads.push(lead);
+        }
+
+        if (rendered.finalCardCount === 0 && hasDevpostChallengePage(rendered.html)) {
+          result.errors.push(describeDevpostFailure("anti_bot"));
+        }
+        if (finalCardCount > 0 || parserFailures > 0) {
+          result.warnings.push(
+            describeDevpostFailure(
+              "selector_parser_failure",
+              "Filtered listing page loaded, but no event cards matched the parser. The Devpost page structure may have changed.",
+            ),
+          );
+          input.logger?.(
+            "Filtered listing page loaded, but no event cards matched the parser. The Devpost page structure may have changed.",
+          );
+        } else {
+          result.warnings.push(describeDevpostFailure("zero_matching_results"));
+        }
+      } else if (result.leads.length > 0) {
+        input.logger?.(`${result.leads.length} matching leads accepted`);
       }
     } catch (error) {
-      result.errors.push(error instanceof Error ? error.message : "Devpost fetch failed");
+      if (isPlaywrightBrowserMissingError(error)) {
+        result.errors.push(describeDevpostFailure("browser_missing"));
+      } else {
+        result.errors.push(
+          describeDevpostFailure(
+            "page_load",
+            error instanceof Error ? error.message : "Devpost rendered listing failed",
+          ),
+        );
+      }
     }
 
+    result.status =
+      result.errors.length > 0
+        ? "failed"
+        : result.warnings.some((warning) => /parser failure|parser|timeout|redirected|missing/i.test(warning))
+          ? "degraded"
+          : "completed";
+    result.diagnostics = {
+      discovered: finalCardCount,
+      returned: result.leads.length,
+      enriched: 0,
+      partial: parserFailures + detailFailures,
+      dropped: Math.max(0, finalCardCount - result.leads.length),
+      stopReason,
+      safeMessage:
+        result.leads.length === 0 && finalCardCount > 0
+          ? "Devpost listings rendered, but the event-card parser returned no leads."
+          : undefined,
+    };
     result.durationMs = Date.now() - startedAt;
     return result;
   },

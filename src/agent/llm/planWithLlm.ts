@@ -2,6 +2,10 @@ import { z } from "zod";
 import { planSearchQueries } from "@/agent/planSearchQueries";
 import { AGENT_TOOL_NAMES } from "@/agent/runtime/tools";
 import type { DiscoveryPreferences, SourceName } from "@/core/discovery/types";
+import {
+  reconcileSourcePlan,
+  type PlannerSourceIntent,
+} from "@/discovery/sourcePlan";
 import { createLlmProvider, type CreateLlmProviderOptions } from "@/lib/llm/createProvider";
 import { LlmError } from "@/lib/llm/errors";
 import { generateJson, jsonSchemaResponseFormat } from "@/lib/llm/structured";
@@ -9,12 +13,23 @@ import type { LlmProvider, LlmUsage } from "@/lib/llm/types";
 
 const sourceNameSchema = z.enum(["hacklist", "hakku", "devpost", "mlh", "luma", "web", "x", "mock"]);
 
+const sourceIntentSchema = z.object({
+  source: sourceNameSchema,
+  enabled: z.boolean(),
+  query: z.string().min(1).nullable().optional(),
+  reason: z.string().min(1),
+});
+
 export const llmDiscoveryPlanSchema = z.object({
   selectedSources: z.array(sourceNameSchema),
+  sourceIntents: z.array(sourceIntentSchema).default([]),
   searchQueries: z.array(z.string().min(1)).max(8).default([]),
   verificationGoals: z.array(z.string().min(1)).max(8).default([]),
   needsEnrichment: z.boolean().default(false),
-  stopReason: z.string().min(1).default("planner completed"),
+  stopReason: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(1).default("planner completed"),
+  ),
   warnings: z.array(z.string()).default([]),
 });
 
@@ -48,12 +63,14 @@ const SOURCE_TO_TOOL: Record<SourceName, string> = {
   mock: AGENT_TOOL_NAMES.finalizeDiscoveryPlan,
 };
 
-function jsonSchemaForPlanner(): Record<string, unknown> {
+function jsonSchemaForPlanner(sources: SourceName[]): Record<string, unknown> {
+  const allowedSources = sources.length > 0 ? sources : ["web"];
   return {
     type: "object",
     additionalProperties: false,
     required: [
       "selectedSources",
+      "sourceIntents",
       "searchQueries",
       "verificationGoals",
       "needsEnrichment",
@@ -63,7 +80,23 @@ function jsonSchemaForPlanner(): Record<string, unknown> {
     properties: {
       selectedSources: {
         type: "array",
-        items: { enum: ["hacklist", "hakku", "devpost", "mlh", "luma", "web", "x", "mock"] },
+        items: { enum: allowedSources },
+      },
+      sourceIntents: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["source", "enabled", "query", "reason"],
+          properties: {
+            source: {
+              enum: allowedSources,
+            },
+            enabled: { type: "boolean" },
+            query: { type: ["string", "null"] },
+            reason: { type: "string" },
+          },
+        },
       },
       searchQueries: { type: "array", items: { type: "string" }, maxItems: 8 },
       verificationGoals: { type: "array", items: { type: "string" }, maxItems: 8 },
@@ -77,6 +110,11 @@ function jsonSchemaForPlanner(): Record<string, unknown> {
 function fallbackPlan(preferences: DiscoveryPreferences, reason: string): LlmDiscoveryPlan {
   return {
     selectedSources: preferences.sources,
+    sourceIntents: preferences.sources.map((source) => ({
+      source,
+      enabled: true,
+      reason: "Fallback plan preserves every effective source.",
+    })),
     searchQueries: planSearchQueries(preferences).slice(0, 6),
     verificationGoals: [
       "verify individual event identity",
@@ -94,8 +132,17 @@ function mergePlannerOutput(
   plan: LlmDiscoveryPlan,
 ): { plan: LlmDiscoveryPlan; preferences: DiscoveryPreferences } {
   const allowed = new Set(preferences.sources);
-  const selected = plan.selectedSources.filter((source) => allowed.has(source));
-  const selectedSources = selected.length > 0 ? [...new Set(selected)] : preferences.sources;
+  const reconciled = reconcileSourcePlan({
+    effectiveSources: preferences.sources,
+    plannerSources: plan.selectedSources,
+    plannerIntents: plan.sourceIntents.map((intent): PlannerSourceIntent => ({
+      source: intent.source,
+      enabled: intent.enabled,
+      query: intent.query ?? undefined,
+      reason: intent.reason,
+    })),
+  });
+  const selectedSources = reconciled.sources;
   const searchQueries =
     plan.searchQueries.length > 0 ? plan.searchQueries.slice(0, 8) : planSearchQueries(preferences).slice(0, 6);
 
@@ -103,12 +150,23 @@ function mergePlannerOutput(
     plan: {
       ...plan,
       selectedSources,
+      sourceIntents: reconciled.items.map((item) => ({
+        source: item.source,
+        enabled: item.state === "execute",
+        query: item.query ?? null,
+        reason:
+          item.reason ??
+          (item.state === "execute"
+            ? "Effective source selected for execution."
+            : `Source ${item.state.replace(/^skip_/, "").replace(/_/g, " ")}.`),
+      })),
       searchQueries,
       warnings: [
         ...plan.warnings,
         ...plan.selectedSources
           .filter((source) => !allowed.has(source))
           .map((source) => `Planner-selected source ${source} was ignored because it was not explicitly allowed.`),
+        ...reconciled.warnings,
       ],
     },
     preferences: {
@@ -142,6 +200,7 @@ function toolCallsForPlan(
       name: AGENT_TOOL_NAMES.finalizeDiscoveryPlan,
       args: {
         selectedSources: plan.selectedSources,
+        sourceIntents: plan.sourceIntents,
         searchQueries: plan.searchQueries,
         stopReason: plan.stopReason,
         warnings: plan.warnings,
@@ -149,6 +208,27 @@ function toolCallsForPlan(
       reason: "Record LLM planner output and stop condition.",
     },
   ];
+}
+
+function sourceCapabilitiesForPrompt(sources: SourceName[]): Record<string, string[]> {
+  const capabilities: Partial<Record<SourceName, string[]>> = {
+    mlh: ["public", "no auth", "HTTP/public collector"],
+    web: ["public", "search-provider dependent"],
+    hacklist: ["public", "native collector"],
+    devpost: ["public", "Playwright rendered listings", "may be degraded"],
+    luma: ["public mode available", "no login required for public discovery"],
+    hakku: [
+      "authenticated persistent browser source",
+      "use only when connected and usable",
+      "directory URL: https://www.hakku.app/explore",
+    ],
+    mock: ["local fixture source", "use only when explicitly supplied"],
+    x: ["not included by default", "use only when explicitly supplied"],
+  };
+
+  return Object.fromEntries(
+    sources.map((source) => [source, capabilities[source] ?? ["configured source"]]),
+  );
 }
 
 export async function planDiscoveryWithLlm(
@@ -180,13 +260,14 @@ export async function planDiscoveryWithLlm(
           {
             role: "system",
             content:
-              "You plan read-only hackathon discovery. Return only JSON. Do not invent tools. Choose only supplied sources. Keep the plan small and verification-focused.",
+              "You plan read-only hackathon discovery. Return only JSON. Do not invent tools or source names. Choose only supplied sources. Every supplied source must appear in sourceIntents. You may order sources and assign queries. Do not silently omit a supplied source; skip only with enabled=false and a concrete reason. Keep the plan small and verification-focused.",
           },
           {
             role: "user",
             content: JSON.stringify({
               command: preferences.rawCommand,
               explicitSources: preferences.sources,
+              sourceCapabilities: sourceCapabilitiesForPrompt(preferences.sources),
               locations: preferences.locations,
               themes: preferences.themes,
               modes: preferences.modes,
@@ -200,7 +281,7 @@ export async function planDiscoveryWithLlm(
         maxOutputTokens: 700,
         responseFormat: jsonSchemaResponseFormat({
           name: "discovery_plan",
-          schema: jsonSchemaForPlanner(),
+          schema: jsonSchemaForPlanner(preferences.sources),
         }),
       },
       (value) => llmDiscoveryPlanSchema.parse(value),

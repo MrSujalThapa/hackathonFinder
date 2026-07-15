@@ -12,17 +12,32 @@ import { useCandidateQueue } from "@/hooks/useCandidateQueue";
 import { formatSourceLabel } from "@/lib/candidates/format";
 
 export function QueueReview() {
-  const queue = useCandidateQueue();
   const router = useRouter();
   const [sourceFilter, setSourceFilter] = useState("");
+  const queue = useCandidateQueue(sourceFilter || undefined);
+  const {
+    hasMore,
+    loadMore,
+    loading,
+    loadingMore,
+    total,
+  } = queue;
 
   const sources = useMemo(() => {
-    return [...new Set(queue.candidates.map((c) => c.source))].sort();
-  }, [queue.candidates]);
+    return queue.sourceOptions;
+  }, [queue.sourceOptions]);
+
+  useEffect(() => {
+    if (sourceFilter && sources.length > 0 && !sources.includes(sourceFilter)) {
+      setSourceFilter("");
+    }
+  }, [sourceFilter, sources]);
 
   const filtered = useMemo(() => {
     if (!sourceFilter) return queue.candidates;
-    return queue.candidates.filter((c) => c.source === sourceFilter);
+    return queue.candidates.filter(
+      (c) => c.source === sourceFilter || Boolean(c.sourceIds?.[sourceFilter]),
+    );
   }, [queue.candidates, sourceFilter]);
 
   const visibleCurrent = filtered[0] ?? null;
@@ -35,30 +50,63 @@ export function QueueReview() {
     }
   }, [filtered, router]);
 
+  useEffect(() => {
+    if (
+      sourceFilter &&
+      filtered.length === 0 &&
+      total > 0 &&
+      hasMore &&
+      !loading &&
+      !loadingMore
+    ) {
+      void loadMore();
+    }
+  }, [
+    filtered.length,
+    hasMore,
+    loadMore,
+    loading,
+    loadingMore,
+    total,
+    sourceFilter,
+  ]);
+
   return (
-    <section className="flex flex-1 flex-col items-center">
-      <div className="w-full max-w-[var(--content-queue)]">
+    <section className="hf-review-workspace flex flex-1 flex-col">
+      <div className="w-full">
         <PageHeader
           eyebrow="Review"
           title="Queue"
-          description="One candidate at a time. Approve, reject, or save for later."
           actions={
-            <button
-              type="button"
-              onClick={() => void queue.refresh()}
-              className="hf-btn hf-btn-ghost"
-            >
-              Refresh
-            </button>
+            <div className="flex items-center gap-2">
+              <details className="relative">
+                <summary
+                  className="hf-btn hf-btn-ghost hf-touch cursor-pointer list-none px-2"
+                  aria-label="Keyboard shortcuts help"
+                >
+                  ?
+                </summary>
+                <div className="absolute right-0 z-20 mt-2 w-64 rounded-[var(--radius-lg)] border border-border bg-elevated p-3 text-xs text-muted shadow-[var(--shadow-soft)]">
+                  <p className="mb-1 font-medium text-foreground">Shortcuts</p>
+                  <ul className="space-y-1">
+                    <li>Left arrow — reject</li>
+                    <li>Right arrow — approve</li>
+                    <li>S — save</li>
+                    <li>Enter — open details</li>
+                    <li>Escape — close actions menu</li>
+                  </ul>
+                </div>
+              </details>
+              <button
+                type="button"
+                onClick={() => void queue.refresh()}
+                className="hf-btn hf-btn-ghost"
+              >
+                Refresh
+              </button>
+            </div>
           }
         />
-
-        <div className="hf-panel mb-4 hidden px-3 py-2 text-xs text-muted sm:block">
-          Keyboard: <span className="text-foreground">Left</span> reject,{" "}
-          <span className="text-foreground">Right</span> approve,{" "}
-          <span className="text-foreground">S</span> save,{" "}
-          <span className="text-foreground">Enter</span> details.
-        </div>
 
         {sources.length > 1 ? (
           <label className="mb-4 block text-sm">
@@ -71,7 +119,7 @@ export function QueueReview() {
               <option value="">All sources</option>
               {sources.map((source) => (
                 <option key={source} value={source}>
-                  {formatSourceLabel(source)}
+                  {queue.sourceMetadata[source]?.label ?? formatSourceLabel(source)}
                 </option>
               ))}
             </select>
@@ -89,7 +137,7 @@ export function QueueReview() {
           />
         ) : null}
 
-        {!queue.loading && !queue.error && !visibleCurrent ? (
+        {!queue.loading && !queue.loadingMore && !queue.error && !visibleCurrent && queue.total === 0 ? (
           <EmptyState
             title="No new hackathons to review"
             description="Run the agent to discover more, then refresh this queue. In mock mode you can also reset the in-memory fixtures."
@@ -112,12 +160,25 @@ export function QueueReview() {
           />
         ) : null}
 
+        {!queue.loading && !queue.error && !visibleCurrent && queue.total > 0 ? (
+          <LoadingState label="Loading more candidates…" />
+        ) : null}
+
         {visibleCurrent ? (
           <>
             <CandidateProgress
-              current={Math.max(1, queue.total - filtered.length + 1)}
+              current={Math.max(1, queue.position)}
               total={queue.total}
             />
+            {queue.loadingMore ? (
+              <p
+                className="mb-3 text-center text-xs text-muted"
+                role="status"
+                aria-live="polite"
+              >
+                Loading more candidates...
+              </p>
+            ) : null}
             {queue.syncMessage ? (
               <p
                 className="mb-3 text-center text-xs text-sky-100/90"
@@ -154,6 +215,9 @@ export function QueueReview() {
               key={visibleCurrent.id}
               candidate={visibleCurrent}
               upcoming={visibleUpcoming}
+              sourceLabels={Object.fromEntries(
+                Object.entries(queue.sourceMetadata).map(([id, item]) => [id, item.label]),
+              )}
               busy={queue.isPending(visibleCurrent.id)}
               onDecision={queue.decide}
             />

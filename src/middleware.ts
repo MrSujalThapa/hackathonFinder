@@ -12,12 +12,15 @@ const PROTECTED_PAGE_PREFIXES = [
   "/saved",
   "/candidate",
   "/settings",
+  "/terminal",
 ];
 
 const PROTECTED_API_PREFIXES = [
   "/api/candidates",
   "/api/sheets",
   "/api/diagnostics",
+  "/api/discovery",
+  "/api/sources",
   "/api/dev/reset-mock",
 ];
 

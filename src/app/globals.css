@@ -1,37 +1,50 @@
 @import "tailwindcss";
 
 /*
-  Hackathon Radar — review workspace design system
-  Focused decision UI: calm neutrals, clear hierarchy, one primary action.
+  Hackathon Finder — review workspace design system
+  Drafting Sheet blueprint (Step 3): cobalt paper, warm ink, major/minor grid,
+  double-line frames, corner registration. Selected over Modern Blueprint —
+  see docs/design/BLUEPRINT_COMPARISON.md.
 */
 
 :root {
-  /* Surfaces */
-  --background: #07070b;
-  --surface: #0c0c12;
-  --card: #101018;
-  --inset: #0a0a10;
-  --elevated: #16161f;
-  --foreground: #f4f4f5;
-  --muted: #8b8b98;
-  --muted-strong: #a8a8b5;
+  /* Surfaces — cobalt drafting paper */
+  --background: #0c2748;
+  --surface: #0f2d52;
+  --card: #123258;
+  --panel: #123258;
+  --inset: #0a1f3d;
+  --elevated: #163860;
+  --foreground: #f0ebe2;
+  --muted: #9eb0c4;
+  --muted-strong: #b4c2d2;
 
-  /* Borders */
-  --border: #2a2a35;
-  --border-subtle: #1e1e28;
-  --border-strong: #3a3a48;
+  /* Construction ink lines (warm off-white on cobalt) */
+  --ink-line: color-mix(in oklab, var(--foreground) 55%, transparent);
+  --ink-line-strong: color-mix(in oklab, var(--foreground) 78%, transparent);
+  --ink-line-faint: color-mix(in oklab, var(--foreground) 22%, transparent);
+  --border: color-mix(in oklab, var(--foreground) 32%, #0a1f3d);
+  --border-subtle: color-mix(in oklab, var(--foreground) 18%, #0a1f3d);
+  --border-strong: color-mix(in oklab, var(--foreground) 48%, #0a1f3d);
+
+  /* Grid — major / minor warm ink */
+  --grid-major: color-mix(in oklab, var(--foreground) 12%, transparent);
+  --grid-minor: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --grid-major-size: 64px;
+  --grid-minor-size: 8px;
+  --frame-gap: 3px;
 
   /* Semantic */
-  --accent-approve: #22c55e;
-  --accent-reject: #94a3b8;
-  --accent-save: #38bdf8;
-  --accent-warn: #f59e0b;
-  --accent-danger: #f87171;
-  --accent-focus: #7dd3fc;
+  --accent-approve: #3db87a;
+  --accent-reject: #d97868;
+  --accent-save: #5ba8c9;
+  --accent-warn: #d4a04a;
+  --accent-danger: #d97868;
+  --accent-focus: #6ec4d8;
 
-  /* Hero (queue card only — restrained) */
-  --hero-from: #1a2332;
-  --hero-to: #0c121c;
+  /* Hero — near-panel cobalt, no glow */
+  --hero-from: #123258;
+  --hero-to: #0a1f3d;
 
   /* Spacing scale */
   --space-1: 0.25rem;
@@ -54,17 +67,19 @@
   --text-2xl: 1.5rem;
   --text-3xl: 1.875rem;
 
-  /* Radii */
-  --radius-sm: 0.375rem;
-  --radius-md: 0.625rem;
-  --radius-lg: 0.875rem;
-  --radius-xl: 1.25rem;
-  --radius-2xl: 1.5rem;
+  /* Radii — sheet-first, minimal rounding */
+  --radius-sheet: 2px;
+  --radius-control: 3px;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+  --radius-2xl: 4px;
   --radius-full: 9999px;
 
-  /* Shadows */
-  --shadow-card: 0 20px 48px rgba(0, 0, 0, 0.42);
-  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.28);
+  /* Shadows — ink on paper; no floating elevation */
+  --shadow-card: none;
+  --shadow-soft: none;
 
   /* Motion */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -72,11 +87,33 @@
   --duration-normal: 220ms;
   --duration-slow: 320ms;
 
-  /* Layout */
-  --content-queue: 27.5rem;
-  --content-detail: 42rem;
-  --sidebar-width: 14rem;
+  /* Layout — fluid review workspace (owned elsewhere; preserve values) */
+  --content-queue-min: 0;
+  --content-queue: 45rem; /* 720px preferred mid desktop */
+  --content-queue-max: 56.25rem; /* 900px upper primary band */
+  --content-detail: 48rem;
+  --content-rail: 17.5rem;
+  --sidebar-width: 14rem; /* 224px — inside 210–240 */
   --nav-mobile-height: 4.25rem;
+  --shell-max: 100rem; /* 1600px — headroom for 900px primary + padding */
+}
+
+.hf-shell-main {
+  max-width: var(--shell-max);
+  container-type: inline-size;
+  container-name: review;
+}
+
+.hf-review-workspace {
+  width: 100%;
+  max-width: min(100%, var(--content-queue-max));
+  margin-inline: auto;
+}
+
+.hf-queue-column {
+  width: 100%;
+  max-width: min(100%, var(--content-queue-max));
+  margin-inline: auto;
 }
 
 @theme inline {
@@ -98,6 +135,7 @@
   --color-accent-focus: var(--accent-focus);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-source-serif);
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
@@ -117,17 +155,47 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Major + minor drafting grid — background only */
+.hf-sheet-grid,
 .grid-background {
   background-color: var(--background);
   background-image:
-    radial-gradient(
-      ellipse 70% 42% at 50% -18%,
-      rgba(56, 189, 248, 0.07),
-      transparent 55%
-    ),
-    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
-  background-size: auto, 32px 32px, 32px 32px;
+    linear-gradient(var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+  background-size:
+    var(--grid-minor-size) var(--grid-minor-size),
+    var(--grid-minor-size) var(--grid-minor-size),
+    var(--grid-major-size) var(--grid-major-size),
+    var(--grid-major-size) var(--grid-major-size);
+}
+
+@media (max-width: 639px) {
+  .hf-sheet-grid,
+  .grid-background {
+    background-image:
+      linear-gradient(var(--grid-major) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+    background-size: var(--grid-major-size) var(--grid-major-size);
+  }
+}
+
+.hf-doc-title {
+  font-family: var(--font-source-serif), Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.hf-decision-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.15fr;
+  gap: var(--space-2);
+}
+
+.hf-touch {
+  min-height: 44px;
+  min-width: 44px;
 }
 
 /* Shared interactive primitives */
@@ -135,21 +203,147 @@ body {
   outline: none;
 }
 .hf-focus:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--accent-focus) 70%, transparent);
+  outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
 }
 
+/* Double-line sheet frame */
+.hf-sheet-frame {
+  border: 1px solid var(--ink-line);
+  outline: 1px solid var(--ink-line-faint);
+  outline-offset: var(--frame-gap);
+  border-radius: var(--radius-sheet);
+  background: var(--panel);
+  box-shadow: none;
+}
+
+/* Corner registration L-marks */
+.hf-corner-marks {
+  position: relative;
+}
+.hf-corner-marks::before,
+.hf-corner-marks::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  border-color: var(--ink-line-strong);
+  border-style: solid;
+  z-index: 1;
+}
+.hf-corner-marks::before {
+  top: 0;
+  left: 0;
+  border-width: 2px 0 0 2px;
+}
+.hf-corner-marks::after {
+  bottom: 0;
+  right: 0;
+  border-width: 0 2px 2px 0;
+}
+.hf-corner-marks > .hf-corner-tr,
+.hf-corner-marks > .hf-corner-bl {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  border-color: var(--ink-line-strong);
+  border-style: solid;
+  z-index: 1;
+}
+.hf-corner-marks > .hf-corner-tr {
+  top: 0;
+  right: 0;
+  border-width: 2px 2px 0 0;
+}
+.hf-corner-marks > .hf-corner-bl {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 2px 2px;
+}
+
 .hf-panel {
-  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
-  border-radius: var(--radius-xl);
-  background: color-mix(in oklab, var(--inset) 88%, transparent);
+  position: relative;
+  border: 1px solid var(--ink-line);
+  outline: 1px solid var(--ink-line-faint);
+  outline-offset: var(--frame-gap);
+  border-radius: var(--radius-sheet);
+  background: color-mix(in oklab, var(--inset) 88%, var(--surface));
+  box-shadow: none;
 }
 
 .hf-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl);
-  background: color-mix(in oklab, var(--card) 92%, transparent);
-  box-shadow: var(--shadow-soft);
+  position: relative;
+  border: 1px solid var(--ink-line);
+  outline: 1px solid var(--ink-line-faint);
+  outline-offset: var(--frame-gap);
+  border-radius: var(--radius-sheet);
+  background: color-mix(in oklab, var(--card) 96%, var(--surface));
+  box-shadow: none;
+}
+
+.hf-title-block {
+  border: 1px solid var(--ink-line);
+  outline: 1px solid var(--ink-line-faint);
+  outline-offset: var(--frame-gap);
+  border-radius: var(--radius-sheet);
+  background: color-mix(in oklab, var(--surface) 92%, var(--inset));
+  padding: var(--space-3) var(--space-3);
+}
+
+.hf-technical-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hf-rule-dashed {
+  border: none;
+  border-top: 1px dashed var(--ink-line-faint);
+  margin: var(--space-3) 0;
+}
+
+.hf-status-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-save);
+  border: 1px solid color-mix(in oklab, var(--accent-save) 35%, transparent);
+  border-radius: var(--radius-sheet);
+  padding: 0.2rem 0.45rem;
+}
+.hf-status-stamp[data-tone="warn"] {
+  color: var(--accent-warn);
+  border-color: color-mix(in oklab, var(--accent-warn) 40%, transparent);
+}
+.hf-status-stamp[data-tone="approve"] {
+  color: var(--accent-approve);
+  border-color: color-mix(in oklab, var(--accent-approve) 40%, transparent);
+}
+.hf-status-stamp[data-tone="reject"] {
+  color: var(--accent-reject);
+  border-color: color-mix(in oklab, var(--accent-reject) 40%, transparent);
+}
+
+.hf-source-stamp {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-left: 2px solid var(--ink-line);
+  padding-left: var(--space-2);
 }
 
 .hf-section-label {
@@ -166,8 +360,9 @@ body {
   justify-content: center;
   gap: var(--space-2);
   min-height: 2.5rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--ink-line);
+  background: transparent;
   padding: 0.5rem 0.875rem;
   font-size: var(--text-sm);
   font-weight: 500;
@@ -182,7 +377,7 @@ body {
   opacity: 0.4;
 }
 .hf-btn:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--accent-focus) 70%, transparent);
+  outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
 }
 
@@ -190,50 +385,51 @@ body {
   color: var(--muted);
 }
 .hf-btn-ghost:hover:not(:disabled) {
-  border-color: color-mix(in oklab, var(--accent-save) 40%, var(--border));
+  border-color: var(--ink-line-strong);
   color: var(--foreground);
 }
 
 .hf-btn-primary {
-  border-color: color-mix(in oklab, var(--accent-save) 45%, transparent);
-  background: color-mix(in oklab, var(--accent-save) 88%, white);
-  color: #0b1220;
+  border-color: color-mix(in oklab, var(--accent-save) 55%, transparent);
+  background: transparent;
+  color: color-mix(in oklab, var(--accent-save) 92%, white);
   font-weight: 600;
 }
 .hf-btn-primary:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--accent-save) 78%, white);
-}
-
-.hf-btn-approve {
-  border-color: color-mix(in oklab, var(--accent-approve) 45%, transparent);
-  color: color-mix(in oklab, var(--accent-approve) 85%, white);
-}
-.hf-btn-approve:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--accent-approve) 12%, transparent);
-}
-
-.hf-btn-save {
-  border-color: color-mix(in oklab, var(--accent-save) 40%, transparent);
-  color: color-mix(in oklab, var(--accent-save) 85%, white);
-}
-.hf-btn-save:hover:not(:disabled) {
   background: color-mix(in oklab, var(--accent-save) 12%, transparent);
 }
 
+.hf-btn-approve {
+  border-color: color-mix(in oklab, var(--accent-approve) 55%, transparent);
+  color: color-mix(in oklab, var(--accent-approve) 88%, white);
+  font-weight: 600;
+}
+.hf-btn-approve:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--accent-approve) 14%, transparent);
+}
+
+.hf-btn-save {
+  border-color: color-mix(in oklab, var(--accent-save) 50%, transparent);
+  color: color-mix(in oklab, var(--accent-save) 88%, white);
+}
+.hf-btn-save:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--accent-save) 14%, transparent);
+}
+
 .hf-btn-reject {
-  border-color: color-mix(in oklab, var(--accent-reject) 45%, transparent);
-  color: color-mix(in oklab, var(--accent-reject) 90%, white);
+  border-color: color-mix(in oklab, var(--accent-reject) 50%, transparent);
+  color: color-mix(in oklab, var(--accent-reject) 92%, white);
 }
 .hf-btn-reject:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--accent-reject) 12%, transparent);
+  background: color-mix(in oklab, var(--accent-reject) 14%, transparent);
 }
 
 .hf-input {
   width: 100%;
   min-height: 2.5rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  background: color-mix(in oklab, var(--inset) 90%, transparent);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--ink-line);
+  background: color-mix(in oklab, var(--inset) 94%, var(--surface));
   padding: 0.5rem 0.75rem;
   font-size: var(--text-sm);
   color: var(--foreground);
@@ -246,13 +442,15 @@ body {
   color: var(--muted);
 }
 .hf-input:focus {
-  border-color: color-mix(in oklab, var(--accent-save) 65%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent-save) 18%, transparent);
+  border-color: var(--accent-focus);
+  box-shadow: none;
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 1px;
 }
 
 .hf-chip {
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--ink-line);
   padding: 0.5rem 0.75rem;
   font-size: var(--text-xs);
   color: var(--muted);
@@ -263,10 +461,10 @@ body {
 }
 .hf-chip:hover:not(:disabled) {
   color: var(--foreground);
-  border-color: var(--border-strong);
+  border-color: var(--ink-line-strong);
 }
 .hf-chip:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--accent-focus) 70%, transparent);
+  outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
 }
 .hf-chip:disabled {
@@ -282,13 +480,30 @@ body {
   text-decoration: underline;
 }
 .hf-link-quiet:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--accent-focus) 70%, transparent);
+  outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
   border-radius: 2px;
 }
 
 .hf-expand {
   overflow: hidden;
+}
+
+/* Nav drafting cues */
+.hf-nav-link {
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-control);
+}
+.hf-nav-link[data-active="true"],
+.hf-nav-link[aria-current="page"] {
+  border-left-color: var(--ink-line-strong);
+  background: color-mix(in oklab, var(--foreground) 4%, transparent);
+  color: var(--foreground);
+}
+
+.hf-nav-mobile {
+  background: var(--background);
+  border-top: 1px solid var(--border-subtle);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -299,5 +514,472 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Terminal chrome
+   Scoped macOS Terminal window look for /terminal only.
+   Does not alter blueprint color tokens. */
+.mac-terminal-page {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mac-terminal {
+  --mac-term-titlebar: #e8e6e3;
+  --mac-term-titlebar-border: #c8c4be;
+  --mac-term-title-ink: #3a3a3a;
+  --mac-term-body: #1c1c1c;
+  --mac-term-fg: #e8e6e1;
+  --mac-term-muted: #9a9a92;
+  --mac-term-prompt: #7dcea0;
+  --mac-term-success: #7dcea0;
+  --mac-term-warning: #e0b35a;
+  --mac-term-error: #e07a6a;
+  --mac-term-radius: 10px;
+  --mac-term-shadow: 0 18px 48px color-mix(in oklab, #000 45%, transparent),
+    0 0 0 1px color-mix(in oklab, #000 35%, transparent);
+
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--mac-term-radius);
+  box-shadow: var(--mac-term-shadow);
+  background: var(--mac-term-body);
+  color: var(--mac-term-fg);
+  isolation: isolate;
+}
+
+.mac-terminal__titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.75rem;
+  background: linear-gradient(180deg, #f2f0ed 0%, var(--mac-term-titlebar) 100%);
+  border-bottom: 1px solid var(--mac-term-titlebar-border);
+  user-select: none;
+}
+
+.mac-terminal__lights {
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.mac-terminal__light {
+  display: inline-block;
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 9999px;
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklab, #000 22%, transparent);
+}
+
+.mac-terminal__light--close {
+  background: #ff5f57;
+}
+
+.mac-terminal__light--minimize {
+  background: #febc2e;
+}
+
+.mac-terminal__light--zoom {
+  background: #28c840;
+}
+
+.mac-terminal__title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  max-width: min(70%, 28rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--mac-term-title-ink);
+  text-align: center;
+  pointer-events: none;
+}
+
+.mac-terminal__status {
+  z-index: 1;
+  margin-left: auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.65rem;
+  color: color-mix(in oklab, var(--mac-term-title-ink) 70%, transparent);
+}
+
+.mac-terminal__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--mac-term-body);
+}
+
+.mac-terminal__tabs {
+  flex-shrink: 0;
+  border-bottom: 1px solid color-mix(in oklab, #fff 8%, transparent);
+  background: color-mix(in oklab, #000 28%, var(--mac-term-body));
+}
+
+.mac-terminal__tablist {
+  display: none;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: 0 0.35rem;
+}
+
+.mac-terminal__tab {
+  display: flex;
+  align-items: stretch;
+  max-width: 11rem;
+  border-right: 1px solid color-mix(in oklab, #fff 6%, transparent);
+}
+
+.mac-terminal__tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  border: none;
+  background: transparent;
+  padding: 0.45rem 0.35rem 0.45rem 0.65rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.7rem;
+  color: color-mix(in oklab, var(--mac-term-muted) 90%, transparent);
+  cursor: pointer;
+}
+
+.mac-terminal__tab-btn:hover {
+  color: var(--mac-term-fg);
+  background: color-mix(in oklab, #fff 4%, transparent);
+}
+
+.mac-terminal__tab--active .mac-terminal__tab-btn {
+  color: var(--mac-term-fg);
+  background: color-mix(in oklab, #fff 6%, transparent);
+  box-shadow: inset 0 -2px 0 var(--mac-term-prompt);
+}
+
+.mac-terminal__tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mac-terminal__tab-live {
+  flex-shrink: 0;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 9999px;
+  background: var(--mac-term-prompt);
+}
+
+.mac-terminal__tab-close {
+  flex-shrink: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  padding: 0 0.45rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: color-mix(in oklab, var(--mac-term-muted) 80%, transparent);
+  cursor: pointer;
+}
+
+.mac-terminal__tab-close:hover {
+  color: var(--mac-term-error);
+}
+
+.mac-terminal__tab-new {
+  flex-shrink: 0;
+  margin: 0.25rem 0.25rem 0.25rem 0.35rem;
+  border: 1px solid color-mix(in oklab, #fff 12%, transparent);
+  border-radius: 4px;
+  background: transparent;
+  padding: 0.2rem 0.55rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.65rem;
+  color: var(--mac-term-muted);
+  cursor: pointer;
+}
+
+.mac-terminal__tab-new:hover {
+  color: var(--mac-term-fg);
+  border-color: color-mix(in oklab, var(--mac-term-prompt) 40%, transparent);
+}
+
+.mac-terminal__tab-mobile {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+}
+
+.mac-terminal__tab-select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid color-mix(in oklab, #fff 12%, transparent);
+  border-radius: 4px;
+  background: color-mix(in oklab, #000 35%, var(--mac-term-body));
+  padding: 0.35rem 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--mac-term-fg);
+}
+
+.mac-terminal__tab-new--mobile {
+  margin: 0;
+}
+
+@media (min-width: 641px) {
+  .mac-terminal__tablist {
+    display: flex;
+  }
+
+  .mac-terminal__tab-mobile {
+    display: none;
+  }
+}
+
+.mac-terminal__scrollback {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.75rem 1rem 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.mac-terminal__jump {
+  position: sticky;
+  bottom: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: block;
+  width: fit-content;
+  margin: 0.75rem auto 0;
+  border: 1px solid color-mix(in oklab, var(--mac-term-prompt) 45%, transparent);
+  border-radius: 9999px;
+  background: color-mix(in oklab, #000 62%, var(--mac-term-body));
+  padding: 0.35rem 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.7rem;
+  color: var(--mac-term-prompt);
+  box-shadow: 0 0 0 1px color-mix(in oklab, #000 45%, transparent);
+}
+
+.mac-terminal__jump:hover {
+  color: var(--mac-term-fg);
+}
+
+.mac-terminal__lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.mac-terminal__line {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.mac-terminal__line--prompt {
+  color: var(--mac-term-prompt);
+}
+
+.mac-terminal__line--success {
+  color: var(--mac-term-success);
+}
+
+.mac-terminal__line--warning {
+  color: var(--mac-term-warning);
+}
+
+.mac-terminal__line--error {
+  color: var(--mac-term-error);
+}
+
+.mac-terminal__line--muted {
+  color: var(--mac-term-muted);
+}
+
+.mac-terminal__line--summary,
+.mac-terminal__line--default {
+  color: var(--mac-term-fg);
+}
+
+.mac-terminal__cursor {
+  display: inline-block;
+  margin-top: 0.35rem;
+  width: 0.5rem;
+  height: 1rem;
+  background: color-mix(in oklab, var(--mac-term-prompt) 85%, transparent);
+  animation: mac-terminal-blink 1.05s steps(1, end) infinite;
+}
+
+@keyframes mac-terminal-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.mac-terminal__prompt-bar {
+  flex-shrink: 0;
+  border-top: 1px solid color-mix(in oklab, #fff 8%, transparent);
+  background: color-mix(in oklab, #000 22%, var(--mac-term-body));
+  padding: 0.65rem 1rem 0.75rem;
+}
+
+.mac-terminal__prompt-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.mac-terminal__prompt {
+  flex-shrink: 0;
+  margin-bottom: 0.55rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--mac-term-prompt);
+}
+
+.mac-terminal__input {
+  min-height: 2.5rem;
+  max-height: 9rem;
+  width: 100%;
+  resize: none;
+  background: transparent;
+  border: none;
+  padding: 0.55rem 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--mac-term-fg);
+  outline: none;
+  caret-color: var(--mac-term-prompt);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.mac-terminal__input::placeholder {
+  color: color-mix(in oklab, var(--mac-term-muted) 75%, transparent);
+}
+
+.mac-terminal__input:disabled {
+  opacity: 0.5;
+}
+
+.mac-terminal__input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.mac-terminal__run {
+  flex-shrink: 0;
+  margin-bottom: 0.15rem;
+  min-height: 2.5rem;
+  min-width: 2.5rem;
+  border: none;
+  background: transparent;
+  padding: 0 0.35rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1rem;
+  line-height: 1;
+  color: color-mix(in oklab, var(--mac-term-muted) 85%, transparent);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.mac-terminal__run:hover:not(:disabled) {
+  color: var(--mac-term-fg);
+}
+
+.mac-terminal__run:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.mac-terminal__run:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--mac-term-prompt) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.mac-terminal__hint {
+  margin: 0.35rem 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.65rem;
+  color: color-mix(in oklab, var(--mac-term-muted) 80%, transparent);
+}
+
+/* Soften post-run action strip inside the dark window */
+.mac-terminal [role="group"][aria-label="After run actions"] {
+  border-top-color: color-mix(in oklab, #fff 8%, transparent);
+  background: color-mix(in oklab, #000 12%, var(--mac-term-body));
+}
+
+.mac-terminal [role="group"][aria-label="After run actions"] a,
+.mac-terminal [role="group"][aria-label="After run actions"] button {
+  border-color: color-mix(in oklab, #fff 14%, transparent);
+  color: var(--mac-term-muted);
+}
+
+.mac-terminal [role="group"][aria-label="After run actions"] a:hover,
+.mac-terminal [role="group"][aria-label="After run actions"] button:hover {
+  border-color: color-mix(in oklab, var(--mac-term-prompt) 45%, transparent);
+  color: var(--mac-term-fg);
+}
+
+@media (max-width: 640px) {
+  .mac-terminal {
+    --mac-term-radius: 8px;
+  }
+
+  .mac-terminal__title {
+    font-size: 0.65rem;
+    max-width: min(62%, 16rem);
+  }
+
+  .mac-terminal__status {
+    display: none;
   }
 }

@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { hashOwnerPassword, verifyOwnerPassword } from "@/lib/auth/password";
+import { verifyOwnerPassword } from "@/lib/auth/password";
 import { createSessionToken, verifySessionToken } from "@/lib/auth/session";
 
 describe("owner auth primitives", () => {
-  it("hashes and verifies owner passwords", () => {
-    const hash = hashOwnerPassword("correct-password-123");
-    assert.ok(hash.startsWith("scrypt$"));
-    assert.equal(verifyOwnerPassword("correct-password-123", hash), true);
-    assert.equal(verifyOwnerPassword("wrong-password-123", hash), false);
+  it("verifies owner passwords", () => {
+    assert.equal(
+      verifyOwnerPassword("correct-password-123", "correct-password-123"),
+      true,
+    );
+    assert.equal(
+      verifyOwnerPassword("wrong-password-123", "correct-password-123"),
+      false,
+    );
   });
 
   it("creates signed expiring session tokens", async () => {

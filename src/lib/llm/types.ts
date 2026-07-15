@@ -2,9 +2,18 @@ export type LlmProviderName = "openai" | "anthropic" | "mock";
 
 export type LlmMessageRole = "system" | "developer" | "user" | "assistant";
 
+export type LlmContentPart =
+  | { type: "text"; text: string }
+  | {
+      type: "image";
+      imageBase64: string;
+      mediaType: "image/png" | "image/jpeg" | "image/webp";
+      detail?: "low" | "high" | "auto";
+    };
+
 export type LlmMessage = {
   role: LlmMessageRole;
-  content: string;
+  content: string | LlmContentPart[];
 };
 
 export type LlmJsonSchema = {

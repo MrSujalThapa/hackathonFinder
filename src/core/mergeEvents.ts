@@ -1,8 +1,8 @@
 import type {
   DiscoveryMode,
+  DiscoverySourceId,
   HackathonEvent,
   HackathonEvidence,
-  SourceName,
 } from "@/core/discovery/types";
 import {
   createCandidateFingerprint,
@@ -67,7 +67,10 @@ export function mergeSourceIds(
   return merged;
 }
 
-function pickPrimarySource(existing: SourceName, incoming: SourceName): SourceName {
+function pickPrimarySource(
+  existing: DiscoverySourceId,
+  incoming: DiscoverySourceId,
+): DiscoverySourceId {
   return sourceAuthority(incoming) > sourceAuthority(existing) ? incoming : existing;
 }
 
@@ -95,6 +98,25 @@ export function mergeHackathonEventPair(
       right,
     ),
     socialUrl: preferUrl(existing.socialUrl, incoming.socialUrl, left, right),
+    eventStartDate: preferStrongerText(existing.eventStartDate, incoming.eventStartDate, left, right),
+    eventEndDate: preferStrongerText(existing.eventEndDate, incoming.eventEndDate, left, right),
+    registrationOpenDate: preferStrongerText(existing.registrationOpenDate, incoming.registrationOpenDate, left, right),
+    registrationDeadline: preferStrongerText(existing.registrationDeadline, incoming.registrationDeadline, left, right),
+    applicationDeadline: preferStrongerText(existing.applicationDeadline, incoming.applicationDeadline, left, right),
+    submissionOpenDate: preferStrongerText(existing.submissionOpenDate, incoming.submissionOpenDate, left, right),
+    submissionDeadline: preferStrongerText(existing.submissionDeadline, incoming.submissionDeadline, left, right),
+    judgingStartDate: preferStrongerText(existing.judgingStartDate, incoming.judgingStartDate, left, right),
+    judgingEndDate: preferStrongerText(existing.judgingEndDate, incoming.judgingEndDate, left, right),
+    resultAnnouncementDate: preferStrongerText(existing.resultAnnouncementDate, incoming.resultAnnouncementDate, left, right),
+    displayedDateRange: preferStrongerText(existing.displayedDateRange, incoming.displayedDateRange, left, right),
+    parsedDateEvidence: [
+      ...new Map(
+        [...(existing.parsedDateEvidence ?? []), ...(incoming.parsedDateEvidence ?? [])].map((item) => [
+          `${item.kind}:${item.value ?? ""}:${item.sourceUrl}:${item.sourceText ?? ""}`,
+          item,
+        ]),
+      ).values(),
+    ],
     startDate: preferStrongerText(existing.startDate, incoming.startDate, left, right),
     endDate: preferStrongerText(existing.endDate, incoming.endDate, left, right),
     deadline: preferStrongerText(existing.deadline, incoming.deadline, left, right),
@@ -102,7 +124,12 @@ export function mergeHackathonEventPair(
     mode: preferMode(existing.mode, incoming.mode, left, right) as
       | DiscoveryMode
       | undefined,
+    eventLocation:
+      incoming.eventLocation?.confidence === "high"
+        ? incoming.eventLocation
+        : existing.eventLocation ?? incoming.eventLocation,
     city: preferStrongerText(existing.city, incoming.city, left, right),
+    region: preferStrongerText(existing.region, incoming.region, left, right),
     country: preferStrongerText(existing.country, incoming.country, left, right),
     prize: preferStrongerText(existing.prize, incoming.prize, left, right),
     themes: [...new Set([...(existing.themes ?? []), ...(incoming.themes ?? [])])],

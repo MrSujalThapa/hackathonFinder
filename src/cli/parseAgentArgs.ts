@@ -1,4 +1,4 @@
-import type { SourceName } from "@/core/discovery/types";
+import type { ReviewPolicy, SourceName } from "@/core/discovery/types";
 import { parseSourcesFlag } from "@/collectors/registry";
 
 export type CliOptions = {
@@ -7,6 +7,7 @@ export type CliOptions = {
   allowMockWrites: boolean;
   sources?: SourceName[];
   maxResults?: number;
+  reviewPolicy?: ReviewPolicy;
   sourceTimeoutMs?: number;
   totalTimeoutMs?: number;
   showSearchPlan: boolean;
@@ -52,6 +53,7 @@ export function parseAgentArgs(argv: string[]): CliOptions {
   const sourceTimeoutArg = args.find((arg) => arg.startsWith("--source-timeout-ms="));
   const totalTimeoutArg = args.find((arg) => arg.startsWith("--total-timeout-ms="));
   const maxAgentCallsArg = args.find((arg) => arg.startsWith("--max-agent-calls="));
+  const reviewPolicyArg = args.find((arg) => arg.startsWith("--review-policy="));
 
   const commandParts = args.filter(
     (arg) =>
@@ -70,7 +72,8 @@ export function parseAgentArgs(argv: string[]): CliOptions {
       !arg.startsWith("--max-results=") &&
       !arg.startsWith("--source-timeout-ms=") &&
       !arg.startsWith("--total-timeout-ms=") &&
-      !arg.startsWith("--max-agent-calls="),
+      !arg.startsWith("--max-agent-calls=") &&
+      !arg.startsWith("--review-policy="),
   );
 
   const command = commandParts.join(" ").trim();
@@ -108,6 +111,18 @@ export function parseAgentArgs(argv: string[]): CliOptions {
         { max: 20 },
       )
     : undefined;
+  const reviewPolicy = reviewPolicyArg
+    ? (reviewPolicyArg.slice("--review-policy=".length).toLowerCase() as ReviewPolicy)
+    : undefined;
+
+  if (
+    reviewPolicy &&
+    reviewPolicy !== "broad" &&
+    reviewPolicy !== "balanced" &&
+    reviewPolicy !== "strict"
+  ) {
+    throw new Error("--review-policy must be one of: broad, balanced, strict");
+  }
 
   if (agent && deterministic) {
     throw new Error("Use either --agent or --deterministic, not both.");
@@ -123,6 +138,7 @@ export function parseAgentArgs(argv: string[]): CliOptions {
     allowMockWrites,
     sources,
     maxResults,
+    reviewPolicy,
     sourceTimeoutMs,
     totalTimeoutMs,
     showSearchPlan,

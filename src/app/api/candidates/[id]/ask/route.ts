@@ -11,6 +11,7 @@ import {
 import { getCandidateRepository } from "@/server/candidates/service";
 import { protectApiRequest } from "@/server/api/protection";
 import { withRequestLogging } from "@/server/observability/logger";
+import { createLlmProviderOptional } from "@/lib/llm/createProvider";
 import { createSearchProviderOptional } from "@/lib/search/createSearchProvider";
 
 const askBodySchema = z.object({
@@ -50,11 +51,13 @@ export async function POST(
       }
 
       const searchProvider = createSearchProviderOptional();
+      const llmProvider = createLlmProviderOptional({ instrument: false });
       const result = await answerCandidateQuestion(
         candidate,
         body.data.question,
         {
           searchProvider,
+          llmProvider,
           maxSearchCalls: 1,
         },
       );
@@ -67,6 +70,9 @@ export async function POST(
           links: result.sources,
           certainty: result.certainty,
           liveVerification: result.liveVerification,
+          kind: result.kind,
+          decision: result.decision ?? null,
+          factual: result.factual ?? null,
         },
       });
 
@@ -78,9 +84,14 @@ export async function POST(
         confidence: result.confidence,
         certainty: result.certainty,
         liveVerification: result.liveVerification,
+        kind: result.kind,
+        decision: result.decision ?? null,
+        factual: result.factual ?? null,
         sources: result.sources,
         persistedAnswer: persisted ?? null,
         updatedCandidate: updatedCandidate ?? candidate,
+        // Safe debug meta only — no secrets / prompts / CoT.
+        meta: result.meta ?? null,
       });
     } catch {
       return fail(
