@@ -99,6 +99,28 @@ function collectVisibleCounts(artifacts: AcquiredArtifact[]): CandidateEstimate[
         priority: 2,
       });
     }
+    $("table").each((_tableIndex, table) => {
+      const rows = $(table)
+        .find("tbody tr, tr")
+        .toArray()
+        .filter((row) => {
+          const text = $(row).text().replace(/\s+/g, " ").trim();
+          if (text.length < 12) return false;
+          const cells = $(row).find("td,th").length;
+          if (cells < 2) return false;
+          return /\b(hackathon|challenge|event|deadline|register|apply|prize|online|virtual|in-person|hybrid|20\d{2})\b/i.test(text);
+        });
+      if (rows.length >= 5) {
+        out.push({
+          estimatedAvailableRecords: rows.length,
+          method: "visible_count",
+          confidence: "strong",
+          evidence: [`visible table has ${rows.length} event-like rows in ${artifact.artifactId}`],
+          contradictions: [],
+          priority: 2,
+        });
+      }
+    });
   }
   return out;
 }
@@ -225,11 +247,17 @@ export function estimateAvailableEventCount(input: {
     };
   }
 
+  const estimatedAvailableRecords = Math.max(selected.estimatedAvailableRecords ?? 0, observedValidEvents);
+  const evidence = [...selected.evidence];
+  if ((selected.estimatedAvailableRecords ?? 0) < observedValidEvents) {
+    evidence.push(`raised estimate floor to ${observedValidEvents} extracted valid events`);
+  }
+
   return {
-    estimatedAvailableRecords: selected.estimatedAvailableRecords,
+    estimatedAvailableRecords,
     method: selected.method,
     confidence: selected.confidence,
-    evidence: selected.evidence,
+    evidence,
     contradictions,
   };
 }

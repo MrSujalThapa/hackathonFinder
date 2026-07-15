@@ -99,6 +99,19 @@ describe("phase 5.6 coverage and pagination correctness", () => {
     assert.equal(estimate.confidence, "strong");
   });
 
+  it("uses visible event-like table rows as a live source-total signal", () => {
+    const rows = Array.from({ length: 25 }, (_item, index) =>
+      `<tr><td>Hackathon ${index}</td><td>Online</td><td>Aug ${index + 1}, 2026</td></tr>`,
+    ).join("");
+    const estimate = estimateAvailableEventCount({
+      artifacts: [artifact("html", { html: `<table><tbody>${rows}</tbody></table>` })],
+      leads: [lead("Recovered", 1), lead("Recovered Two", 2), lead("Recovered Three", 3)],
+    });
+
+    assert.equal(estimate.estimatedAvailableRecords, 25);
+    assert.equal(estimate.method, "visible_count");
+  });
+
   it("classifies WAF challenges and stale routes explicitly", () => {
     const blocked = evaluateGenericExtractionQuality({
       discoveredRecords: 0,
