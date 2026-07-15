@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createLlmProviderOptional } from "@/lib/llm/createProvider";
-import { generateJson, jsonSchemaResponseFormat } from "@/lib/llm/structured";
+import { generateJson, jsonObjectResponseFormat } from "@/lib/llm/structured";
 import type { LlmProvider } from "@/lib/llm/types";
 import { buildDomRepresentations } from "@/experiments/scraper-v2/generic/domRepresentation";
 import type {
@@ -254,34 +254,6 @@ export function validateAiPageDecision(value: unknown, input: AiPageDecisionInpu
   return { ok: true, decision: parsed.data };
 }
 
-const PAGE_DECISION_RESPONSE_FORMAT = jsonSchemaResponseFormat({
-  name: "ai_page_decision",
-  strict: true,
-  schema: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      selectedGroupId: { type: "string" },
-      classification: { enum: ["event_records", "navigation", "editorial", "forms", "sponsors", "uncertain"] },
-      fields: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          title: { type: "string" },
-          url: { type: "string" },
-          date: { type: "string" },
-          location: { type: "string" },
-          description: { type: "string" },
-          sourceId: { type: "string" },
-        },
-      },
-      selectedActionId: { type: "string" },
-      confidence: { type: "number", minimum: 0, maximum: 1 },
-    },
-    required: ["classification", "confidence"],
-  },
-});
-
 export async function requestAiPageDecision(input: {
   sanitizedInput: AiPageDecisionInput;
   provider?: LlmProvider | null;
@@ -307,14 +279,14 @@ export async function requestAiPageDecision(input: {
         {
           role: "system",
           content:
-            "You select among supplied public event-directory candidate groups. Return only strict JSON. Do not invent selectors, endpoints, URLs, records, code, or browser instructions.",
+            "You select among supplied public event-directory candidate groups. Return only one JSON object with selectedGroupId, classification, optional fields, optional selectedActionId, and confidence. Do not invent selectors, endpoints, URLs, records, code, or browser instructions. Extra keys are rejected.",
         },
         {
           role: "user",
           content: JSON.stringify(input.sanitizedInput),
         },
       ],
-      responseFormat: PAGE_DECISION_RESPONSE_FORMAT,
+      responseFormat: jsonObjectResponseFormat(),
       maxOutputTokens: 500,
       temperature: 0,
       timeoutMs: 8_000,
