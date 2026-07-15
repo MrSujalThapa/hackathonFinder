@@ -279,7 +279,7 @@ export async function requestAiPageDecision(input: {
         {
           role: "system",
           content:
-            "You select among supplied public event-directory candidate groups. Return only one JSON object with selectedGroupId, classification, optional fields, optional selectedActionId, and confidence. Do not invent selectors, endpoints, URLs, records, code, or browser instructions. Extra keys are rejected.",
+            "You select among supplied public event-directory candidate groups. Return only one JSON object with exactly these top-level keys when needed: selectedGroupId, classification, fields, selectedActionId, confidence. classification must be one of: event_records, navigation, editorial, forms, sponsors, uncertain. Do not use DOM, list, cards, or any other classification. Extra keys are rejected. Do not invent selectors, endpoints, URLs, records, code, or browser instructions. Example: {\"selectedGroupId\":\"dom:1\",\"classification\":\"event_records\",\"fields\":{\"title\":\"visible title text\",\"date\":\"visible date text\"},\"confidence\":0.82}",
         },
         {
           role: "user",
