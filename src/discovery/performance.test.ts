@@ -112,7 +112,8 @@ describe("discovery performance observability", { concurrency: false }, () => {
     });
 
     assert.equal(result.summary.rawLeads, 3);
-    assert.equal(result.summary.rejected, 0);
+    assert.equal(result.summary.accepted, 1);
+    assert.equal(result.summary.rejected, 2);
     assert.equal(result.summary.performance?.persistence?.skipped, true);
     assert.deepEqual(Object.keys(result.summary.performance?.collectors ?? {}), ["mock"]);
   });

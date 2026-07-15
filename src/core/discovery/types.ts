@@ -3,6 +3,34 @@ import type { PersistenceShadowSummary } from "@/discovery/persistence/comparePe
 
 export type DiscoveryMode = "online" | "in-person" | "hybrid" | "unknown";
 export type ReviewPolicy = "broad" | "balanced" | "strict";
+export type DiscoveryProfile = "light" | "standard" | "deep" | "exhaustive";
+export type LocationConstraint = "event_location" | "participant_eligibility" | "none";
+export type RemotePolicy = "exclude" | "include" | "only" | "inferred_open";
+
+export type ParsedDateEvidence = {
+  value: string | null;
+  kind:
+    | "event_start"
+    | "event_end"
+    | "registration_open"
+    | "registration_deadline"
+    | "application_deadline"
+    | "submission_deadline"
+    | "result_announcement";
+  confidence: "high" | "medium" | "low";
+  sourceUrl: string;
+  sourceText?: string;
+};
+
+export type EventLocation = {
+  mode: "in_person" | "remote" | "hybrid" | "unknown";
+  venue?: string;
+  city?: string;
+  region?: string;
+  country?: string;
+  rawText?: string;
+  confidence: "high" | "medium" | "low";
+};
 
 export type SourceName =
   | "hacklist"
@@ -47,12 +75,22 @@ export type HackathonEvent = {
   officialUrl?: string;
   applyUrl?: string;
   socialUrl?: string;
+  eventStartDate?: string;
+  eventEndDate?: string;
+  registrationOpenDate?: string;
+  registrationDeadline?: string;
+  applicationDeadline?: string;
+  submissionDeadline?: string;
+  resultAnnouncementDate?: string;
+  parsedDateEvidence?: ParsedDateEvidence[];
   startDate?: string;
   endDate?: string;
   deadline?: string;
   location?: string;
   mode?: DiscoveryMode;
+  eventLocation?: EventLocation;
   city?: string;
+  region?: string;
   country?: string;
   prize?: string;
   themes: string[];
@@ -65,6 +103,10 @@ export type HackathonEvent = {
 export type DiscoveryPreferences = {
   rawCommand: string;
   locations: string[];
+  locationConstraint?: LocationConstraint;
+  remotePolicy?: RemotePolicy;
+  onsiteOnly?: boolean;
+  profile?: DiscoveryProfile;
   dateFrom?: string;
   dateTo?: string;
   themes: string[];
@@ -199,6 +241,13 @@ export type AgentRunSummary = {
     score: number;
     location: string;
     deadline: string;
+    eventStartDate?: string;
+    eventEndDate?: string;
+    applicationDeadline?: string;
+    submissionDeadline?: string;
+    participationMode?: string;
+    eligibility?: string;
+    source?: DiscoverySourceId;
     status: string;
     classification?: EventPageClassification;
     sourceAuthority?: number;

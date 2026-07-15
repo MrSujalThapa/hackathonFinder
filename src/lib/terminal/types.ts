@@ -164,6 +164,10 @@ export type ParsedTerminalCommand =
       includeCustomSites?: boolean;
       sources?: string[];
       reviewPolicy?: "broad" | "balanced" | "strict";
+      profile?: "light" | "standard" | "deep" | "exhaustive";
+      dryRun?: boolean;
+      remotePolicy?: "exclude" | "include" | "only" | "inferred_open";
+      onsiteOnly?: boolean;
     }
   | { kind: "sources"; raw: string }
   | { kind: "status"; raw: string }

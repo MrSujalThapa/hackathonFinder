@@ -6,8 +6,10 @@ import { planDiscoveryWithLlm } from "@/agent/llm/planWithLlm";
 import { runLoop } from "@/agent/runtime/runLoop";
 import type {
   AgentRunSummary,
+  DiscoveryProfile,
   DiscoverySourceId,
   DiscoveryPreferences,
+  RemotePolicy,
   ReviewPolicy,
   SourceName,
   SourceRunStats,
@@ -83,6 +85,10 @@ type DiscoveryCommandFlags = {
   includeCustomSites: boolean;
   sourceNames?: string[];
   reviewPolicy?: ReviewPolicy;
+  profile?: DiscoveryProfile;
+  remotePolicy?: RemotePolicy;
+  onsiteOnly?: boolean;
+  dryRun?: boolean;
 };
 
 function commandMentionsSources(command: string): boolean {
@@ -106,12 +112,60 @@ function parseDiscoveryCommandFlags(command: string): DiscoveryCommandFlags {
   const sourceNames: string[] = [];
   let includeCustomSites = false;
   let reviewPolicy: ReviewPolicy | undefined;
+  let profile: DiscoveryProfile | undefined;
+  let remotePolicy: RemotePolicy | undefined;
+  let onsiteOnly = false;
+  let dryRun = false;
 
-  for (const part of parts) {
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index]!;
     const lower = part.toLowerCase();
+    const nextValue = () => {
+      const value = parts[index + 1];
+      if (!value || value.startsWith("--")) return undefined;
+      index += 1;
+      return value.replace(/^["']|["']$/g, "");
+    };
     if (lower === "--include-custom-sites") {
       includeCustomSites = true;
       continue;
+    }
+    if (lower === "--dry-run") {
+      dryRun = true;
+      continue;
+    }
+    if (lower === "--verbose") {
+      continue;
+    }
+    if (lower === "--remote") {
+      remotePolicy = "only";
+      continue;
+    }
+    if (lower === "--include-remote") {
+      remotePolicy = "include";
+      continue;
+    }
+    if (lower === "--onsite-only") {
+      remotePolicy = "exclude";
+      onsiteOnly = true;
+      continue;
+    }
+    if (lower === "--profile" || lower.startsWith("--profile=")) {
+      const value = lower.includes("=")
+        ? lower.slice("--profile=".length)
+        : nextValue()?.toLowerCase();
+      if (
+        value === "light" ||
+        value === "standard" ||
+        value === "deep" ||
+        value === "exhaustive"
+      ) {
+        profile = value;
+        continue;
+      }
+      throw new Error(
+        `Invalid --profile value "${value ?? ""}". Expected light, standard, deep, or exhaustive.`,
+      );
     }
     if (lower.startsWith("--sources=")) {
       const value = part.slice("--sources=".length).replace(/^["']|["']$/g, "");
@@ -120,8 +174,16 @@ function parseDiscoveryCommandFlags(command: string): DiscoveryCommandFlags {
     }
     if (lower.startsWith("--review-policy=")) {
       const value = part.slice("--review-policy=".length).replace(/^["']|["']$/g, "").toLowerCase();
-      if (value === "broad" || value === "balanced" || value === "strict") reviewPolicy = value;
-      continue;
+      if (value === "broad" || value === "balanced" || value === "strict") {
+        reviewPolicy = value;
+        continue;
+      }
+      throw new Error(
+        `Invalid --review-policy value "${value}". Expected broad, balanced, or strict.`,
+      );
+    }
+    if (lower.startsWith("--")) {
+      throw new Error(`Unknown discovery flag "${part}".`);
     }
     queryParts.push(part);
   }
@@ -131,7 +193,26 @@ function parseDiscoveryCommandFlags(command: string): DiscoveryCommandFlags {
     includeCustomSites,
     sourceNames: sourceNames.length > 0 ? [...new Set(sourceNames)] : undefined,
     reviewPolicy,
+    profile,
+    remotePolicy,
+    onsiteOnly,
+    dryRun,
   };
+}
+
+function maxResultsForProfile(profile: DiscoveryProfile | undefined): number | undefined {
+  switch (profile) {
+    case "light":
+      return 50;
+    case "standard":
+      return 150;
+    case "deep":
+      return 300;
+    case "exhaustive":
+      return 500;
+    default:
+      return undefined;
+  }
 }
 
 async function selectCustomSourcesForRun(
@@ -262,7 +343,7 @@ export async function runDiscovery(
   input: RunDiscoveryInput,
 ): Promise<DiscoveryRunResult> {
   const runId = input.runId ?? randomUUID();
-  const dryRun = input.dryRun === true || input.dryRunPlan === true;
+  let dryRun = input.dryRun === true || input.dryRunPlan === true;
   const mode: DiscoveryRunMode = input.mode ?? "auto";
   const emitter = createEventEmitter(runId, input.eventSink);
   const performanceTracker = createDiscoveryPerformanceTracker({
@@ -274,6 +355,7 @@ export async function runDiscovery(
     await performanceTracker.measure("commandParsing", async () => {
       const nextHakku = await getHakkuConnectionStatus();
       const nextCommandFlags = parseDiscoveryCommandFlags(input.command);
+      dryRun = dryRun || nextCommandFlags.dryRun === true;
       const nextPlannerCommand = nextCommandFlags.query || input.command;
       const parsed = parseCommand(nextPlannerCommand);
       const nextCustomSelection = await selectCustomSourcesForRun(nextCommandFlags);
@@ -283,8 +365,11 @@ export async function runDiscovery(
         customSelection: nextCustomSelection,
         withCli: applyCliOptions(parsed, {
           sources: input.sources ?? nextCustomSelection.builtInFromFlag,
-          maxResults: input.maxResults,
+          maxResults: input.maxResults ?? maxResultsForProfile(nextCommandFlags.profile),
           reviewPolicy: input.reviewPolicy ?? nextCommandFlags.reviewPolicy,
+          profile: nextCommandFlags.profile,
+          remotePolicy: nextCommandFlags.remotePolicy,
+          onsiteOnly: nextCommandFlags.onsiteOnly,
         }),
       };
     });

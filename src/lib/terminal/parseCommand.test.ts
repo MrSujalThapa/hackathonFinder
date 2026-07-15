@@ -29,7 +29,7 @@ describe("parseTerminalCommand", () => {
 
   it("parses discovery flags and removes them from the natural-language request", () => {
     const parsed = parseTerminalCommand(
-      "upcoming hackathons --include-custom-sites --sources=hackathonmap,hackathonradar --review-policy=broad",
+      "upcoming hackathons --include-custom-sites --sources=hackathonmap,hackathonradar --review-policy=broad --profile light --include-remote --dry-run --verbose",
     );
     assert.equal(parsed.kind, "find");
     if (parsed.kind !== "find") return;
@@ -37,6 +37,23 @@ describe("parseTerminalCommand", () => {
     assert.equal(parsed.includeCustomSites, true);
     assert.deepEqual(parsed.sources, ["hackathonmap", "hackathonradar"]);
     assert.equal(parsed.reviewPolicy, "broad");
+    assert.equal(parsed.profile, "light");
+    assert.equal(parsed.remotePolicy, "include");
+    assert.equal(parsed.dryRun, true);
+    assert.equal(parsed.request.includes("--verbose"), false);
+  });
+
+  it("parses terminal page profile and remote flags with space syntax", () => {
+    const parsed = parseTerminalCommand(
+      "find upcoming AI hackathons in Toronto --profile deep --remote --dry-run",
+    );
+    assert.equal(parsed.kind, "find");
+    if (parsed.kind !== "find") return;
+    assert.equal(parsed.request, "upcoming AI hackathons in Toronto");
+    assert.equal(parsed.profile, "deep");
+    assert.equal(parsed.remotePolicy, "only");
+    assert.equal(parsed.dryRun, true);
+    assert.equal(parsed.request.includes("--profile"), false);
   });
 
   it("rejects unknown discovery flags", () => {

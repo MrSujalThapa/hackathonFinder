@@ -269,7 +269,14 @@ export function DiscoveryTerminal() {
   );
 
   const startFind = useCallback(
-    async (sessionId: string, request: string, rawDisplay: string) => {
+    async (
+      sessionId: string,
+      request: string,
+      rawDisplay: string,
+      options: {
+        dryRun?: boolean;
+      } = {},
+    ) => {
       if (submitting) return;
 
       setSubmitting(true);
@@ -285,6 +292,7 @@ export function DiscoveryTerminal() {
         const job = await createDiscoveryJob({
           command: rawDisplay.trim(),
           terminalSessionId: sessionId,
+          ...(options.dryRun ? { dryRun: true } : {}),
         });
         patchSession(sessionId, {
           seenEventIds: [],
@@ -737,7 +745,9 @@ export function DiscoveryTerminal() {
     }
 
     if (parsed.kind === "find") {
-      await startFind(sessionId, parsed.request, raw);
+      await startFind(sessionId, parsed.request, raw, {
+        dryRun: parsed.dryRun,
+      });
       return;
     }
 

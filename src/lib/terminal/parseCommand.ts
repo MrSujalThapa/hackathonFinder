@@ -311,14 +311,60 @@ function parseDiscoveryRequest(rawRequest: string, raw: string): ParsedTerminalC
   const sources: string[] = [];
   let includeCustomSites = false;
   let reviewPolicy: "broad" | "balanced" | "strict" | undefined;
+  let profile: "light" | "standard" | "deep" | "exhaustive" | undefined;
+  let dryRun = false;
+  let remotePolicy: "exclude" | "include" | "only" | "inferred_open" | undefined;
+  let onsiteOnly = false;
 
-  for (const part of parts) {
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index]!;
     if (!part.startsWith("--")) {
       queryParts.push(stripQuotes(part));
       continue;
     }
+    const nextValue = () => {
+      const value = parts[index + 1];
+      if (!value || value.startsWith("--")) return undefined;
+      index += 1;
+      return stripQuotes(value);
+    };
     if (part === "--include-custom-sites") {
       includeCustomSites = true;
+      continue;
+    }
+    if (part === "--dry-run") {
+      dryRun = true;
+      continue;
+    }
+    if (part === "--verbose") {
+      continue;
+    }
+    if (part === "--remote") {
+      remotePolicy = "only";
+      continue;
+    }
+    if (part === "--include-remote") {
+      remotePolicy = "include";
+      continue;
+    }
+    if (part === "--onsite-only") {
+      remotePolicy = "exclude";
+      onsiteOnly = true;
+      continue;
+    }
+    if (part === "--profile" || part.startsWith("--profile=")) {
+      const value = part.includes("=")
+        ? stripQuotes(part.slice("--profile=".length))
+        : nextValue();
+      if (
+        value !== "light" &&
+        value !== "standard" &&
+        value !== "deep" &&
+        value !== "exhaustive"
+      ) {
+        return reject("invalid_profile", "--profile must be light, standard, deep, or exhaustive", raw);
+      }
+      profile = value;
       continue;
     }
     if (part.startsWith("--sources=")) {
@@ -351,6 +397,10 @@ function parseDiscoveryRequest(rawRequest: string, raw: string): ParsedTerminalC
     ...(includeCustomSites ? { includeCustomSites } : {}),
     ...(sources.length > 0 ? { sources: [...new Set(sources)] } : {}),
     ...(reviewPolicy ? { reviewPolicy } : {}),
+    ...(profile ? { profile } : {}),
+    ...(dryRun ? { dryRun } : {}),
+    ...(remotePolicy ? { remotePolicy } : {}),
+    ...(onsiteOnly ? { onsiteOnly } : {}),
   };
 }
 

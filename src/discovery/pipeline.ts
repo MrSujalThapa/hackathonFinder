@@ -27,6 +27,7 @@ import { mergeCrossSourceEvents } from "@/core/mergeEvents";
 import { evaluateEligibility, scoreHackathonEvent } from "@/core/score";
 import { verifyHackathonEvent } from "@/core/verify";
 import { sourceAuthority } from "@/core/dedupe";
+import { applicationDeadlineFor, eventStartFor } from "@/core/dates";
 import { completeAgentRun, createAgentRun } from "@/server/agent/runs";
 import {
   buildAcceptedSummary,
@@ -160,11 +161,12 @@ function isHardInvalidVerificationReason(reason: string): boolean {
 }
 
 function broadNeedsReviewReasons(
-  event: { deadline?: string; startDate?: string; applyUrl?: string; officialUrl?: string },
+  event: { deadline?: string; registrationDeadline?: string; applicationDeadline?: string; startDate?: string; eventStartDate?: string; applyUrl?: string; officialUrl?: string },
   score: ScoringResult,
 ): string[] {
   const reasons = [...score.redFlags];
-  if (!event.deadline && !event.startDate) reasons.push("Date or deadline unclear");
+  if (!eventStartFor(event)) reasons.push("Event date unclear");
+  if (!applicationDeadlineFor(event)) reasons.push("Applications close: Unknown");
   if (!event.applyUrl) reasons.push("Application URL missing or unclear");
   if (!event.officialUrl) reasons.push("Official URL missing or unclear");
   return [...new Set(reasons)];
@@ -777,7 +779,7 @@ export async function executeDiscoveryPipeline(
           }
         }
 
-        if (!event.deadline) summary.quality.missingDeadlines += 1;
+        if (!applicationDeadlineFor(event)) summary.quality.missingDeadlines += 1;
         if (!event.applyUrl) summary.quality.missingApplyLinks += 1;
 
         const reviewReasons = broadReview ? broadNeedsReviewReasons(event, score) : [];

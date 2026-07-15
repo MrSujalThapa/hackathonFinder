@@ -36,8 +36,15 @@ export function hasExplicitTorontoConstraint(preferences: DiscoveryPreferences):
   return /\b(?:in|near|around|for)\s+toronto\b|\btoronto\b/i.test(preferences.rawCommand);
 }
 
+function allowsGta(preferences: DiscoveryPreferences): boolean {
+  return /\b(?:gta|greater toronto)\b/i.test(preferences.rawCommand);
+}
+
 function explicitCityConstraint(preferences: DiscoveryPreferences): ExplicitCity | null {
   const command = preferences.rawCommand;
+  if (/\b(?:gta|greater toronto)\b/i.test(command)) {
+    return "toronto";
+  }
   for (const city of ["toronto", "waterloo", "mississauga"] as const) {
     if (new RegExp(`\\b(?:in|near|around|for)\\s+${city}\\b|\\b${city}\\b`, "i").test(command)) {
       return city;
@@ -66,16 +73,16 @@ function classifyConcreteCity(
     if (GTA_RE.test(text)) {
       return {
         status: "GTA_MATCH",
-        eligible: true,
-        needsReview: false,
+        eligible: false,
+        needsReview: true,
         reason: "Greater Toronto Area location match",
       };
     }
     if (ONTARIO_NEARBY_RE.test(text) || (text.includes("canada") && text.includes("ontario"))) {
       return {
         status: "ONTARIO_NEARBY",
-        eligible: true,
-        needsReview: true,
+        eligible: false,
+        needsReview: false,
         reason: "Ontario nearby location for explicit Toronto query",
       };
     }
@@ -144,23 +151,30 @@ export function classifyExplicitCityLocation(
   if (isVirtual) {
     return {
       status: "VIRTUAL",
-      eligible: true,
+      eligible: preferences.remotePolicy === "include",
       needsReview: false,
-      reason: "Virtual event satisfies explicit city query",
+      reason: preferences.remotePolicy === "include"
+        ? "Virtual event included by explicit remote policy"
+        : "Remote-only event was not requested for this city query",
     };
   }
 
   if (!text || text === "unknown" || text.includes("location unclear")) {
     return {
       status: "UNKNOWN",
-      eligible: true,
+      eligible: false,
       needsReview: true,
       reason: "Location unclear for explicit city query",
     };
   }
 
   const cityResult = classifyConcreteCity(city, text);
-  if (cityResult) return cityResult;
+  if (cityResult) {
+    if (city === "toronto" && cityResult.status === "GTA_MATCH" && allowsGta(preferences)) {
+      return { ...cityResult, eligible: true, needsReview: false };
+    }
+    return cityResult;
+  }
 
   const hasConcreteLocation =
     Boolean(event.location || event.city || event.country) &&
@@ -177,7 +191,7 @@ export function classifyExplicitCityLocation(
 
   return {
     status: "UNKNOWN",
-    eligible: true,
+    eligible: false,
     needsReview: true,
     reason: "Location unclear for explicit city query",
   };

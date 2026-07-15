@@ -1,7 +1,10 @@
 import type { HackathonEvent, VerificationResult } from "@/core/discovery/types";
 import { normalizeDatePart } from "@/core/dedupe";
 import {
+  applicationDeadlineFor,
   deriveEventTemporalStatus,
+  eventEndFor,
+  eventStartFor,
   isDeadlineClosed,
   isStaleTitleYear,
   todayIso,
@@ -44,7 +47,7 @@ export function verifyHackathonEvent(
     };
   }
 
-  if (isDeadlineClosed(event.deadline, now)) {
+  if (isDeadlineClosed(applicationDeadlineFor(event), now)) {
     return {
       valid: false,
       confidence: "high",
@@ -55,8 +58,8 @@ export function verifyHackathonEvent(
   }
 
   const temporalStatus = deriveEventTemporalStatus({
-    startDate: event.startDate,
-    endDate: event.endDate,
+    startDate: eventStartFor(event),
+    endDate: eventEndFor(event),
     timezone: timezoneForLocation(event),
     now,
   });
@@ -104,8 +107,11 @@ export function verifyHackathonEvent(
     };
   }
 
-  if (!isValidIsoDate(event.deadline) && !isValidIsoDate(event.startDate)) {
-    redFlags.push("Date or deadline unclear");
+  if (!isValidIsoDate(applicationDeadlineFor(event))) {
+    redFlags.push("Applications close: Unknown");
+  }
+  if (!isValidIsoDate(eventStartFor(event))) {
+    redFlags.push("Event date unclear");
   }
 
   if (event.officialUrl) {
@@ -119,7 +125,7 @@ export function verifyHackathonEvent(
   }
 
   const confidence =
-    event.officialUrl && event.applyUrl && (event.deadline || event.startDate)
+    event.officialUrl && event.applyUrl && (applicationDeadlineFor(event) || eventStartFor(event))
       ? "high"
       : event.officialUrl || event.applyUrl
         ? "medium"

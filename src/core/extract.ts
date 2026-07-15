@@ -1,10 +1,15 @@
 import type {
   DiscoveryMode,
+  EventLocation,
   HackathonEvent,
   HackathonEvidence,
   RawLead,
 } from "@/core/discovery/types";
-import { parseDatesFromText } from "@/core/dates";
+import {
+  applicationDeadlineFor,
+  parseDateEvidenceFromText,
+  pickDateEvidence,
+} from "@/core/dates";
 import {
   isXSocialUrl,
   pickBestOfficialUrlForXLead,
@@ -56,6 +61,13 @@ function detectModeFromText(text: string): DiscoveryMode | undefined {
   return undefined;
 }
 
+function modeToEventLocationMode(mode: DiscoveryMode | undefined): EventLocation["mode"] {
+  if (mode === "online") return "remote";
+  if (mode === "in-person") return "in_person";
+  if (mode === "hybrid") return "hybrid";
+  return "unknown";
+}
+
 function detectThemesFromText(text: string): string[] {
   const themes = new Set<string>();
   for (const { pattern, theme } of THEME_PATTERNS) {
@@ -64,19 +76,44 @@ function detectThemesFromText(text: string): string[] {
   return [...themes];
 }
 
-function detectLocationFromText(text: string): { city?: string; country?: string; location?: string } {
+function detectLocationFromText(text: string): {
+  city?: string;
+  region?: string;
+  country?: string;
+  location?: string;
+  eventLocation?: EventLocation;
+} {
   for (const entry of LOCATION_PATTERNS) {
     if (entry.pattern.test(text)) {
+      const region = entry.country === "Canada" && entry.city ? "Ontario" : undefined;
       return {
         city: entry.city,
+        region,
         country: entry.country,
         location: [entry.city, entry.country].filter(Boolean).join(", ") || undefined,
+        eventLocation: {
+          mode: "in_person",
+          city: entry.city,
+          region,
+          country: entry.country,
+          rawText: text.slice(0, 250),
+          confidence: entry.city ? "high" : "medium",
+        },
       };
     }
   }
 
   if (/\b(online|remote|virtual|worldwide)\b/i.test(text)) {
-    return { city: "Remote", country: "Online", location: "Online" };
+    return {
+      city: "Remote",
+      country: "Online",
+      location: "Online",
+      eventLocation: {
+        mode: "remote",
+        rawText: "Online",
+        confidence: "high",
+      },
+    };
   }
 
   return {};
@@ -171,7 +208,11 @@ export function extractHackathonEvent(
 ): HackathonEvent | null {
   const metadata = lead.metadata ?? {};
   const combinedText = [lead.title, lead.text, JSON.stringify(metadata)].filter(Boolean).join(" ");
-  const parsedDates = parseDatesFromText(combinedText, options.now ?? new Date());
+  const sourceUrl = lead.url ?? asString(metadata.officialUrl) ?? "";
+  const parsedDateEvidence = parseDateEvidenceFromText(combinedText, {
+    now: options.now ?? new Date(),
+    sourceUrl,
+  });
   const parsedLocation = detectLocationFromText(combinedText);
 
   const name = asString(metadata.name) ?? lead.title?.trim();
@@ -222,6 +263,51 @@ export function extractHackathonEvent(
     asMode(metadata.mode) ??
     detectModeFromText(combinedText) ??
     (parsedLocation.city === "Remote" ? "online" : undefined);
+  const eventLocation: EventLocation | undefined = {
+    ...(parsedLocation.eventLocation ?? {
+      mode: modeToEventLocationMode(mode),
+      confidence: mode ? "medium" : "low",
+    }),
+    mode: modeToEventLocationMode(mode) === "unknown"
+      ? parsedLocation.eventLocation?.mode ?? "unknown"
+      : modeToEventLocationMode(mode),
+    city: asString(metadata.city) ?? parsedLocation.city,
+    region: asString(metadata.region) ?? parsedLocation.region,
+    country: asString(metadata.country) ?? parsedLocation.country,
+    rawText: asString(metadata.location) ?? parsedLocation.location ?? parsedLocation.eventLocation?.rawText,
+  };
+
+  const eventStartDate =
+    asString(metadata.eventStartDate) ??
+    asString(metadata.startDate) ??
+    pickDateEvidence(parsedDateEvidence, "event_start");
+  const eventEndDate =
+    asString(metadata.eventEndDate) ??
+    asString(metadata.endDate) ??
+    pickDateEvidence(parsedDateEvidence, "event_end") ??
+    eventStartDate;
+  const registrationOpenDate =
+    asString(metadata.registrationOpenDate) ??
+    pickDateEvidence(parsedDateEvidence, "registration_open");
+  const registrationDeadline =
+    asString(metadata.registrationDeadline) ??
+    asString(metadata.deadline) ??
+    pickDateEvidence(parsedDateEvidence, "registration_deadline");
+  const applicationDeadline =
+    asString(metadata.applicationDeadline) ??
+    pickDateEvidence(parsedDateEvidence, "application_deadline");
+  const submissionDeadline =
+    asString(metadata.submissionDeadline) ??
+    pickDateEvidence(parsedDateEvidence, "submission_deadline");
+  const resultAnnouncementDate =
+    asString(metadata.resultAnnouncementDate) ??
+    pickDateEvidence(parsedDateEvidence, "result_announcement");
+
+  const deadline = applicationDeadlineFor({
+    registrationDeadline,
+    applicationDeadline,
+    deadline: undefined,
+  });
 
   const event: HackathonEvent = {
     name,
@@ -229,15 +315,25 @@ export function extractHackathonEvent(
     officialUrl,
     applyUrl,
     socialUrl,
-    startDate: asString(metadata.startDate) ?? parsedDates.startDate,
-    endDate: asString(metadata.endDate) ?? parsedDates.endDate,
-    deadline: asString(metadata.deadline) ?? parsedDates.deadline,
+    eventStartDate,
+    eventEndDate,
+    registrationOpenDate,
+    registrationDeadline,
+    applicationDeadline,
+    submissionDeadline,
+    resultAnnouncementDate,
+    parsedDateEvidence,
+    startDate: eventStartDate,
+    endDate: eventEndDate,
+    deadline,
     location:
       asString(metadata.location) ??
       parsedLocation.location ??
       asString(metadata.city),
     mode,
+    eventLocation,
     city: asString(metadata.city) ?? parsedLocation.city,
+    region: asString(metadata.region) ?? parsedLocation.region,
     country: asString(metadata.country) ?? parsedLocation.country,
     prize: asString(metadata.prize),
     themes,

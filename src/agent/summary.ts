@@ -15,6 +15,7 @@ import type {
 import type { EvidenceType } from "@/lib/supabase/database.types";
 import type { AddEvidenceInput } from "@/core/candidates/types";
 import { normalizeDatePart } from "@/core/dedupe";
+import { applicationDeadlineFor, eventEndFor, eventStartFor } from "@/core/dates";
 import { deterministicCandidateSummary } from "@/core/candidateSummary";
 import { formatPerformanceSummary } from "@/discovery/performance";
 import { formatPersistenceShadowSummary } from "@/discovery/persistence/comparePersistenceResults";
@@ -47,8 +48,8 @@ export function eventToUpsertInput(
     city: event.city,
     country: event.country,
     mode: event.mode,
-    startDate: event.startDate,
-    deadline: event.deadline,
+    startDate: eventStartFor(event),
+    deadline: applicationDeadlineFor(event),
     sourceIds: event.sourceIds,
   });
 
@@ -63,9 +64,9 @@ export function eventToUpsertInput(
     officialUrl: event.officialUrl ?? null,
     applyUrl: event.applyUrl ?? null,
     socialUrl: event.socialUrl ?? null,
-    startDate: event.startDate ?? null,
-    endDate: event.endDate ?? null,
-    deadline: event.deadline ?? null,
+    startDate: eventStartFor(event) ?? null,
+    endDate: eventEndFor(event) ?? null,
+    deadline: applicationDeadlineFor(event) ?? null,
     location: event.location ?? null,
     mode: event.mode ?? null,
     city: event.city ?? null,
@@ -105,8 +106,9 @@ export function deadlineStateFor(
   event: HackathonEvent,
   now = new Date(),
 ): AcceptedCandidate["deadlineState"] {
-  const deadline = normalizeDatePart(event.deadline);
-  if (!deadline) return event.deadline ? "unclear" : "missing";
+  const applicationDeadline = applicationDeadlineFor(event);
+  const deadline = normalizeDatePart(applicationDeadline);
+  if (!deadline) return applicationDeadline ? "unclear" : "missing";
   const today = now.toISOString().slice(0, 10);
   return deadline < today ? "closed" : "open";
 }
@@ -114,18 +116,34 @@ export function deadlineStateFor(
 export function buildAcceptedSummary(
   accepted: AcceptedCandidate[],
 ): AgentRunSummary["acceptedCandidates"] {
-  return accepted.map((item) => ({
-    name: item.event.name,
-    score: item.score.score,
-    location: formatLocation(item.event),
-    deadline: item.event.deadline ?? item.event.startDate ?? "unclear",
-    status: item.status,
-    classification: item.classification,
-    sourceAuthority: item.sourceAuthority ?? sourceAuthority(item.event.source),
-    deadlineState: item.deadlineState,
-    hasOfficialUrl: item.hasOfficialUrl ?? Boolean(item.event.officialUrl),
-    hasApplyUrl: item.hasApplyUrl ?? Boolean(item.event.applyUrl),
-  }));
+  return accepted.map((item) => {
+    const applicationDeadline = applicationDeadlineFor(item.event);
+    if (applicationDeadline && item.deadlineState === "missing") {
+      throw new Error(
+        `Contradictory deadline state for ${item.event.name}: concrete application deadline with missing deadline state.`,
+      );
+    }
+
+    return {
+      name: item.event.name,
+      score: item.score.score,
+      location: formatLocation(item.event),
+      deadline: applicationDeadline ?? "Unknown",
+      eventStartDate: eventStartFor(item.event),
+      eventEndDate: eventEndFor(item.event),
+      applicationDeadline,
+      submissionDeadline: item.event.submissionDeadline,
+      participationMode: item.event.eventLocation?.mode ?? item.event.mode,
+      eligibility: item.event.eligibility,
+      source: item.event.source,
+      status: item.status,
+      classification: item.classification,
+      sourceAuthority: item.sourceAuthority ?? sourceAuthority(item.event.source),
+      deadlineState: item.deadlineState,
+      hasOfficialUrl: item.hasOfficialUrl ?? Boolean(item.event.officialUrl),
+      hasApplyUrl: item.hasApplyUrl ?? Boolean(item.event.applyUrl),
+    };
+  });
 }
 
 export function emptyQualityStats(): DiscoveryQualityStats {
@@ -146,9 +164,9 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   console.log("========================");
   console.log(`Raw command: ${summary.rawCommand}`);
   if (summary.dryRun) {
-    console.log("[DRY RUN — NO DATABASE CHANGES]");
+    console.log("[DRY RUN - NO DATABASE CHANGES]");
   } else {
-    console.log("[LIVE MODE — WRITING TO SUPABASE]");
+    console.log("[LIVE MODE - WRITING TO SUPABASE]");
   }
   console.log("");
 
@@ -315,31 +333,44 @@ export function printAgentSummary(summary: AgentRunSummary): void {
   if (summary.acceptedCandidates.length > 0) {
     console.log("Accepted:");
     summary.acceptedCandidates.forEach((candidate, index) => {
-      const base = `${index + 1}. ${candidate.name} — score ${candidate.score} — ${candidate.location} — deadline ${candidate.deadline}`;
-      console.log(base);
+      const eventDates = candidate.eventStartDate
+        ? candidate.eventEndDate && candidate.eventEndDate !== candidate.eventStartDate
+          ? `${candidate.eventStartDate} to ${candidate.eventEndDate}`
+          : candidate.eventStartDate
+        : "Unknown";
+      console.log(`${index + 1}. ${candidate.name} - score ${candidate.score}`);
+      console.log(`   Event: ${eventDates}`);
+      console.log(`   Applications close: ${candidate.applicationDeadline ?? "Unknown"}`);
+      if (candidate.submissionDeadline) {
+        console.log(`   Submission deadline: ${candidate.submissionDeadline}`);
+      }
+      console.log(`   Location: ${candidate.location}`);
+      console.log(`   Mode: ${candidate.participationMode ?? "unknown"}`);
+      console.log(`   Eligibility: ${candidate.eligibility ?? "Unknown"}`);
+      console.log(`   Status: ${candidate.status}`);
+      console.log(`   Source: ${candidate.source ?? "unknown"}`);
       if (summary.verbose) {
         console.log(
           `   status=${candidate.status} classification=${candidate.classification ?? "n/a"} authority=${candidate.sourceAuthority ?? "n/a"} deadlineState=${candidate.deadlineState ?? "n/a"} official=${candidate.hasOfficialUrl ? "yes" : "no"} apply=${candidate.hasApplyUrl ? "yes" : "no"}`,
         );
       } else {
         console.log(
-          `   ${candidate.classification ?? "EVENT"} · deadline ${candidate.deadlineState ?? "n/a"} · apply ${candidate.hasApplyUrl ? "yes" : "no"}`,
+          `   ${candidate.classification ?? "EVENT"} - applications ${candidate.deadlineState ?? "n/a"} - apply ${candidate.hasApplyUrl ? "yes" : "no"}`,
         );
       }
     });
     console.log("");
   }
-
   if (summary.rejectedCandidates.length > 0) {
     console.log("Rejected:");
     const rejected = summary.verbose
       ? summary.rejectedCandidates
       : summary.rejectedCandidates.slice(0, 25);
     for (const item of rejected) {
-      console.log(`- ${item.name} — ${item.reason}`);
+      console.log(`- ${item.name} - ${item.reason}`);
     }
     if (!summary.verbose && summary.rejectedCandidates.length > 25) {
-      console.log(`- … ${summary.rejectedCandidates.length - 25} more (use --verbose)`);
+      console.log(`- ... ${summary.rejectedCandidates.length - 25} more (use --verbose)`);
     }
     console.log("");
   }

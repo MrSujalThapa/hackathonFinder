@@ -1,4 +1,5 @@
 import type { HackathonEvent, HackathonEvidence } from "@/core/discovery/types";
+import { applicationDeadlineFor, eventStartFor } from "@/core/dates";
 import { normalizeText } from "@/core/dedupe";
 
 export type CandidateSummaryPrompt = {
@@ -87,9 +88,10 @@ function supportText(event: HackathonEvent): string {
     event.officialUrl,
     event.applyUrl,
     event.socialUrl,
-    event.startDate,
+    eventStartFor(event),
     event.endDate,
-    event.deadline,
+    applicationDeadlineFor(event),
+    event.submissionDeadline,
     event.location,
     event.mode,
     event.city,
@@ -129,10 +131,11 @@ export function deterministicCandidateSummary(
     event.mode === "online" || event.city === "Remote"
       ? "online"
       : [event.city, event.country].filter(Boolean).join(", ") || event.location || undefined;
-  const dates = event.deadline
-    ? `registration deadline ${event.deadline}`
-    : event.startDate
-      ? `starts ${event.startDate}`
+  const applicationDeadline = applicationDeadlineFor(event);
+  const dates = applicationDeadline
+    ? `applications close ${applicationDeadline}`
+    : eventStartFor(event)
+      ? `starts ${eventStartFor(event)}`
       : undefined;
   const themes = event.themes.length > 0 ? `${event.themes.slice(0, 3).join(", ")} focus` : undefined;
 
