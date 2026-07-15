@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import { performance } from "node:perf_hooks";
+import type { Page } from "playwright";
 import { withPlaywright } from "@/lib/browser/playwright";
 import { enumerateCandidateActionsFromHtml, verifyActionStateProgression } from "@/experiments/scraper-v2/generic/browserActions";
 import type {
@@ -122,6 +123,12 @@ function pageFingerprint(html: string): string {
   return html.replace(/\s+/g, " ").slice(0, 20_000);
 }
 
+function actionStateFingerprint(html: string, baseUrl: string): string {
+  const identities = [...visibleIdentityKeys(html, baseUrl)].sort();
+  if (identities.length > 0) return identities.join("\n").slice(0, 20_000);
+  return pageFingerprint(html);
+}
+
 function visibleIdentityKeys(html: string, baseUrl: string): Set<string> {
   const $ = cheerio.load(html);
   const identities = new Set<string>();
@@ -143,6 +150,9 @@ function visibleIdentityKeys(html: string, baseUrl: string): Set<string> {
 function detectBlockedStateFromHtml(html: string): string | undefined {
   const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2_000);
   const eventWordCount = (text.match(/hackathon|challenge|event|deadline|register|apply|prize|build/gi) ?? []).length;
+  if (eventWordCount < 3 && /\b(404|page not found|not found|route not found|couldn't find|cannot find)\b/i.test(text)) {
+    return "stale_or_missing_route";
+  }
   if (eventWordCount < 3 && /confirm you are human|security check before continuing|captcha|cf-challenge|awswaf/i.test(text)) {
     return "human_verification";
   }
@@ -255,6 +265,38 @@ function actionPriority(action: CandidateAction): number {
     open_detail: 1,
   };
   return (effectPriority[action.proposedEffect] ?? 0) * 10 + action.confidence;
+}
+
+async function executeCandidateAction(page: Page, action: CandidateAction): Promise<void> {
+  if (action.href && (action.proposedEffect === "next_page" || action.proposedEffect === "open_detail")) {
+    await page.goto(action.href, { waitUntil: "networkidle", timeout: 20_000 }).catch(() => undefined);
+    return;
+  }
+  if (action.proposedEffect === "infinite_scroll") {
+    await page.mouse.wheel(0, 5000);
+    await page.waitForTimeout(900);
+    return;
+  }
+  if (action.role && action.accessibleName && page.getByRole) {
+    const clicked = await page
+      .getByRole(action.role as Parameters<Page["getByRole"]>[0], { name: action.accessibleName, exact: true })
+      .first()
+      .click({ timeout: 4_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (clicked) {
+      await page.waitForLoadState("networkidle", { timeout: 12_000 }).catch(() => undefined);
+      await page.waitForTimeout(500);
+      return;
+    }
+  }
+  const actionIndex = Number(action.elementId.split(":")[1]) - 1;
+  await page.evaluate((index) => {
+    const elements = [...document.querySelectorAll("a[href],button,[role='button'],[role='link'],select,input[type='button'],input[type='submit']")];
+    (elements[index] as HTMLElement | undefined)?.click();
+  }, actionIndex);
+  await page.waitForLoadState("networkidle", { timeout: 12_000 }).catch(() => undefined);
+  await page.waitForTimeout(500);
 }
 
 function numericPageParam(url: string): { param: string; page: number } | undefined {
@@ -530,7 +572,6 @@ async function observeBrowserArtifacts(
   const actionTrace: NonNullable<AcquisitionDiagnostics["actionTrace"]> = [];
   const identitiesAfterActions: number[] = [];
   const identityGrowthAfterActions: number[] = [];
-  const attemptedActionIds = new Set<string>();
   const attemptedFingerprintByAction = new Map<string, string>();
   const seenIdentityKeys = new Set<string>();
   const domSamples: BrowserObservationSample[] = [];
@@ -641,7 +682,7 @@ async function observeBrowserArtifacts(
       const persistentBlockedState = lowSignalSamples.length === domSamples.length ? finalBlockedState : undefined;
       browserPages += 1;
       let html = await captureDomSnapshot({ page, sourceUrl: page.url() });
-      let previousFingerprint = pageFingerprint(html);
+      let previousFingerprint = actionStateFingerprint(html, page.url());
       visibleIdentityKeys(html, page.url()).forEach((key) => seenIdentityKeys.add(key));
       const maxActions = Math.max(0, experiment.maxBrowserActions ?? 0);
       observation = {
@@ -664,7 +705,6 @@ async function observeBrowserArtifacts(
           .filter(
             (action) =>
               !action.disabled &&
-              (!attemptedActionIds.has(action.elementId) || action.elementId === "synthetic:scroll") &&
               action.confidence >= 0.55 &&
               (action.proposedEffect === "next_page" ||
                 action.proposedEffect === "load_more" ||
@@ -677,28 +717,14 @@ async function observeBrowserArtifacts(
         actionsDiscovered += actions.length;
         const action = actions[0];
         if (!action) break;
-        attemptedActionIds.add(action.elementId);
-        if (action.href && (action.proposedEffect === "next_page" || action.proposedEffect === "open_detail")) {
-          await page.goto(action.href, { waitUntil: "networkidle", timeout: 20_000 }).catch(() => undefined);
-        } else if (action.proposedEffect === "infinite_scroll") {
-          await page.mouse.wheel(0, 5000);
-          await page.waitForTimeout(900);
-        } else {
-          const actionIndex = Number(action.elementId.split(":")[1]) - 1;
-          await page.evaluate((index) => {
-            const elements = [...document.querySelectorAll("a[href],button,[role='button'],[role='link'],select,input[type='button'],input[type='submit']")];
-            (elements[index] as HTMLElement | undefined)?.click();
-          }, actionIndex);
-          await page.waitForLoadState("networkidle", { timeout: 12_000 }).catch(() => undefined);
-          await page.waitForTimeout(500);
-        }
+        await executeCandidateAction(page, action);
         await waitForDomStability(page, domSamples);
         const nested = await scrollNestedContainers(page);
         if (nested > 0) {
           await page.waitForTimeout(700);
         }
         html = await captureDomSnapshot({ page, sourceUrl: page.url() });
-        const nextFingerprint = pageFingerprint(html);
+        const nextFingerprint = actionStateFingerprint(html, page.url());
         const identityKeys = visibleIdentityKeys(html, page.url());
         const progression = verifyActionStateProgression({
           actionId: action.elementId,
@@ -767,7 +793,9 @@ export async function acquireGenericArtifacts(
       return {
         artifacts: browserFallback.artifacts,
         diagnostics: {
+          requestedUrl: experiment.inputUrl,
           finalUrl: experiment.inputUrl,
+          httpStatus: response.status,
           attemptedLayers: [...attemptedLayers, "browser observation"],
           skippedLayers: [
             "static structured parsing skipped because static response was not OK",
@@ -792,6 +820,8 @@ export async function acquireGenericArtifacts(
       artifacts: [],
       diagnostics: {
         finalUrl: response.url || experiment.inputUrl,
+        requestedUrl: experiment.inputUrl,
+        httpStatus: response.status,
         attemptedLayers,
         skippedLayers,
         requestsMade: 1,
@@ -865,11 +895,13 @@ export async function acquireGenericArtifacts(
   return {
     artifacts,
     diagnostics: {
+      requestedUrl: experiment.inputUrl,
       finalUrl,
+      httpStatus: response.status,
       attemptedLayers,
       skippedLayers,
       requestsMade,
-      pagesRequested,
+      pagesRequested: Math.max(pagesRequested, browserPages || 1),
       paginationExecuted: paginated.artifacts.length > 0 || actionsExecuted > 0,
       paginationStopReason: actionsExecuted > 0 && paginationStopReason === "no_page_param" ? "no_growth" : paginationStopReason,
       browserPages,

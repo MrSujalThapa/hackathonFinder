@@ -3,6 +3,7 @@ import type {
   GenericShadowLead,
   SourceExperiment,
 } from "@/experiments/scraper-v2/generic/types";
+import type { AvailableCountEstimate } from "@/experiments/scraper-v2/generic/coverageEstimate";
 import { normalizeRatio, stableDedupeKey } from "@/experiments/scraper-v2/generic/valueUtils";
 
 function duplicateRate(leads: GenericShadowLead[]): number {
@@ -36,6 +37,7 @@ export function evaluateGenericExtractionQuality(input: {
   blockedReason?: string;
   schemaRejected?: boolean;
   estimatedAvailableRecords?: number;
+  availableEstimate?: AvailableCountEstimate;
   sourceExhausted?: boolean;
   capReached?: boolean;
 }): ExtractionQualityReport {
@@ -49,13 +51,21 @@ export function evaluateGenericExtractionQuality(input: {
   if (input.leads.length > 0 && ratio(validEventLeads, input.leads.length) < 0.7) degradedReasons.push("low precision estimate");
   if (input.leads.length > 0 && ratio(input.leads.filter((lead) => lead.title).length, input.leads.length) < 0.8) degradedReasons.push("low title completeness");
   if (duplicates > 0.2) degradedReasons.push("high duplicate rate");
-  const estimatedAvailableRecords = Math.max(
-    input.estimatedAvailableRecords ?? 0,
-    input.experiment.expectedMinimumEventCount ?? 0,
-    input.discoveredRecords,
-  ) || undefined;
+  const availableEstimate: AvailableCountEstimate = input.availableEstimate ?? {
+    ...(input.estimatedAvailableRecords !== undefined ? { estimatedAvailableRecords: input.estimatedAvailableRecords } : {}),
+    method: input.estimatedAvailableRecords !== undefined ? "inferred" : "unknown",
+    confidence: input.estimatedAvailableRecords !== undefined ? "inferred" : "unknown",
+    evidence: input.estimatedAvailableRecords !== undefined
+      ? [`legacy inferred estimate ${input.estimatedAvailableRecords}`]
+      : ["no live estimate supplied"],
+    contradictions: [],
+  };
+  const estimatedAvailableRecords = availableEstimate.estimatedAvailableRecords;
   if (estimatedAvailableRecords && validEventLeads < estimatedAvailableRecords * 0.5) {
-    degradedReasons.push("under-extracted against evaluation minimum");
+    degradedReasons.push("under-extracted against live source estimate");
+  }
+  if (availableEstimate.contradictions.length > 0) {
+    degradedReasons.push(`available-count contradiction: ${availableEstimate.contradictions.join("; ")}`);
   }
 
   const estimatedPrecision = input.leads.length === 0 ? 0 : ratio(validEventLeads, input.leads.length);
@@ -64,8 +74,12 @@ export function evaluateGenericExtractionQuality(input: {
     : undefined;
 
   let classification: ExtractionQualityReport["classification"] = "usable_partial";
-  if (input.blockedReason) classification = "blocked";
-  else if (validEventLeads === 0) classification = "failed";
+  if (/human|captcha|challenge|awswaf/i.test(input.blockedReason ?? "")) classification = "blocked_human_verification";
+  else if (/auth|login|sign.?in/i.test(input.blockedReason ?? "")) classification = "blocked_authentication";
+  else if (/404|not found|missing route|static response returned 404/i.test(input.blockedReason ?? "")) classification = "stale_or_missing_route";
+  else if (input.blockedReason) classification = "acquisition_failed";
+  else if (validEventLeads === 0 && input.discoveredRecords > 0) classification = "extraction_failed";
+  else if (validEventLeads === 0) classification = "acquisition_failed";
   else if (estimatedPrecision < 0.9) classification = "degraded_low_precision";
   else if (
     degradedReasons.some((reason) => /under-extracted|records discovered but none/i.test(reason)) ||
@@ -102,6 +116,10 @@ export function evaluateGenericExtractionQuality(input: {
     duplicateRate: duplicates,
     estimatedPrecision,
     ...(estimatedAvailableRecords !== undefined ? { estimatedAvailableRecords } : {}),
+    availableEstimateMethod: availableEstimate.method,
+    availableEstimateConfidence: availableEstimate.confidence,
+    availableEstimateEvidence: availableEstimate.evidence,
+    availableEstimateContradictions: availableEstimate.contradictions,
     ...(estimatedRecall !== undefined ? { estimatedRecall } : {}),
     degradedReasons,
     classification,

@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 import { buildDomRepresentations } from "@/experiments/scraper-v2/generic/domRepresentation";
 import { detectRepeatedDomUnitSets } from "@/experiments/scraper-v2/generic/domRepeatedUnits";
 import { inferDomSchemaAndLeads } from "@/experiments/scraper-v2/generic/domSchema";
+import { stableDedupeKey } from "@/experiments/scraper-v2/generic/valueUtils";
 import type {
   AcquiredArtifact,
   DomExtractionResult,
@@ -76,6 +77,42 @@ export function runGenericDomExtraction(
     : { leads: [], rejectionReasons: ["missing representation for selected unit set"] };
   timings.domSchemaInferenceMs = ms(schemaStartedAt);
 
+  let leads = inferred.leads;
+  let availableRecords = selectedUnitSet.diagnostics.unitCount;
+  if (inferred.schema) {
+    const leadByKey = new Map<string, typeof leads[number]>();
+    const compatibleUnitSetIds = new Set([selectedUnitSet.unitSetId]);
+    for (const lead of leads) {
+      leadByKey.set(stableDedupeKey([lead.sourceRecordId, lead.canonicalUrl, lead.title, lead.startDate]), lead);
+    }
+    for (const unitSet of repeatedUnitSets) {
+      if (unitSet.unitSetId === selectedUnitSet.unitSetId) continue;
+      const candidateRepresentation = representationForUnitSet(representations, unitSet);
+      if (!candidateRepresentation) continue;
+      const candidate = inferDomSchemaAndLeads({
+        representation: candidateRepresentation,
+        unitSet,
+        experiment,
+        allowCompositeIdentity: options.allowCompositeIdentity,
+      });
+      if (!candidate.schema) continue;
+      const compatible =
+        candidate.schema.recordContainer.unitTag === inferred.schema.recordContainer.unitTag &&
+        candidate.schema.recordContainer.unitClassShape === inferred.schema.recordContainer.unitClassShape &&
+        candidate.schema.validationMetrics.titleCompleteness >= 0.6 &&
+        candidate.schema.validationMetrics.identityCompleteness >= 0.5;
+      if (!compatible) continue;
+      compatibleUnitSetIds.add(unitSet.unitSetId);
+      for (const lead of candidate.leads) {
+        leadByKey.set(stableDedupeKey([lead.sourceRecordId, lead.canonicalUrl, lead.title, lead.startDate]), lead);
+      }
+    }
+    leads = [...leadByKey.values()];
+    availableRecords = repeatedUnitSets
+      .filter((unitSet) => compatibleUnitSetIds.has(unitSet.unitSetId))
+      .reduce((total, unitSet) => total + unitSet.diagnostics.unitCount, 0);
+  }
+
   return {
     strategy: "dom",
     representations: representations.map((item) => ({
@@ -86,8 +123,8 @@ export function runGenericDomExtraction(
     repeatedUnitSets,
     selectedUnitSet,
     ...(inferred.schema ? { schema: inferred.schema } : {}),
-    leads: inferred.leads,
-    availableRecords: selectedUnitSet.diagnostics.unitCount,
+    leads,
+    availableRecords,
     stopReason: inferred.schema ? "completed" : "schema_rejected",
     timings: { ...timings, totalMs: ms(totalStartedAt) },
   };

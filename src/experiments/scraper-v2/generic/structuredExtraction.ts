@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 import { buildAiPageDecisionInput, requestAiPageDecision, shouldInvokeAiPageDecision, type AiPageDecisionResult } from "@/experiments/scraper-v2/generic/aiPageDecision";
 import { enumerateCandidateActionsFromHtml } from "@/experiments/scraper-v2/generic/browserActions";
 import { ExistingCustomRuntime } from "@/experiments/scraper-v2/generic/crawlRuntime";
+import { estimateAvailableEventCount } from "@/experiments/scraper-v2/generic/coverageEstimate";
 import { runGenericDomExtraction } from "@/experiments/scraper-v2/generic/domExtraction";
 import { validateEventIntent } from "@/experiments/scraper-v2/generic/eventIntentValidation";
 import { inferGenericEventSchema } from "@/experiments/scraper-v2/generic/fieldInference";
@@ -67,30 +68,6 @@ function mergeCompatibleRecordSets(discovery: RecordDiscoveryResult): RecordDisc
     ...discovery,
     recordSets: [...merged.values()].sort((left, right) => right.confidence - left.confidence),
   };
-}
-
-function estimateAvailableRecords(
-  artifacts: AcquiredArtifact[],
-  selected: CandidateRecordSet | undefined,
-): number | undefined {
-  let estimate = selected?.records.length;
-  function inspect(value: unknown, depth = 0): void {
-    if (depth > 5 || value == null) return;
-    if (Array.isArray(value)) {
-      estimate = Math.max(estimate ?? 0, value.length);
-      value.slice(0, 8).forEach((item) => inspect(item, depth + 1));
-      return;
-    }
-    if (typeof value !== "object") return;
-    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      if (/\b(total|total_count|totalCount|available)\b/.test(key) && typeof child === "number" && child > 0) {
-        estimate = Math.max(estimate ?? 0, child);
-      }
-      inspect(child, depth + 1);
-    }
-  }
-  artifacts.forEach((artifact) => inspect(artifact.payload));
-  return estimate;
 }
 
 function selectRecordSet(
@@ -438,19 +415,26 @@ export async function runGenericStructuredExtraction(
     blockedReason: acquisition.diagnostics.blockedReason,
   });
   const leads = strategySelected === "dom" ? dom.leads : structuredLeads;
+  const selectedForEstimate = strategySelected === "structured" ? selected : undefined;
 
   const paginationStartedAt = performance.now();
   const pagination = inferGenericPagination(selected);
   timings.paginationMs = ms(paginationStartedAt);
 
   const qualityStartedAt = performance.now();
+  const availableEstimate = estimateAvailableEventCount({
+    artifacts: acquisition.artifacts,
+    selectedRecordSet: selectedForEstimate,
+    leads,
+    diagnostics: acquisition.diagnostics,
+  });
   const quality = evaluateGenericExtractionQuality({
     discoveredRecords: strategySelected === "dom" ? dom.availableRecords ?? dom.leads.length : selected?.records.length ?? 0,
     leads,
     experiment,
     blockedReason: acquisition.diagnostics.blockedReason,
     schemaRejected: strategySelected === "dom" ? dom.stopReason === "schema_rejected" : schema?.rejected,
-    estimatedAvailableRecords: estimateAvailableRecords(acquisition.artifacts, selected),
+    availableEstimate,
     sourceExhausted: acquisition.diagnostics.paginationStopReason === "no_growth",
     capReached:
       acquisition.diagnostics.paginationStopReason === "page_cap" ||
@@ -506,8 +490,10 @@ export function formatGenericStructuredExtractionResult(
   result: GenericStructuredExtractionResult,
 ): string[] {
   const lines = ["[structured-v2] Generic structured extraction"];
+  lines.push(`  requested URL             ${result.acquisition.requestedUrl ?? result.inputUrl}`);
   lines.push(`  input                     ${result.inputUrl}`);
   lines.push(`  final URL                 ${result.finalUrl}`);
+  lines.push(`  HTTP status               ${result.acquisition.httpStatus ?? "unknown"}`);
   lines.push(`  static/browser            ${result.acquisitionMode}`);
   lines.push(`  runtime                   ${result.acquisition.runtime ?? "custom"}`);
   lines.push(`  artifacts                 ${result.artifacts.length}`);
@@ -557,6 +543,8 @@ export function formatGenericStructuredExtractionResult(
   lines.push(`  normalized leads          ${result.quality.normalizedLeads}`);
   lines.push(`  valid events              ${result.quality.validEventLeads}`);
   lines.push(`  estimated available       ${result.quality.estimatedAvailableRecords ?? "unknown"}`);
+  lines.push(`  available estimate method ${result.quality.availableEstimateMethod ?? "unknown"}`);
+  lines.push(`  estimate confidence       ${result.quality.availableEstimateConfidence ?? "unknown"}`);
   lines.push(`  estimated recall          ${pct(result.quality.estimatedRecall)}`);
   lines.push(`  obvious non-events        ${result.quality.obviousNonEvents}`);
   lines.push(`  title completeness        ${pct(result.quality.titleCompleteness)}`);
@@ -565,10 +553,17 @@ export function formatGenericStructuredExtractionResult(
   lines.push(`  duplicate rate            ${pct(result.quality.duplicateRate)}`);
   lines.push(`  pagination                ${result.pagination.method}`);
   lines.push(`  total                     ${seconds(result.timings.totalMs)}`);
+  lines.push(`  source state              ${result.quality.classification}`);
   lines.push(`  quality                   ${result.quality.classification}`);
   lines.push("  persistence               disabled");
   if (result.quality.degradedReasons.length > 0) {
     lines.push(`  degraded reasons          ${result.quality.degradedReasons.join("; ")}`);
+  }
+  if (result.quality.availableEstimateEvidence.length > 0) {
+    lines.push(`  estimate evidence         ${result.quality.availableEstimateEvidence.join("; ")}`);
+  }
+  if (result.quality.availableEstimateContradictions.length > 0) {
+    lines.push(`  estimate contradictions   ${result.quality.availableEstimateContradictions.join("; ")}`);
   }
   if (result.aiAssistance) {
     lines.push(`  AI invoked                ${result.aiAssistance.invoked ? "yes" : "no"}`);

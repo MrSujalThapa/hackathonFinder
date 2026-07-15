@@ -38,11 +38,20 @@ function accessibleName($: cheerio.CheerioAPI, element: Element): string | undef
 
 function disabled($: cheerio.CheerioAPI, element: Element): boolean {
   const item = $(element);
-  return item.attr("disabled") != null || item.attr("aria-disabled") === "true" || /\bdisabled\b/i.test(item.attr("class") ?? "");
+  const classNames = (item.attr("class") ?? "").split(/\s+/).filter(Boolean);
+  return item.attr("disabled") != null ||
+    item.attr("aria-disabled") === "true" ||
+    item.attr("aria-current") != null ||
+    classNames.some((className) => /^(?:disabled|is-disabled|btn-disabled)$/i.test(className));
 }
 
 function inferEffect(name: string | undefined, href: string | undefined): CandidateAction["proposedEffect"] {
   const text = `${name ?? ""} ${href ?? ""}`.toLowerCase();
+  const controlName = (name ?? "").replace(/\s+/g, " ").trim();
+  const explicitPagingLabel = controlName.length <= 80 &&
+    /\b(load more|show more|view more|more events|more hackathons|next|older|page\s*\d+)\b/i.test(controlName);
+  const pagingHref = href ? /(?:[?&](page|p|offset|cursor)=|\/page\/\d+)/i.test(href) : false;
+  if (href && !pagingHref && !explicitPagingLabel) return "open_detail";
   if (/\b(load more|show more|view more|more events|more hackathons)\b/.test(text)) return "load_more";
   if (/\b(next|older|page\s*\d+|[?&](page|p|offset|cursor)=)\b/.test(text)) return "next_page";
   if (/\b(sort|newest|oldest|upcoming|recent)\b/.test(text)) return "change_sort";
@@ -53,6 +62,13 @@ function inferEffect(name: string | undefined, href: string | undefined): Candid
 
 function inferContext(name: string | undefined, href: string | undefined, role: string | undefined): CandidateAction["context"] {
   const text = `${name ?? ""} ${href ?? ""} ${role ?? ""}`.toLowerCase();
+  const pagingHref = href ? /(?:[?&](page|p|offset|cursor)=|\/page\/\d+)/i.test(href) : false;
+  const controlName = (name ?? "").replace(/\s+/g, " ").trim();
+  const explicitPagingLabel = controlName.length <= 80 &&
+    /\b(next|older|page\s*\d+|load more|show more|view more)\b/i.test(controlName);
+  if (href && !pagingHref && !explicitPagingLabel) {
+    return "detail";
+  }
   if (/\b(next|previous|pagination|page\s*\d+|load more|show more|cursor|offset)\b/.test(text)) return "pagination";
   if (/\b(filter|category|sort|location|type)\b/.test(text)) return "filter";
   if (/\b(register|apply|details?|view event|learn more)\b/.test(text)) return "detail";
@@ -70,6 +86,8 @@ function confidenceFor(action: CandidateAction): number {
   if (action.context === "filter") score += 0.1;
   if (action.context === "navigation") score -= 0.35;
   if (action.proposedEffect === "next_page" || action.proposedEffect === "load_more") score += 0.3;
+  if (/\b(next|load more|show more|view more|older)\b/i.test(action.accessibleName ?? "")) score += 0.18;
+  if (/^(?:page\s*)?\d+$/i.test(action.accessibleName ?? "")) score -= 0.12;
   if (action.proposedEffect === "unknown") score -= 0.15;
   if (action.accessibleName) score += 0.05;
   return normalizeRatio(score);

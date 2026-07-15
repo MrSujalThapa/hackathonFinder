@@ -186,7 +186,9 @@ export type DomExtractionResult = {
 };
 
 export type AcquisitionDiagnostics = {
+  requestedUrl?: string;
   finalUrl: string;
+  httpStatus?: number;
   attemptedLayers: string[];
   skippedLayers: string[];
   requestsMade: number;
@@ -414,6 +416,10 @@ export type ExtractionQualityReport = {
   duplicateRate: number;
   estimatedPrecision: number;
   estimatedAvailableRecords?: number;
+  availableEstimateMethod?: "api_total" | "visible_count" | "pagination_derived" | "inferred" | "unknown";
+  availableEstimateConfidence?: "authoritative" | "strong" | "inferred" | "unknown";
+  availableEstimateEvidence: string[];
+  availableEstimateContradictions: string[];
   estimatedRecall?: number;
   degradedReasons: string[];
   classification:
@@ -427,6 +433,11 @@ export type ExtractionQualityReport = {
     | "usable_partial"
     | "degraded_under_extraction"
     | "degraded_low_precision"
+    | "blocked_human_verification"
+    | "blocked_authentication"
+    | "stale_or_missing_route"
+    | "acquisition_failed"
+    | "extraction_failed"
     | "unsafe";
 };
 
