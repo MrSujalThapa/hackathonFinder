@@ -34,7 +34,8 @@
     "check:source": "tsx scripts/check-source.ts",
     "experiment:devfolio-structured": "tsx src/experiments/devfolioStructuredShadow.ts",
     "experiment:batch-persistence": "tsx src/experiments/batchPersistenceBenchmark.ts",
-    "experiment:structured-extraction": "tsx src/experiments/structuredExtractionExperiment.ts"
+    "experiment:structured-extraction": "tsx src/experiments/structuredExtractionExperiment.ts",
+    "experiment:phase53-adaptive": "tsx src/experiments/phase53AdaptiveBenchmark.ts"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
