@@ -405,6 +405,7 @@ async function observeBrowserArtifacts(
   let actionsDiscovered = 0;
   let actionsExecuted = 0;
   const identitiesAfterActions: number[] = [];
+  const attemptedActionIds = new Set<string>();
 
   async function captureDomSnapshot(input: {
     page: {
@@ -470,19 +471,29 @@ async function observeBrowserArtifacts(
 
       for (let transition = 0; transition < maxActions; transition += 1) {
         if (artifacts.length + nextArtifactIndex >= experiment.maxRequests) break;
-        const actions = enumerateCandidateActionsFromHtml(html, page.url()).filter(
-          (action) =>
-            !action.disabled &&
-            action.confidence >= 0.55 &&
-            (action.proposedEffect === "next_page" ||
-              action.proposedEffect === "load_more" ||
-              action.proposedEffect === "infinite_scroll" ||
-              action.proposedEffect === "open_detail") &&
-            (!action.href || isSafePublicOrigin(action.href, experiment.allowedOrigins)),
-        );
+        const effectPriority: Record<string, number> = {
+          load_more: 4,
+          next_page: 3,
+          infinite_scroll: 2,
+          open_detail: 1,
+        };
+        const actions = enumerateCandidateActionsFromHtml(html, page.url())
+          .filter(
+            (action) =>
+              !action.disabled &&
+              !attemptedActionIds.has(action.elementId) &&
+              action.confidence >= 0.55 &&
+              (action.proposedEffect === "next_page" ||
+                action.proposedEffect === "load_more" ||
+                action.proposedEffect === "infinite_scroll" ||
+                action.proposedEffect === "open_detail") &&
+              (!action.href || isSafePublicOrigin(action.href, experiment.allowedOrigins)),
+          )
+          .sort((left, right) => (effectPriority[right.proposedEffect] ?? 0) - (effectPriority[left.proposedEffect] ?? 0) || right.confidence - left.confidence);
         actionsDiscovered += actions.length;
         const action = actions[0];
         if (!action) break;
+        attemptedActionIds.add(action.elementId);
         if (action.href && (action.proposedEffect === "next_page" || action.proposedEffect === "open_detail")) {
           await page.goto(action.href, { waitUntil: "networkidle", timeout: 20_000 }).catch(() => undefined);
         } else if (action.proposedEffect === "infinite_scroll") {
@@ -500,7 +511,7 @@ async function observeBrowserArtifacts(
         html = await captureDomSnapshot({ page, sourceUrl: page.url() });
         const nextFingerprint = pageFingerprint(html);
         const identityEstimate = visibleIdentityEstimate(html, page.url());
-        if (nextFingerprint === previousFingerprint) break;
+        if (nextFingerprint === previousFingerprint) continue;
         previousFingerprint = nextFingerprint;
         actionsExecuted += 1;
         browserPages += 1;
@@ -593,8 +604,8 @@ export async function acquireGenericArtifacts(
   let identitiesAfterActions: number[] = [];
 
   attemptedLayers.push("framework state");
-  if (!staticArtifactsSufficient(artifacts)) {
-    attemptedLayers.push("browser observation");
+  if (!staticArtifactsSufficient(artifacts) || (experiment.maxBrowserActions ?? 0) > 0) {
+    attemptedLayers.push(staticArtifactsSufficient(artifacts) ? "browser action probe" : "browser observation");
     const observed = await observeBrowserArtifacts(experiment, artifacts.length).catch((error) => {
       skippedLayers.push(
         `browser observation failed: ${error instanceof Error ? error.message.split("\n")[0] : "unknown error"}`,
