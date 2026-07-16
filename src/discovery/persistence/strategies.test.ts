@@ -146,29 +146,46 @@ function adapter(overrides: Partial<BatchPersistenceAdapter> = {}): BatchPersist
 }
 
 describe("persistence strategy selection", () => {
-  it("defaults to v1 and accepts explicit v1", () => {
-    assert.equal(selectPersistenceStrategyFromEnv({}).name, "v1");
-    assert.equal(selectPersistenceStrategyFromEnv({ PERSISTENCE_STRATEGY: "v1" }).name, "v1");
-    assert.equal(createPersistenceStrategy({ name: "v1" }).name, "v1");
-  });
-
-  it("selects batch only from explicit server configuration", () => {
+  it("defaults to batch in normal production", () => {
+    assert.equal(selectPersistenceStrategyFromEnv({}).name, "batch");
+    assert.equal(selectPersistenceStrategyFromEnv({ NODE_ENV: "production" }).name, "batch");
     assert.equal(selectPersistenceStrategyFromEnv({ PERSISTENCE_STRATEGY: "batch" }).name, "batch");
+    assert.equal(createPersistenceStrategy({ name: "batch" }).name, "batch");
   });
 
-  it("does not silently select batch for invalid values or terminal command text", () => {
+  it("resolves obsolete PERSISTENCE_STRATEGY=v1 to batch with deprecation warning", () => {
+    const selection = selectPersistenceStrategyFromEnv({ PERSISTENCE_STRATEGY: "v1" });
+    assert.equal(selection.name, "batch");
+    assert.match(selection.warning ?? "", /obsolete/);
+  });
+
+  it("resolves invalid values to batch with a deprecation warning", () => {
     const invalid = selectPersistenceStrategyFromEnv({ PERSISTENCE_STRATEGY: "fast" });
     const commandText = selectPersistenceStrategyFromEnv({
       PERSISTENCE_STRATEGY: "find upcoming hackathons --persistence=batch",
     });
 
-    assert.equal(invalid.name, "v1");
+    assert.equal(invalid.name, "batch");
     assert.match(invalid.warning ?? "", /Invalid PERSISTENCE_STRATEGY/);
-    assert.equal(commandText.name, "v1");
+    assert.equal(commandText.name, "batch");
+    assert.match(commandText.warning ?? "", /Invalid PERSISTENCE_STRATEGY/);
   });
 
-  it("keeps production-like default on v1 unless explicitly configured", () => {
-    assert.equal(selectPersistenceStrategyFromEnv({ NODE_ENV: "production" }).name, "v1");
+  it("selects V1 only via explicit emergency PERSISTENCE_ROLLBACK_V1", () => {
+    const emergency = selectPersistenceStrategyFromEnv({ PERSISTENCE_ROLLBACK_V1: "1" });
+    assert.equal(emergency.name, "v1");
+    assert.match(emergency.warning ?? "", /EMERGENCY PERSISTENCE_ROLLBACK_V1/);
+    assert.equal(createPersistenceStrategy({ name: "v1" }).name, "v1");
+  });
+
+  it("does not let PERSISTENCE_STRATEGY=v1 override batch without rollback flag", () => {
+    assert.equal(
+      selectPersistenceStrategyFromEnv({
+        PERSISTENCE_STRATEGY: "v1",
+        NODE_ENV: "production",
+      }).name,
+      "batch",
+    );
   });
 });
 

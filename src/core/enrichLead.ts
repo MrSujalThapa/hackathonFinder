@@ -399,14 +399,40 @@ export async function enrichPromisingLeads(
   }
 
   const enrichedById = new Map<string, RawLead>();
+  /** In-run cache: one fetch per canonical enrichment URL. */
+  const byTargetUrl = new Map<string, Promise<RawLead>>();
   let enrichedCount = 0;
 
   await mapPool(candidates, concurrency, async (lead) => {
+    const target = resolveEnrichmentTarget(lead);
+    if (!target) return;
     try {
-      const enriched = await enrichOne(lead, { timeoutMs, maxBytes, fetchImpl, validateUrl });
+      let shared = byTargetUrl.get(target);
+      if (!shared) {
+        shared = enrichOne(lead, { timeoutMs, maxBytes, fetchImpl, validateUrl });
+        byTargetUrl.set(target, shared);
+      }
+      const fetched = await shared;
+      const enriched =
+        fetched.id === lead.id
+          ? fetched
+          : {
+              ...lead,
+              title: fetched.title || lead.title,
+              text: [lead.text, fetched.metadata?.description]
+                .filter(Boolean)
+                .join(" — "),
+              links: uniqueUrls([...(lead.links ?? []), ...(fetched.links ?? [])], target),
+              metadata: {
+                ...(lead.metadata ?? {}),
+                ...(fetched.metadata ?? {}),
+                enrichedFrom: target,
+              },
+            };
       enrichedById.set(lead.id, enriched);
       enrichedCount += 1;
     } catch (error) {
+      byTargetUrl.delete(target);
       warnings.push(
         error instanceof Error
           ? `Enrichment skipped for ${lead.url ?? lead.id}: ${error.message}`

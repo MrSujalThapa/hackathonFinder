@@ -105,15 +105,50 @@ function emptyTiming(
   };
 }
 
+/** C4 deletion gate for the legacy per-row writer (distinct from custom-source V1 soak). */
+export const PERSISTENCE_V1_SOAK_BLOCKER =
+  "Legacy per-row persistence remains on disk but is unreachable in normal production. " +
+  "Deletion requires C1 cutover soak after 2026-07-16 (commit c307a2c): calendar gate 2026-07-30 " +
+  "(14 days) OR equivalent controlled batch runs across ≥3 distinct days, plus idempotency A–E, " +
+  "owner/Sheets protection, and explicit C4 approval. Emergency only: PERSISTENCE_ROLLBACK_V1=1 (dev/test).";
+
+function truthyFlag(value: string | undefined): boolean {
+  return ["1", "true", "yes", "on"].includes(String(value ?? "").trim().toLowerCase());
+}
+
+/**
+ * C1: batch is the unconditional production default.
+ * Invalid/missing/obsolete `PERSISTENCE_STRATEGY=v1` resolve to batch.
+ * V1 is only reachable via explicit `PERSISTENCE_ROLLBACK_V1` (logged).
+ */
 export function selectPersistenceStrategyFromEnv(
   env: Record<string, string | undefined> = process.env,
 ): PersistenceStrategySelection {
+  if (truthyFlag(env.PERSISTENCE_ROLLBACK_V1)) {
+    return {
+      name: "v1",
+      warning:
+        "[persistence] EMERGENCY PERSISTENCE_ROLLBACK_V1 — legacy per-row writer; " +
+        "dev/test only; C4 delete gate. " +
+        PERSISTENCE_V1_SOAK_BLOCKER,
+    };
+  }
+
   const raw = env.PERSISTENCE_STRATEGY?.trim().toLowerCase();
-  if (!raw || raw === "v1") return { name: "v1" };
-  if (raw === "batch") return { name: "batch" };
+  if (!raw || raw === "batch") {
+    return { name: "batch" };
+  }
+  if (raw === "v1") {
+    return {
+      name: "batch",
+      warning:
+        "[persistence] PERSISTENCE_STRATEGY=v1 is obsolete; using batch. " +
+        "Set PERSISTENCE_ROLLBACK_V1=1 only for emergency rollback.",
+    };
+  }
   return {
-    name: "v1",
-    warning: `[persistence] Invalid PERSISTENCE_STRATEGY=${JSON.stringify(raw)}; using v1.`,
+    name: "batch",
+    warning: `[persistence] Invalid PERSISTENCE_STRATEGY=${JSON.stringify(raw)}; using batch.`,
   };
 }
 
@@ -123,10 +158,41 @@ export function isBatchPostWriteVerificationEnabled(
   return env.PERSISTENCE_BATCH_VERIFY_AFTER_WRITE === "true";
 }
 
+/** True only when emergency rollback selects V1. */
+export function isPersistenceV1Selected(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return selectPersistenceStrategyFromEnv(env).name === "v1";
+}
+
 export function createPersistenceStrategy(
   selection: PersistenceStrategySelection,
 ): PersistenceStrategy {
-  return selection.name === "batch" ? new BatchPersistenceStrategy() : new V1PersistenceStrategy();
+  return selection.name === "v1" ? new V1PersistenceStrategy() : new BatchPersistenceStrategy();
+}
+
+export function formatPersistenceSummary(result: PersistenceStrategyResult): string {
+  const parts = [
+    `strategy=${result.strategy}`,
+    `created=${result.created}`,
+    `updated=${result.updated}`,
+    `unchanged=${result.unchanged}`,
+    `evidence=${result.evidenceWritten}`,
+    `actions=${result.actionsWritten}`,
+    `failures=${result.storageFailures}`,
+    `db_calls=${result.timing.databaseCalls ?? 0}`,
+    `duration_ms=${Math.round(result.timing.totalMs)}`,
+  ];
+  if (result.writeProgress) {
+    parts.push(
+      `chunks_ok=${
+        result.writeProgress.candidateWritesCompleted && result.writeProgress.evidenceWritesCompleted
+          ? 1
+          : 0
+      }`,
+    );
+  }
+  return `[persistence] ${parts.join(" ")}`;
 }
 
 export class V1PersistenceStrategy implements PersistenceStrategy {
@@ -255,8 +321,20 @@ export class V1PersistenceStrategy implements PersistenceStrategy {
 
 export class BatchPersistenceStrategy implements PersistenceStrategy {
   readonly name = "batch" as const;
+  private readonly injectedRepository?: BatchPersistenceRepository;
+  private lazyRepository?: BatchPersistenceRepository;
 
-  constructor(private readonly repository = new BatchPersistenceRepository(createSupabaseBatchPersistenceAdapter())) {}
+  constructor(repository?: BatchPersistenceRepository) {
+    this.injectedRepository = repository;
+  }
+
+  private get repository(): BatchPersistenceRepository {
+    if (this.injectedRepository) return this.injectedRepository;
+    if (!this.lazyRepository) {
+      this.lazyRepository = new BatchPersistenceRepository(createSupabaseBatchPersistenceAdapter());
+    }
+    return this.lazyRepository;
+  }
 
   async persist(input: PersistenceStrategyInput): Promise<PersistenceStrategyResult> {
     const timing = emptyTiming(this.name, input.dryRun, input.accepted.length);

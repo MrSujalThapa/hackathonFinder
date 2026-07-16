@@ -3,6 +3,7 @@ import type { Cheerio, CheerioAPI } from "cheerio";
 import type { AnyNode } from "domhandler";
 import type { RawLead } from "@/core/discovery/types";
 import { emptyCollectorResult, type CollectorResult } from "@/collectors/types";
+import { collectCustomSourceViaKernel } from "@/crawl/adapters/custom";
 import type { CustomSource, CustomSourceStrategy } from "@/server/customSources/types";
 import { fetchHtml } from "@/lib/http/fetchHtml";
 import { normalizeUrl, normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
@@ -10,6 +11,12 @@ import { withPlaywright } from "@/lib/browser/playwright";
 import { updateCustomSourceHealth } from "@/server/customSources/repository";
 import { assertSafeCustomSourceUrl } from "@/server/customSources/urlSafety";
 
+/**
+ * Legacy custom V1 collector implementation.
+ * Production discovery and Terminal site checks use DirectoryCrawlKernel
+ * (`collectCustomSourceViaKernel`). This module remains for soak-gated deletion
+ * (see CUSTOM_V1_SOAK_BLOCKER) and must not be re-wired into production routing.
+ */
 const EVENT_HINT =
   /\b(event|hackathon|challenge|competition|buildathon|codefest|workshop|summit|meetup|demo day|registration)\b/i;
 const DATE_HINT =
@@ -847,5 +854,9 @@ export async function checkCustomSource(
   options: { logger?: (message: string) => void } = {},
 ): Promise<CollectorResult> {
   const timeoutMs = source.mode === "static" ? STATIC_CHECK_TIMEOUT_MS : PLAYWRIGHT_CHECK_TIMEOUT_MS;
-  return collectCustomSource(source, { timeoutMs, persistHealth: true, logger: options.logger });
+  return collectCustomSourceViaKernel(source, {
+    timeoutMs,
+    persistHealth: true,
+    logger: options.logger,
+  });
 }

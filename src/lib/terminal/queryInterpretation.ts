@@ -66,24 +66,24 @@ export function describeProfileBudgets(profile: DiscoveryProfile | undefined): {
   switch (profile) {
     case "exhaustive":
       return {
-        devpost: "1000 cards / 150 pages / 120 details",
-        luma: "600 events / 120 scrolls / 180 details",
+        devpost: "target 1000 / max 2500 cards / 320 pages / 160 details",
+        luma: "target 200 / max 1200 events / 180 scrolls / 180 details",
       };
     case "deep":
       return {
-        devpost: "500 cards / 80 pages / 80 details",
-        luma: "350 events / 80 scrolls / 120 details",
+        devpost: "target ≥300 / max 500 cards / 90 pages / 80 details",
+        luma: "target ≥100 / max 400 events / 100 scrolls / 80 details",
       };
     case "standard":
       return {
-        devpost: "180 cards / 35 pages / 36 details",
-        luma: "180 events / 45 scrolls / 60 details",
+        devpost: "target 200 / max 250 cards / 40 pages / 24 details",
+        luma: "target 100 / max 200 events / 50 scrolls / 40 details",
       };
     case "light":
     default:
       return {
-        devpost: "100 cards / 20 pages / 18 details",
-        luma: "100 events / 30 scrolls / 30 details",
+        devpost: "target 75 / max 100 cards / 14 pages / 8 details",
+        luma: "target 40 / max 80 events / 20 scrolls / 12 details",
       };
   }
 }

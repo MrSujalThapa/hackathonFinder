@@ -37,7 +37,9 @@ import {
   listCustomSources,
 } from "@/server/customSources/repository";
 import type { CustomSource } from "@/server/customSources/types";
+import { matchCustomSourcesInNaturalLanguage } from "@/discovery/customSourceNaturalLanguage";
 import { createDiscoveryPerformanceTracker } from "@/discovery/performance";
+import { stageBudgetForProfile } from "@/discovery/stageBudgets";
 import type { IncomingCandidateWrite } from "@/discovery/persistence/persistencePlan";
 import { devpostBudgetForProfile } from "@/collectors/devpost";
 import { lumaBudgetForProfile } from "@/collectors/luma";
@@ -231,7 +233,7 @@ async function selectCustomSourcesForRun(
 }> {
   const fromFlag = flags.sourceNames;
   const warnings: string[] = [];
-  const explicitSourceFlag = fromFlag !== undefined;
+  let explicitSourceFlag = fromFlag !== undefined;
   const builtInFromFlag = fromFlag?.filter((source): source is SourceName =>
     BUILTIN_SOURCE_NAMES.has(source as SourceName),
   );
@@ -265,9 +267,32 @@ async function selectCustomSourcesForRun(
     }
   }
 
+  // Natural-language "from <custom name/slug>" — same exclusivity as "from Devpost".
+  let nlCustomMatched = false;
+  if (!fromFlag) {
+    const all = await listCustomSources({ enabledOnly: true }).catch((error) => {
+      warnings.push(error instanceof Error ? error.message : "Failed to list custom sources");
+      return [];
+    });
+    const mentioned = matchCustomSourcesInNaturalLanguage(
+      flags.query,
+      all.map((source) => ({ id: source.id, slug: source.slug, name: source.name })),
+    );
+    for (const mention of mentioned) {
+      if (customSources.some((existing) => existing.id === mention.id)) continue;
+      const custom = all.find((source) => source.id === mention.id);
+      if (!custom) continue;
+      customSources.push(custom);
+      nlCustomMatched = true;
+    }
+    if (nlCustomMatched) {
+      explicitSourceFlag = true;
+    }
+  }
+
   return {
     customSources,
-    builtInFromFlag,
+    builtInFromFlag: nlCustomMatched && !fromFlag ? [] : builtInFromFlag,
     explicitSourceFlag,
     warnings,
   };
@@ -462,44 +487,65 @@ export async function runDiscovery(
           ? "inferred open"
           : "included";
   await emitter.emit(
-    "source_progress",
-    `Theme: ${effectivePreferences.themes.join(", ") || "unspecified"}`,
-    { source: "query" },
+    "query_interpreted",
+    [
+      `Theme: ${effectivePreferences.themes.join(", ") || "unspecified"}`,
+      `Location: ${
+        effectivePreferences.locationConstraint === "event_location"
+          ? effectivePreferences.locations.join(", ") || "unspecified"
+          : effectivePreferences.locations.join(", ") || "none"
+      }`,
+      `Remote: ${remoteLabel}`,
+      `Dates: ${
+        effectivePreferences.dateFrom && effectivePreferences.dateTo
+          ? `${effectivePreferences.dateFrom} – ${effectivePreferences.dateTo}`
+          : "upcoming / inferred horizon"
+      }`,
+      `Profile: ${profile}`,
+      `Dry-run: ${dryRun ? "yes" : "no"}`,
+    ].join(" · "),
+    {
+      source: "query",
+      metadata: {
+        profile,
+        dryRun,
+        themes: effectivePreferences.themes,
+        locations: effectivePreferences.locations,
+        remotePolicy: effectivePreferences.remotePolicy,
+        dateFrom: effectivePreferences.dateFrom ?? null,
+        dateTo: effectivePreferences.dateTo ?? null,
+        stageBudget: {
+          profile,
+          listingOwned: true,
+          enrichmentTimeoutMs: stageBudgetForProfile(profile).enrichmentTimeoutMs,
+          enrichmentMaxPages: stageBudgetForProfile(profile).enrichmentMaxPages,
+        },
+        sourceBudgets: {
+          devpost: {
+            target: devpostBudget.targetCards,
+            max: devpostBudget.maxCards,
+            pages: devpostBudget.maxPages,
+            details: devpostBudget.detailLimit,
+          },
+          luma: {
+            target: lumaBudget.targetEvents,
+            max: lumaBudget.maxEvents,
+            scrolls: lumaBudget.maxScrolls,
+            details: lumaBudget.detailLimit,
+          },
+        },
+      },
+    },
   );
   await emitter.emit(
     "source_progress",
-    `Location: ${
-      effectivePreferences.locationConstraint === "event_location"
-        ? effectivePreferences.locations.join(", ") || "unspecified"
-        : effectivePreferences.locations.join(", ") || "none"
-    }`,
-    { source: "query" },
-  );
-  await emitter.emit("source_progress", `Remote: ${remoteLabel}`, { source: "query" });
-  await emitter.emit(
-    "source_progress",
-    `Dates: ${
-      effectivePreferences.dateFrom && effectivePreferences.dateTo
-        ? `${effectivePreferences.dateFrom} – ${effectivePreferences.dateTo}`
-        : "upcoming / inferred horizon"
-    }`,
-    { source: "query" },
-  );
-  await emitter.emit("source_progress", `Profile: ${profile}`, { source: "query" });
-  await emitter.emit(
-    "source_progress",
-    `Dry-run: ${dryRun ? "yes" : "no"}`,
-    { source: "query" },
+    `Devpost budget: target ${devpostBudget.targetCards} / max ${devpostBudget.maxCards} cards / ${devpostBudget.maxPages} pages / ${devpostBudget.detailLimit} details (stopAtTarget=${devpostBudget.stopAtTarget})`,
+    { source: "query", metadata: { compact: true, budget: "devpost" } },
   );
   await emitter.emit(
     "source_progress",
-    `Devpost budget: ${devpostBudget.maxCards} cards / ${devpostBudget.maxPages} pages / ${devpostBudget.detailLimit} details`,
-    { source: "query" },
-  );
-  await emitter.emit(
-    "source_progress",
-    `Luma budget: ${lumaBudget.maxEvents} events / ${lumaBudget.maxScrolls} scrolls / ${lumaBudget.detailLimit} details`,
-    { source: "query" },
+    `Luma budget: target ${lumaBudget.targetEvents} / max ${lumaBudget.maxEvents} events / ${lumaBudget.maxScrolls} scrolls / ${lumaBudget.detailLimit} details`,
+    { source: "query", metadata: { compact: true, budget: "luma" } },
   );
 
   await emitter.emit("source_progress", `Planned: ${plannedSourceLabels.join(", ") || "(none)"}`, {

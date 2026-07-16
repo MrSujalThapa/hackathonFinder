@@ -23,7 +23,7 @@ import {
   withPersistentPlaywright,
 } from "@/lib/browser/playwright";
 import { hakkuProfileExists, writeHakkuSessionMeta } from "@/lib/browser/sessionMeta";
-import { collectUntilStable } from "@/lib/browser/collectUntilStable";
+import { collectUntilStable } from "@/crawl";
 import { normalizeUrl, normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
 export const HAKKU_EXPLORE_URL = "https://www.hakku.app/explore";

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 export const DISCOVERY_EVENT_TYPES = [
   "run_queued",
   "run_started",
+  "query_interpreted",
   "planning_started",
   "planning_completed",
   "source_started",
@@ -13,7 +14,9 @@ export const DISCOVERY_EVENT_TYPES = [
   "enrichment_started",
   "verification_started",
   "dedupe_completed",
+  "result_summary_updated",
   "persistence_started",
+  "persistence_completed",
   "run_completed",
   "run_failed",
   "run_cancelled",
@@ -111,6 +114,8 @@ function defaultLevel(type: DiscoveryEventType): DiscoveryEventLevel {
     case "source_completed":
     case "planning_completed":
     case "dedupe_completed":
+    case "persistence_completed":
+    case "result_summary_updated":
       return "success";
     case "source_degraded":
     case "source_auth_required":
@@ -142,6 +147,8 @@ export function formatDiscoveryEventForCli(event: DiscoveryEvent): string {
 
 function bracketForType(type: DiscoveryEventType): string {
   switch (type) {
+    case "query_interpreted":
+      return "[query]";
     case "planning_started":
     case "planning_completed":
       return "[planning]";
@@ -151,7 +158,10 @@ function bracketForType(type: DiscoveryEventType): string {
       return "[verify]";
     case "dedupe_completed":
       return "[dedupe]";
+    case "result_summary_updated":
+      return "[result]";
     case "persistence_started":
+    case "persistence_completed":
       return "[storage]";
     case "run_started":
     case "run_queued":

@@ -6,7 +6,9 @@ import {
   allocateLumaFeedBudgets,
   describeLumaFailure,
   extractLumaTimelineCards,
+  isLumaFeedThemeCandidate,
   isRejectedLumaLeadUrl,
+  leadContentMatchesTheme,
   lumaBudgetForProfile,
   parseLumaHtml,
   resolveLumaTimelineHeadingDate,
@@ -162,15 +164,30 @@ describe("luma helpers", () => {
     assert.ok(resolution.feeds.some((feed) => /discover\?q=hackathon/i.test(feed.url)));
   });
 
-  it("prioritizes AI and hackathon feeds before Tech for AI queries", () => {
+  it("uses multiple AI/hackathon searches before Tech for AI queries", () => {
     const resolution = resolveLumaFeeds({
       requestedTopics: ["AI"],
       rawCommand: "find AI hackathons from Luma",
     });
     const topicUrls = resolution.feeds.filter((feed) => feed.type === "topic").map((feed) => feed.url);
-    assert.equal(topicUrls[0], "https://luma.com/ai");
     assert.ok(topicUrls.some((url) => /discover\?q=hackathon/i.test(url)));
-    assert.ok(topicUrls.indexOf("https://luma.com/ai") < topicUrls.indexOf("https://luma.com/tech"));
+    assert.ok(topicUrls.some((url) => /AI%20hackathon|AI\+hackathon/i.test(url)));
+    assert.ok(topicUrls.some((url) => /artificial/i.test(url)));
+    assert.ok(topicUrls.indexOf("https://luma.com/tech") === topicUrls.length - 1 ||
+      topicUrls.indexOf("https://luma.com/tech") > topicUrls.indexOf("https://luma.com/ai"));
+    assert.ok(topicUrls.indexOf("https://luma.com/tech") > 0);
+  });
+
+  it("reserves independent per-route budgets without starving later feeds", () => {
+    const total = lumaBudgetForProfile("deep", 50);
+    const parts = allocateLumaFeedBudgets(total, 5);
+    assert.equal(parts.length, 5);
+    assert.ok(parts.every((part) => part.maxScrolls >= 4));
+    assert.ok(parts[0]!.maxScrolls - parts[4]!.maxScrolls <= 1);
+    assert.equal(
+      parts.reduce((sum, part) => sum + part.maxScrolls, 0),
+      total.maxScrolls,
+    );
   });
 
   it("uses explicit fallback when no verified city feed exists", () => {
@@ -220,6 +237,66 @@ describe("luma helpers", () => {
     assert.ok(deep.maxEvents > light.maxEvents);
     assert.ok(deep.maxScrolls > light.maxScrolls);
     assert.ok(deep.detailLimit > light.detailLimit);
+    assert.equal(deep.targetEvents, 100);
+    assert.ok(light.maxEvents < 100);
+    assert.ok(light.targetEvents < 100);
+  });
+
+  it("targets at least 100 unique events for deep Luma without forcing 200", () => {
+    const deep = lumaBudgetForProfile("deep", 50);
+    assert.ok(deep.targetEvents >= 100);
+    assert.ok(deep.maxEvents >= 100);
+    assert.equal(deep.stopAtTarget, false);
+  });
+
+  it("separates feed-theme provenance from content-theme matches", () => {
+    const feedOnly = {
+      id: "luma-dance",
+      source: "luma" as const,
+      title: "REUNION Dance Party Rooftop",
+      text: "Luma public event - discovered from luma_ai, luma_tech",
+      links: [],
+      postedAt: new Date().toISOString(),
+      metadata: {
+        discoveredFrom: ["luma_ai", "luma_tech"],
+        description: "An outdoor dance social",
+      },
+    };
+    assert.equal(
+      isLumaFeedThemeCandidate(feedOnly.metadata.discoveredFrom, ["AI"], "AI hackathons"),
+      true,
+    );
+    assert.equal(leadContentMatchesTheme(feedOnly, ["AI"]), false);
+
+    const contentHit = {
+      id: "luma-ai-hack",
+      source: "luma" as const,
+      title: "Build with AI: Code the Cup Hackathon",
+      text: "Luma public event - discovered from luma_toronto",
+      links: [],
+      postedAt: new Date().toISOString(),
+      metadata: {
+        discoveredFrom: ["luma_toronto"],
+        description: "Hackathon for AI builders",
+      },
+    };
+    assert.equal(
+      isLumaFeedThemeCandidate(contentHit.metadata.discoveredFrom, ["AI"], "AI hackathons"),
+      false,
+    );
+    assert.equal(leadContentMatchesTheme(contentHit, ["AI"]), true);
+
+    const pairs = {
+      id: "luma-pairs",
+      source: "luma" as const,
+      title: "PAIRS",
+      text: "Luma public event - discovered from luma_ai",
+      links: [],
+      postedAt: new Date().toISOString(),
+      metadata: { discoveredFrom: ["luma_ai"] },
+    };
+    assert.equal(leadContentMatchesTheme(pairs, ["AI"]), false);
+    assert.equal(leadContentMatchesTheme(pairs, []), false);
   });
 
   it("resolves relative timeline headings from crawl date", () => {

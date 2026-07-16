@@ -101,6 +101,37 @@ describe("GET /api/discovery/jobs/[id]/events", () => {
     assert.equal((await store.getJob(job.id))?.status, "completed");
   });
 
+  it("supports cursor JSON polling without full-history refetch", async () => {
+    const store = createMemoryDiscoveryJobStore();
+    setDiscoveryJobStoreForTests(store);
+    const job = await store.createJob({ command: "find ai hackathons", dryRun: true });
+    await store.appendEvent(job.id, {
+      type: "run_queued",
+      level: "info",
+      message: "first",
+    });
+    await store.appendEvent(job.id, {
+      type: "source_progress",
+      level: "info",
+      message: "second",
+    });
+
+    const response = await getJobEvents(
+      await authedRequest(
+        `${ORIGIN}/api/discovery/jobs/${job.id}/events?format=json&after=1`,
+      ),
+      { params: Promise.resolve({ id: job.id }) },
+    );
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as {
+      data: { events: Array<{ message: string }>; afterSequence: number; job: { dryRun: boolean } };
+    };
+    assert.equal(body.data.events.length, 1);
+    assert.equal(body.data.events[0]?.message, "second");
+    assert.equal(body.data.afterSequence, 2);
+    assert.equal(body.data.job.dryRun, true);
+  });
+
   it("does not append events during reconnect replay", async () => {
     const store = createMemoryDiscoveryJobStore();
     const job = await store.createJob({ command: "find ai hackathons" });

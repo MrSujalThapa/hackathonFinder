@@ -5,15 +5,20 @@ import { describe, it } from "node:test";
 import {
   buildDevpostApiUrl,
   buildDevpostDatesUrl,
+  buildDevpostFullDirectoryApiUrl,
   buildDevpostListingsUrl,
+  buildDevpostOpenUpcomingApiUrl,
   buildDevpostSearchUrls,
   canonicalizeDevpostUrl,
+  classifyDevpostOpenState,
+  DEVPOST_FULL_DIRECTORY_URL,
   DEVPOST_OPEN_UPCOMING_URL,
   describeDevpostFailure,
   devpostBudgetForProfile,
   devpostFingerprint,
   isDevpostHackathonUrl,
   isRejectedDevpostUrl,
+  parseDevpostApiRequestScope,
   parseDevpostDisplayedDateRange,
   parseDevpostApiPayload,
   parseDevpostHtml,
@@ -120,11 +125,109 @@ describe("devpost url helpers", () => {
     );
   });
 
-  it("builds the observed read-only API pagination URL", () => {
+  it("builds full-directory API URLs by default and keeps open+upcoming as an explicit subset", () => {
+    assert.equal(buildDevpostApiUrl(2), "https://devpost.com/api/hackathons?page=2");
     assert.equal(
-      buildDevpostApiUrl(2),
+      buildDevpostFullDirectoryApiUrl(3),
+      "https://devpost.com/api/hackathons?page=3",
+    );
+    assert.equal(
+      buildDevpostOpenUpcomingApiUrl(2),
       "https://devpost.com/api/hackathons?status[]=upcoming&status[]=open&page=2",
     );
+    assert.equal(
+      buildDevpostApiUrl(2, "open_upcoming_api_subset"),
+      "https://devpost.com/api/hackathons?status[]=upcoming&status[]=open&page=2",
+    );
+    assert.equal(DEVPOST_FULL_DIRECTORY_URL, "https://devpost.com/hackathons");
+    assert.equal(
+      parseDevpostApiRequestScope(
+        "https://devpost.com/api/hackathons?status[]=upcoming&status[]=open&page=1",
+      ),
+      "open_upcoming_api_subset",
+    );
+    assert.equal(
+      parseDevpostApiRequestScope("https://devpost.com/api/hackathons?page=4"),
+      "full_directory_api",
+    );
+  });
+
+  it("keeps ended API cards during collection and classifies open_state", () => {
+    const leads = parseDevpostApiPayload(
+      {
+        hackathons: [
+          {
+            id: 1,
+            title: "Ended Challenge",
+            url: "https://ended-challenge.devpost.com/",
+            open_state: "ended",
+            submission_period_dates: "Jan 01 - Jan 02, 2024",
+          },
+          {
+            id: 2,
+            title: "Open Challenge",
+            url: "https://open-challenge.devpost.com/",
+            open_state: "open",
+          },
+        ],
+        meta: { total_count: 13601, per_page: 9 },
+      },
+      10,
+      { includeEnded: true },
+    );
+    assert.equal(leads.length, 2);
+    assert.equal(classifyDevpostOpenState("ended"), "ended");
+    assert.equal(leads.find((l) => /Ended/.test(l.title ?? ""))?.metadata?.openState, "ended");
+    const openOnly = parseDevpostApiPayload(
+      {
+        hackathons: [
+          {
+            id: 1,
+            title: "Ended Challenge",
+            url: "https://ended-challenge.devpost.com/",
+            open_state: "ended",
+          },
+        ],
+      },
+      10,
+      { includeEnded: false },
+    );
+    assert.equal(openOnly.length, 0);
+  });
+
+  it("does not treat a 166 open+upcoming total as a fixed collector cap", () => {
+    const deep = devpostBudgetForProfile("deep", 50);
+    assert.ok(deep.maxCards >= 300);
+    assert.equal(deep.targetCards, 300);
+    assert.equal(deep.stopAtTarget, false);
+    assert.ok(deep.maxPages * 9 >= 300);
+  });
+
+  it("applies product profile targets: light 50–100, standard 150–250, deep ≥300", () => {
+    const light = devpostBudgetForProfile("light", 200);
+    const standard = devpostBudgetForProfile("standard", 50);
+    const deep = devpostBudgetForProfile("deep", 50);
+    const exhaustive = devpostBudgetForProfile("exhaustive", 50);
+
+    assert.ok(light.targetCards >= 50 && light.targetCards <= 100);
+    assert.ok(light.maxCards >= 50 && light.maxCards <= 100);
+    assert.equal(light.stopAtTarget, true);
+    assert.ok(light.detailLimit <= 12);
+
+    assert.ok(standard.targetCards >= 150 && standard.targetCards <= 250);
+    assert.ok(standard.maxCards >= 150 && standard.maxCards <= 250);
+    assert.equal(standard.stopAtTarget, true);
+
+    assert.equal(deep.targetCards, 300);
+    assert.ok(deep.maxCards >= 300);
+    assert.equal(deep.stopAtTarget, false);
+
+    assert.ok(exhaustive.maxCards > deep.maxCards);
+    assert.ok(exhaustive.targetCards > deep.targetCards);
+    assert.equal(exhaustive.stopAtTarget, false);
+
+    assert.ok(deep.maxCards > light.maxCards);
+    assert.ok(deep.targetCards > light.targetCards);
   });
 
   it("builds canonical details/dates URLs only for challenge pages", () => {

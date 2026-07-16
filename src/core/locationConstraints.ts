@@ -22,9 +22,11 @@ const TORONTO_RE = /\btoronto\b/;
 const WATERLOO_RE = /\bwaterloo\b/;
 const WATERLOO_NEARBY_RE = /\b(kitchener|cambridge|guelph|kw|k-w|waterloo region)\b/;
 const ONTARIO_NEARBY_RE = /\b(waterloo|kitchener|hamilton|guelph|london|ottawa|ontario)\b/;
+const SAN_FRANCISCO_RE = /\b(san\s+francisco|bay\s+area|\bsf\b)/;
+const CALIFORNIA_BROAD_RE = /\b(california|united states|usa|u\.s\.a\.|u\.s\.)\b/;
 const VIRTUAL_RE = /\b(online|virtual|remote|worldwide|global|anywhere)\b/;
 
-type ExplicitCity = "toronto" | "waterloo" | "mississauga";
+type ExplicitCity = "toronto" | "waterloo" | "mississauga" | "san francisco";
 
 function eventLocationText(event: HackathonEvent): string {
   return normalizeText(
@@ -44,6 +46,9 @@ function explicitCityConstraint(preferences: DiscoveryPreferences): ExplicitCity
   const command = preferences.rawCommand;
   if (/\b(?:gta|greater toronto)\b/i.test(command)) {
     return "toronto";
+  }
+  if (/\bsan\s+francisco\b|\bsf\s+bay\s+area\b|\bbay\s+area\b|\bsf\b/i.test(command)) {
+    return "san francisco";
   }
   for (const city of ["toronto", "waterloo", "mississauga"] as const) {
     if (new RegExp(`\\b(?:in|near|around|for)\\s+${city}\\b|\\b${city}\\b`, "i").test(command)) {
@@ -126,6 +131,25 @@ function classifyConcreteCity(
     }
   }
 
+  if (city === "san francisco") {
+    if (SAN_FRANCISCO_RE.test(text)) {
+      return {
+        status: "EXACT_MATCH",
+        eligible: true,
+        needsReview: false,
+        reason: "San Francisco location match",
+      };
+    }
+    if (CALIFORNIA_BROAD_RE.test(text) && !SAN_FRANCISCO_RE.test(text)) {
+      return {
+        status: "MISMATCH",
+        eligible: false,
+        needsReview: false,
+        reason: "Broad California/US location is not San Francisco",
+      };
+    }
+  }
+
   return null;
 }
 
@@ -185,7 +209,7 @@ export function classifyExplicitCityLocation(
       status: "MISMATCH",
       eligible: false,
       needsReview: false,
-      reason: `Location mismatch for explicit ${city[0]!.toUpperCase()}${city.slice(1)} query`,
+      reason: `Location mismatch for explicit ${city} query`,
     };
   }
 

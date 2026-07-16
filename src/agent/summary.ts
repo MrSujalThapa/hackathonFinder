@@ -316,10 +316,41 @@ export function printAgentSummary(summary: AgentRunSummary): void {
                 ? "skipped"
                 : "";
       console.log(`- ${stats.source}:`);
-      console.log(`  discovered: ${stats.leadsFound}`);
+      const telemetry = stats.telemetry;
+      if (telemetry?.acquisitionScope) {
+        console.log(`  acquisition scope: ${telemetry.acquisitionScope}`);
+      }
+      if (telemetry?.directoryReportedTotal != null) {
+        console.log(`  directory reported total: ${telemetry.directoryReportedTotal}`);
+      }
+      if (telemetry?.observedDirectoryInventory) {
+        const inv = telemetry.observedDirectoryInventory;
+        console.log(
+          `  observed directory inventory: ${inv.value} (${inv.method}/${inv.confidence})`,
+        );
+      }
+      console.log(`  collected raw: ${telemetry?.collectedRaw ?? stats.leadsFound}`);
+      console.log(`  collected unique: ${telemetry?.collectedUnique ?? stats.leadsFound}`);
+      if (telemetry?.targetForProfile != null) {
+        console.log(
+          `  target for profile: ${telemetry.targetForProfile} (reached: ${telemetry.targetReached ? "yes" : "no"})`,
+        );
+      }
+      console.log(`  classified hackathon: ${telemetry?.classifiedHackathon ?? 0}`);
+      if (telemetry?.feedThemeCandidate != null) {
+        console.log(`  feed-theme candidates: ${telemetry.feedThemeCandidate}`);
+      }
+      if (telemetry?.contentThemeMatched != null) {
+        console.log(`  content-theme matches: ${telemetry.contentThemeMatched}`);
+      }
+      console.log(`  theme relevant (content): ${telemetry?.themeRelevant ?? 0}`);
+      console.log(`  query relevant: ${telemetry?.queryRelevant ?? stats.accepted}`);
       console.log(`  queue-ready: ${stats.queueReady}`);
       console.log(`  needs review: ${stats.needsReview}`);
+      console.log(`  rejected: ${stats.rejected}`);
       console.log(`  invalid rejected: ${stats.invalidRejected}`);
+      if (telemetry?.stopReason) console.log(`  stop reason: ${telemetry.stopReason}`);
+      if (telemetry?.stopEvidence) console.log(`  stop evidence: ${telemetry.stopEvidence}`);
       if (outcome) console.log(`  outcome: ${outcome}`);
       for (const warning of stats.warnings) {
         console.log(`  warning: ${warning}`);
