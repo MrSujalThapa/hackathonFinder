@@ -39,6 +39,7 @@ export type DiscoveryJob = {
   effectiveSources?: string[];
   currentStage?: string | null;
   progress?: number | null;
+  dryRun?: boolean;
   createdAt: string;
   startedAt?: string | null;
   completedAt?: string | null;

@@ -172,7 +172,11 @@ export function DiscoveryTerminal() {
             jobId: job.id,
           }),
         ]);
-        void refreshQueueQuietly();
+        // Dry-run must not invalidate Queue / Sheets as if records were written.
+        const isDryRun = job.dryRun === true || job.summary?.dryRun === true;
+        if (!isDryRun) {
+          void refreshQueueQuietly();
+        }
       } else if (job.status === "failed") {
         appendLines(sessionId, [
           makeLine({
