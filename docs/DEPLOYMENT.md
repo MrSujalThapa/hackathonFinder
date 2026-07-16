@@ -1,8 +1,7 @@
 # Production Deployment
 
-This phase keeps discovery as a local CLI workflow and deploys only the review
-web app. That avoids always-on workers and keeps Playwright/browser collectors
-out of Vercel serverless routes.
+This guide deploys the review web app. Discovery can run in-process (`DISCOVERY_EXECUTION_MODE=local`)
+on a long-lived Node host, or via the worker on serverless hosts.
 
 ## 1. Create the Vercel Project
 
@@ -10,7 +9,7 @@ out of Vercel serverless routes.
 2. Import the GitHub repository.
 3. Use the default Next.js framework preset.
 4. Build command: `npm run build`.
-5. Install command: `npm install`.
+5. Install command: `npm ci`.
 6. Node.js: 20 or newer.
 
 No `vercel.json` is required for the current app.
@@ -27,46 +26,39 @@ Public browser-safe:
 Server-only:
 
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `APP_OWNER_PASSWORD_HASH_B64` (preferred)
-- `APP_OWNER_PASSWORD_HASH` (legacy fallback)
-- `APP_SESSION_SECRET`
+- `APP_PASSWORD`
+- `APP_SESSION_SECRET` (≥ 32 random characters)
 - `GOOGLE_SHEET_ID`
 - `GOOGLE_SHEET_TAB`
 - `GOOGLE_SERVICE_ACCOUNT_JSON`
-- `SEARCH_PROVIDER`
-- `SEARCH_API_KEY`
-- `LLM_PROVIDER`
-- `LLM_API_KEY`
-- `LLM_MODEL`
-- X variables only if funded and explicitly used later
+- `SEARCH_PROVIDER` / `SEARCH_API_KEY` optional
+- `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_MODEL` optional
+- X variables only if explicitly used
 - `SENTRY_DSN` optional
 
-Keep `USE_MOCK_CANDIDATES=false` in production.
+Keep `USE_MOCK_CANDIDATES=false` and `DEMO_MODE=false` in real production.
+Use `DEMO_MODE=true` only on a dedicated demo deployment.
 
-Generate owner auth:
+Generate session secret:
 
 ```bash
-npm run hash:password -- "your-long-owner-password"
-# prints: APP_OWNER_PASSWORD_HASH_B64=<env-safe value>
-npm run verify:password -- "your-long-owner-password"
-# prints: MATCH
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 ```
 
-Paste the `APP_OWNER_PASSWORD_HASH_B64=...` line into Vercel env (no `$` escaping).
-Use the random output for `APP_SESSION_SECRET`.
+Validate without printing secrets:
+
+```bash
+npm run env:check -- --strict-production
+npm run check:prod
+```
 
 ## 3. Supabase
 
 1. Create a Supabase Free project.
-2. Apply existing migrations in order:
-   - `001_initial_schema.sql`
-   - `002_sheet_delete_action.sql`
-   - `003_agent_run_metadata.sql`
-3. Confirm the local CLI can write candidates with the service-role key.
-4. Review `004_production_rls.sql`.
-5. Apply `004_production_rls.sql` manually after confirming the deployed web app
-   uses Next.js API routes and server-side service-role access.
+2. Apply migrations in order under `supabase/migrations/` (`001` … `010`).
+3. Confirm the service-role key can read/write candidates from server code.
+4. Review and apply `004_production_rls.sql` after confirming API routes use
+   service-role access.
 
 The production RLS migration enables RLS and creates no anon/authenticated
 policies for private tables. Direct browser table access is denied; service-role
@@ -78,7 +70,10 @@ server code continues to work.
 2. Create a service account and JSON key.
 3. Share the target Sheet with the service-account email as Editor.
 4. Set `GOOGLE_SHEET_ID`, `GOOGLE_SHEET_TAB`, and `GOOGLE_SERVICE_ACCOUNT_JSON`.
-5. Set `NEXT_PUBLIC_GOOGLE_SHEET_URL` for the Open Sheet link.
+5. Optionally set `NEXT_PUBLIC_GOOGLE_SHEET_URL`.
+
+`GOOGLE_SERVICE_ACCOUNT_JSON` may include `private_key` with `\n` escapes; they
+are normalized at parse time.
 
 ## 5. Deploy
 
@@ -99,13 +94,14 @@ npm run agent -- "find upcoming AI hackathons in Canada or remote" -- --agent --
 npm run agent -- "find upcoming AI hackathons in Canada or remote" -- --agent --sources=hacklist,mlh,web --max-agent-calls=4
 ```
 
-Do not run `--sources=x` until X credits are funded.
+Do not run `--sources=x` unless explicitly requested and funded.
 
 ## 7. Production Checks
 
 Run locally before deployment:
 
 ```bash
+npm run env:check
 npm run check
 npm test
 npm run check:supabase
@@ -117,7 +113,7 @@ npm run check:prod
 `npm run check:all` runs the non-X production gate.
 
 For a protected browser smoke against a running local or preview deployment, set
-`SMOKE_BASE_URL` and `SMOKE_OWNER_PASSWORD`, then run:
+`SMOKE_BASE_URL` and `APP_PASSWORD`, then run:
 
 ```bash
 npm run smoke:prod
