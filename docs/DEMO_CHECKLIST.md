@@ -10,7 +10,8 @@
 - [ ] Confirm login with `APP_PASSWORD`
 - [ ] Confirm Terminal loads
 - [ ] Run one dry-run smoke: Toronto light
-- [ ] Confirm Queue state (`DEMO_MODE=true` recommended as fallback)
+- [ ] Confirm Queue loads with real Supabase data (`DEMO_MODE` / `USE_MOCK_CANDIDATES` off)
+- [ ] Keep `DEMO_MODE=true` only as a last-resort Queue fallback if live data fails
 - [ ] Close unnecessary terminals / browser tabs
 - [ ] Disable noisy notifications
 - [ ] Stable network + power

@@ -69,16 +69,21 @@ npm ci
 cp .env.example .env.local
 ```
 
-### Minimum local / demo mode
+### Default local setup (recommended)
 
-Enough to boot the UI with fixture Queue data (no Supabase/Sheets writes):
+Configure owner auth and Supabase (required for Queue persistence and normal UI data). Optional: LLM, search, Sheets.
 
 ```bash
-# .env.local
+# .env.local (minimum)
 APP_PASSWORD=change-me
 APP_SESSION_SECRET=replace-with-32-plus-random-characters!!
-DEMO_MODE=true
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+# Keep DEMO_MODE and USE_MOCK_CANDIDATES unset or false
 ```
+
+Apply migrations (see Database setup), then:
 
 ```bash
 npm run env:check
@@ -87,16 +92,11 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000), sign in with `APP_PASSWORD`, open Queue / Terminal.
 
-Live dry-run discovery still needs network access to public sources; fixture mode does not invent live scrape results inside Terminal.
+Discovery dry-runs (`--dry-run`) do not require Supabase writes. Live Terminal discovery needs network access to public sources.
 
-### Full mode
+### Optional fixture fallback (not default)
 
-Configure Supabase, owner auth, and optional LLM / search / Sheets (see below), apply migrations, then:
-
-```bash
-npm run env:check
-npm run dev
-```
+For UI-only exploration without Supabase, you may set `DEMO_MODE=true` or `USE_MOCK_CANDIDATES=true`. This is an **explicit opt-in**, not the recommended path, and must stay off for production and release demos that exercise real Terminal collectors.
 
 ## Environment setup
 

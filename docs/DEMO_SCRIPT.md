@@ -5,7 +5,9 @@ telemetry, custom-source crawling, and Queue review — without depending on
 fragile live writes.
 
 Prepare with [`docs/DEMO_CHECKLIST.md`](DEMO_CHECKLIST.md). Prefer
-`--profile light --dry-run`. Keep `DEMO_MODE=true` as Queue fallback.
+`--profile light --dry-run` against the **real** Terminal (demo mode off).
+Use `DEMO_MODE=true` only as an emergency Queue UI fallback if live data is
+unavailable — never as the primary demo path.
 
 ---
 
