@@ -143,7 +143,14 @@ C1 batch-only path unchanged. Added `persistence_completed` compact event. DB ca
 
 ## 20. Commits
 
-Recorded at push.
+1. `cb2187f` perf(discovery): coalesce compact progress events  
+2. `5b4b0cc` perf(terminal): poll discovery jobs incrementally  
+3. `376a214` perf(terminal): target cache invalidation after runs  
+4. `5106433` perf(discovery): bound detail enrichment concurrency  
+5. `135347b` test(discovery): verify progressive performance contracts  
+6. `6726bd6` docs(discovery): record C2 pipeline performance results  
+
+Pushed: `origin/experiment/scraper-overhaul-c2-pipeline-performance` @ `6726bd6`
 
 ## 21. Exclusions
 
