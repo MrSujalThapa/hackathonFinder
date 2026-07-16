@@ -1,7 +1,30 @@
 {
-  "name": "hackathon-approval-agent",
+  "name": "hackathon-finder",
   "version": "0.1.0",
   "private": true,
+  "description": "Self-hosted hackathon discovery and review workspace with Terminal search, Queue review, and optional Google Sheets sync.",
+  "license": "Apache-2.0",
+  "author": "Sujal Thapa",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MrSujalThapa/hackathonFinder.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MrSujalThapa/hackathonFinder/issues"
+  },
+  "homepage": "https://github.com/MrSujalThapa/hackathonFinder#readme",
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  },
+  "keywords": [
+    "hackathon",
+    "discovery",
+    "nextjs",
+    "supabase",
+    "playwright",
+    "self-hosted"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,6 +33,8 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm run build",
     "check:all": "npm run check && npm test && npm run check:supabase && npm run check:sheets && npm run check:llm && npm run check:prod",
+    "env:check": "tsx scripts/check-env.ts",
+    "secrets:scan": "tsx scripts/scan-secrets.ts",
     "check:supabase": "tsx scripts/check-supabase.ts",
     "check:x": "tsx scripts/check-x-mcp.ts",
     "check:llm": "tsx scripts/check-llm.ts",
