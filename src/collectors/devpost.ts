@@ -21,12 +21,11 @@ import {
   isPlaywrightBrowserMissingError,
   withPlaywright,
 } from "@/lib/browser/playwright";
-import { collectUntilStable } from "@/lib/browser/collectUntilStable";
+import { collectUntilStable } from "@/crawl";
 import { normalizeUrl, normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
 const DEVPOST_BASE = "https://devpost.com";
 const DEVPOST_MAX_EVENTS = 100;
-const DEVPOST_MAX_PAGES = 20;
 const DEVPOST_MAX_SCROLLS_PER_PAGE = 6;
 const DEVPOST_SCROLL_NO_GROWTH_LIMIT = 2;
 const DEVPOST_SCROLL_WAIT_MS = 800;

@@ -25,7 +25,9 @@ async function main(): Promise<void> {
   console.log(`themes=${JSON.stringify(preferences.themes)} command=${preferences.rawCommand}`);
 
   const collector = getCollector("luma");
+  if (!collector) throw new Error('Missing collector');
   const result = await collector.collect({
+    dryRun: true,
     preferences,
     maxResults: preferences.maxResults ?? 200,
     timeoutMs: 240_000,

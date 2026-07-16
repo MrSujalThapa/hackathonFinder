@@ -34,7 +34,9 @@ async function runCollector(
   };
   const collector = getCollector(source);
   const started = Date.now();
+  if (!collector) throw new Error('Missing collector');
   const result = await collector.collect({
+    dryRun: true,
     preferences,
     maxResults: preferences.maxResults ?? 200,
     timeoutMs,
@@ -157,14 +159,6 @@ async function main(): Promise<void> {
   const deepStop = String((deep.diagnostics as { stopReason?: string }).stopReason ?? "");
   const lightDetails = Number(light.detailPagesOpened ?? 0);
   const deepDetails = Number(deep.detailPagesOpened ?? 0);
-  const lightTelemetry = light.telemetry as {
-    acquisitionScope?: string;
-    directoryReportedTotal?: number;
-    targetForProfile?: number;
-    targetReached?: boolean;
-    listingDurationMs?: number;
-    detailDurationMs?: number;
-  };
   const deepTelemetry = deep.telemetry as {
     acquisitionScope?: string;
     directoryReportedTotal?: number;

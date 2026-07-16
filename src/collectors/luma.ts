@@ -26,16 +26,14 @@ import {
   isPlaywrightBrowserMissingError,
   withPlaywright,
 } from "@/lib/browser/playwright";
-import { collectUntilStable } from "@/lib/browser/collectUntilStable";
+import { collectUntilStable } from "@/crawl";
 import { normalizeUrl, normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
 const LUMA_BASE = "https://luma.com";
 const LUMA_LEGACY_BASE = "https://lu.ma";
 const LUMA_MAX_EVENTS = 100;
-const LUMA_MAX_SCROLLS = 30;
 const LUMA_NO_GROWTH_LIMIT = 3;
 const LUMA_SCROLL_WAIT_MS = 800;
-const LUMA_DETAIL_LIMIT = 30;
 const DETAIL_PAGE_CONCURRENCY = 6;
 const LUMA_DETAIL_TIMEOUT_MS = 8_000;
 

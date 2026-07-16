@@ -22,7 +22,7 @@
     "skills:sync": "tsx scripts/sync-agent-skills.ts",
     "skills:check": "tsx scripts/check-agent-skills.ts",
     "test": "npm run test:fast",
-    "test:fast": "tsx --test \"src/agent/**/*.test.ts\" \"src/cli/**/*.test.ts\" \"src/config/**/*.test.ts\" \"src/core/**/*.test.ts\" \"src/collectors/**/*.test.ts\" \"src/lib/**/*.test.ts\" \"src/components/**/*.test.tsx\" \"src/hooks/**/*.test.ts\"",
+    "test:fast": "tsx --test \"src/agent/**/*.test.ts\" \"src/cli/**/*.test.ts\" \"src/config/**/*.test.ts\" \"src/core/**/*.test.ts\" \"src/crawl/**/*.test.ts\" \"src/collectors/**/*.test.ts\" \"src/lib/**/*.test.ts\" \"src/components/**/*.test.tsx\" \"src/hooks/**/*.test.ts\"",
     "test:scraper": "tsx --test \"src/experiments/**/*.test.ts\"",
     "test:integration": "tsx --test \"src/discovery/**/*.test.ts\" \"src/jobs/**/*.test.ts\" \"src/server/**/*.test.ts\" \"src/app/api/**/*.test.ts\"",
     "test:deterministic": "tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",

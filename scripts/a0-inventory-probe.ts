@@ -441,7 +441,7 @@ async function main(): Promise<void> {
   );
 
   let rendered: Awaited<ReturnType<typeof fetchDevpostRenderedInventory>> | null = null;
-  let lumaFeeds: LumaFeedProbe[] = [];
+  const lumaFeeds: LumaFeedProbe[] = [];
   try {
     rendered = await fetchDevpostRenderedInventory();
     console.log(

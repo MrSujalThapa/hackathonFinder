@@ -15,7 +15,9 @@ async function main(): Promise<void> {
     profile: "deep" as const,
   };
   const collector = getCollector("luma");
+  if (!collector) throw new Error('Missing collector');
   const result = await collector.collect({
+    dryRun: true,
     preferences,
     maxResults: 200,
     timeoutMs: 300_000,

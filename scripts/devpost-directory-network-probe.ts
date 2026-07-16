@@ -207,7 +207,7 @@ async function main(): Promise<void> {
           return { unique: seen.size, added };
         };
 
-        let { unique, added } = await merge();
+        const { unique, added } = await merge();
         console.log(`Initial unique tiles: ${unique}`);
         growth.push({
           scrollIndex: 0,

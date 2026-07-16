@@ -57,7 +57,9 @@ async function runCollector(
   };
   const collector = getCollector(source);
   const started = Date.now();
+  if (!collector) throw new Error('Missing collector');
   const result = await collector.collect({
+    dryRun: true,
     preferences,
     maxResults: preferences.maxResults ?? 200,
     timeoutMs,

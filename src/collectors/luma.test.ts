@@ -255,6 +255,8 @@ describe("luma helpers", () => {
       source: "luma" as const,
       title: "REUNION Dance Party Rooftop",
       text: "Luma public event - discovered from luma_ai, luma_tech",
+      links: [],
+      postedAt: new Date().toISOString(),
       metadata: {
         discoveredFrom: ["luma_ai", "luma_tech"],
         description: "An outdoor dance social",
@@ -271,6 +273,8 @@ describe("luma helpers", () => {
       source: "luma" as const,
       title: "Build with AI: Code the Cup Hackathon",
       text: "Luma public event - discovered from luma_toronto",
+      links: [],
+      postedAt: new Date().toISOString(),
       metadata: {
         discoveredFrom: ["luma_toronto"],
         description: "Hackathon for AI builders",
@@ -287,6 +291,8 @@ describe("luma helpers", () => {
       source: "luma" as const,
       title: "PAIRS",
       text: "Luma public event - discovered from luma_ai",
+      links: [],
+      postedAt: new Date().toISOString(),
       metadata: { discoveredFrom: ["luma_ai"] },
     };
     assert.equal(leadContentMatchesTheme(pairs, ["AI"]), false);
