@@ -32,10 +32,8 @@ yarn-error.log*
 .env
 .env*.local
 
-# Playwright persistent browser profiles (may contain session cookies)
-.data/browser-profiles/
-# Local source enable/disable overrides (owner machine only)
-.data/source-settings.json
+# Local runtime data (browser profiles, source settings, crawl plans) — never commit
+.data/
 
 # vercel
 .vercel
