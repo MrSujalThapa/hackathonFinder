@@ -179,6 +179,9 @@ No `phase5*.test.ts` remains in the tracked tree (removed in earlier B4 runtime 
 | `c6e524b` | test(terminal): consolidate progressive polling contracts |
 | `d82be29` | chore(test): remove dead fixtures and scripts |
 | `c33cc68` | docs(test): document production contract suites |
+| `86f487c` | docs(discovery): record C3 commit SHAs in report |
+
+**HEAD:** `86f487c0b5ffff4fdcdd6a5945da3ec56f748367`
 
 Pushed only to `origin/experiment/scraper-overhaul-c3-test-cleanup`.
 
