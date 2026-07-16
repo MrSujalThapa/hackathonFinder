@@ -43,6 +43,10 @@ import {
 import { aggregateCollectorResults } from "@/discovery/collectorAggregation";
 import type { CustomSource } from "@/server/customSources/types";
 import { collectCustomSourceWithV2Routing } from "@/discovery/genericScraperV2Mode";
+import {
+  buildSourceTelemetry,
+  compactSourceStatsForSummary,
+} from "@/discovery/sourceTelemetry";
 import type {
   DiscoveryPerformanceTracker,
 } from "@/discovery/performance";
@@ -469,6 +473,10 @@ export async function executeDiscoveryPipeline(
 
     let leads = aggregation.leads;
     summary.rawLeads = leads.length;
+
+    const collectorResultsBySource = new Map(
+      collectorResults.map((result) => [result.source, result] as const),
+    );
 
     for (const result of collectorResults) {
       const stats = sourceStats.get(result.source);
@@ -951,6 +959,12 @@ export async function executeDiscoveryPipeline(
     }
 
     summary.acceptedCandidates = buildAcceptedSummary(accepted);
+    for (const stats of sourceStats.values()) {
+      stats.telemetry = buildSourceTelemetry({
+        stats,
+        result: collectorResultsBySource.get(stats.source),
+      });
+    }
     summary.sourceStats = [...sourceStats.values()];
     summary.sourceAccounting = sourceAccountingFromStats(summary.sourceStats);
     summary.durationMs = Date.now() - startedAt;
@@ -1035,15 +1049,7 @@ export async function executeDiscoveryPipeline(
           dryRun,
           profile: preferences.profile ?? null,
           sourceAccounting: summary.sourceAccounting,
-          sourceStats: summary.sourceStats.map((stats) => ({
-            source: stats.source,
-            leadsFound: stats.leadsFound,
-            queueReady: stats.queueReady,
-            needsReview: stats.needsReview,
-            rejected: stats.rejected,
-            durationMs: stats.durationMs,
-            outcome: stats.outcome,
-          })),
+          sourceStats: compactSourceStatsForSummary(summary.sourceStats),
           acceptedCandidates: summary.acceptedCandidates,
           performance: performanceTracker?.finalize(),
           persistenceShadow: summary.persistenceShadow ?? null,

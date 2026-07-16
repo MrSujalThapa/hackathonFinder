@@ -1,6 +1,7 @@
 import type { DiscoveryEvent, DiscoveryEventSink } from "@/discovery/events";
 import { runDiscovery } from "@/discovery/runDiscovery";
 import { readDiscoveryRuntimeConfig } from "@/discovery/config";
+import { compactSourceStatsForSummary } from "@/discovery/sourceTelemetry";
 import type { SourceName } from "@/core/discovery/types";
 import { getDiscoveryJobStore } from "@/jobs/store";
 import { getTerminalSessionStore } from "@/server/terminal";
@@ -242,7 +243,7 @@ export async function executeDiscoveryJob(
         durationMs: summary.durationMs,
         warnings: summary.warnings,
         errors: summary.errors,
-        sourceStats: summary.sourceStats,
+        sourceStats: compactSourceStatsForSummary(summary.sourceStats),
         sourceAccounting: summary.sourceAccounting,
         acceptedCandidates: summary.acceptedCandidates,
         agent: summary.agent ?? null,

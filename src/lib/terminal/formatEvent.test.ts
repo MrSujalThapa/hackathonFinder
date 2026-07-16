@@ -67,6 +67,47 @@ describe("formatJobSummary", () => {
     assert.match(text, /mlh:25/);
   });
 
+  it("distinguishes scope/directory-inventory/raw/unique/query-relevant source labels", () => {
+    const job: DiscoveryJob = {
+      id: "cccccccc-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      command: "find AI",
+      status: "completed",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      summary: {
+        sourceStats: [
+          {
+            source: "devpost",
+            leadsFound: 405,
+            collectedRaw: 405,
+            collectedUnique: 405,
+            classifiedHackathon: 405,
+            themeRelevant: 40,
+            queryRelevant: 12,
+            queueReady: 10,
+            needsReview: 2,
+            rejected: 5,
+            durationMs: 8_000,
+            outcome: "executed",
+            acquisitionScope: "full_directory_api",
+            stopReason: "maximum_cards_reached",
+            stopEvidence: "safety_card_budget_reached_not_source_exhaustion",
+            observedDirectoryInventory: {
+              value: 13601,
+              method: "api_total",
+              confidence: "strong",
+            },
+          },
+        ],
+      },
+    };
+    const text = formatJobSummary(job);
+    assert.match(
+      text,
+      /\[devpost\] scope full_directory_api, directory-inventory 13601 \(api_total\/strong\), raw 405, unique 405, classified-hackathon 405, feed-theme 0, content-theme 40, theme-relevant 40, query-relevant 12, queue-ready 10, needs review 2, rejected 5/,
+    );
+    assert.match(text, /stop: maximum_cards_reached \(safety_card_budget_reached_not_source_exhaustion\)/);
+  });
+
   it("labels dry-run persistence projections as would create/update", () => {
     const job: DiscoveryJob = {
       id: "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee",

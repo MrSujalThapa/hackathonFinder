@@ -302,6 +302,62 @@ export type AgentRunObservability = {
   warnings: string[];
 };
 
+/** Never expose an estimated total without method + confidence. */
+export type InventoryEstimate = {
+  value: number;
+  method: "api_total" | "pagination_derived" | "scroll_plateau" | "unknown";
+  confidence: "strong" | "moderate" | "weak";
+};
+
+/**
+ * Compact per-source crawl telemetry for job summary / Terminal (≤2KB when clamped).
+ * Exact product concepts — do not collapse open+upcoming subset into "full inventory".
+ */
+export type SourceRunTelemetry = {
+  source: string;
+  adapterId: string;
+  adapterVersion: string;
+  kernelVersion: string;
+  mechanism: "api" | "scroll" | "next" | "static" | "mixed" | "unknown";
+  requestedUrl: string;
+  finalUrl: string;
+  /** e.g. full_directory_api | open_upcoming_api_subset | full_rendered_directory */
+  acquisitionScope: string;
+  observedDirectoryInventory?: InventoryEstimate;
+  /** Alias of API/directory reported total when known (Devpost meta.total_count). */
+  directoryReportedTotal?: number;
+  collectedRaw: number;
+  collectedUnique: number;
+  /** Profile product target (e.g. Devpost light 75, deep 300). */
+  targetForProfile?: number;
+  /** True when collectedUnique >= targetForProfile. */
+  targetReached?: boolean;
+  classifiedHackathon: number;
+  /**
+   * Content/title theme matches only.
+   * Never equals feedThemeCandidate — feed provenance is not content relevance.
+   */
+  themeRelevant: number;
+  /** Events discovered on a theme-targeted feed/search route (provenance only). */
+  feedThemeCandidate?: number;
+  /** Events whose title/description matched requested themes (content only). */
+  contentThemeMatched?: number;
+  queryRelevant: number;
+  enriched: number;
+  queueReady: number;
+  needsReview: number;
+  rejected: number;
+  pagesOrScrolls: number;
+  actions: number;
+  stopReason: string;
+  stopEvidence: string;
+  sourceState: string;
+  listingDurationMs: number;
+  detailDurationMs: number;
+  totalDurationMs: number;
+  failureClassification?: string;
+};
+
 export type SourceRunStats = {
   source: DiscoverySourceId;
   leadsFound: number;
@@ -314,6 +370,8 @@ export type SourceRunStats = {
   warnings: string[];
   durationMs: number;
   outcome: SourceOutcome;
+  /** Compact crawl telemetry; optional until A0+ collectors populate it. */
+  telemetry?: SourceRunTelemetry;
 };
 
 export type SourceOutcome =

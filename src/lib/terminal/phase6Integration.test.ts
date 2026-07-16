@@ -42,8 +42,10 @@ describe("phase 6 terminal integration boundaries", () => {
     });
     assert.equal(interpretation.crawlProfile, "deep");
     assert.equal(interpretation.dryRun, true);
-    assert.match(interpretation.budgets.devpost, /500 cards/);
-    assert.match(interpretation.budgets.luma, /350 events/);
+    assert.match(interpretation.budgets.devpost, /target ≥300/);
+    assert.match(interpretation.budgets.devpost, /max 500 cards/);
+    assert.match(interpretation.budgets.luma, /target ≥100/);
+    assert.match(interpretation.budgets.luma, /max 400 events/);
     const lines = formatQueryInterpretationLines(interpretation);
     assert.ok(lines.some((line) => line.includes("Profile: deep")));
     assert.ok(lines.some((line) => line.includes("Remote: excluded")));
@@ -101,7 +103,10 @@ describe("phase 6 terminal integration boundaries", () => {
     assert.match(text, /queue-ready\s+2/);
     assert.match(text, /needs review\s+3/);
     assert.doesNotMatch(text, /^\s+accepted\s+/m);
-    assert.match(text, /\[devpost\] collected 20, queue-ready 2, needs review 1/);
+    assert.match(
+      text,
+      /\[devpost\] scope unknown, directory-inventory n\/a, raw 20, unique 20, classified-hackathon 0, feed-theme 0, content-theme 0, theme-relevant 0, query-relevant 0, queue-ready 2, needs review 1, rejected 8/,
+    );
   });
 
   it("formats distinct application and submission deadlines", () => {

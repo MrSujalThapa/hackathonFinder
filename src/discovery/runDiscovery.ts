@@ -493,12 +493,12 @@ export async function runDiscovery(
   );
   await emitter.emit(
     "source_progress",
-    `Devpost budget: ${devpostBudget.maxCards} cards / ${devpostBudget.maxPages} pages / ${devpostBudget.detailLimit} details`,
+    `Devpost budget: target ${devpostBudget.targetCards} / max ${devpostBudget.maxCards} cards / ${devpostBudget.maxPages} pages / ${devpostBudget.detailLimit} details (stopAtTarget=${devpostBudget.stopAtTarget})`,
     { source: "query" },
   );
   await emitter.emit(
     "source_progress",
-    `Luma budget: ${lumaBudget.maxEvents} events / ${lumaBudget.maxScrolls} scrolls / ${lumaBudget.detailLimit} details`,
+    `Luma budget: target ${lumaBudget.targetEvents} / max ${lumaBudget.maxEvents} events / ${lumaBudget.maxScrolls} scrolls / ${lumaBudget.detailLimit} details`,
     { source: "query" },
   );
 

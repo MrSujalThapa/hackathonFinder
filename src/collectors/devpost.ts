@@ -36,11 +36,23 @@ const DEVPOST_DETAIL_TIMEOUT_MS = 7_000;
 const DEVPOST_DETAIL_CONCURRENCY = 3;
 
 export type DevpostProfileBudget = {
+  /** Hard safety ceiling — never treat as source exhaustion. */
   maxCards: number;
   maxPages: number;
   detailLimit: number;
+  /** Product target for this profile (light/standard stop here; deep is a minimum). */
+  targetCards: number;
+  /** When true, stop with `target_reached` once `targetCards` unique cards are collected. */
+  stopAtTarget: boolean;
 };
 
+/**
+ * Product acquisition targets (full-directory scope, filter afterward):
+ * - light: 50–100 unique, stop at target, few detail pages
+ * - standard: ~150–250 unique, continue while new cards appear up to target
+ * - deep: ≥300 unique minimum; continue beyond while yielding and budget remains
+ * - exhaustive: substantially beyond deep until genuine exhaustion / hard bounds
+ */
 export function devpostBudgetForProfile(
   profile: DiscoveryProfile | undefined,
   requestedMaxResults: number,
@@ -48,25 +60,108 @@ export function devpostBudgetForProfile(
   const requested = Math.max(1, requestedMaxResults);
   switch (profile) {
     case "exhaustive":
-      return { maxCards: Math.max(requested, 1_000), maxPages: 150, detailLimit: 120 };
+      return {
+        maxCards: Math.max(requested, 2_500),
+        maxPages: 320,
+        detailLimit: 160,
+        targetCards: 1_000,
+        stopAtTarget: false,
+      };
     case "deep":
-      return { maxCards: Math.max(requested, 500), maxPages: 80, detailLimit: 80 };
+      // 300 is a minimum target, not an exhaustion claim — budget allows continuing past it.
+      return {
+        maxCards: Math.max(requested, 500),
+        maxPages: 90,
+        detailLimit: 80,
+        targetCards: 300,
+        stopAtTarget: false,
+      };
     case "standard":
-      return { maxCards: Math.max(requested, 180), maxPages: 35, detailLimit: 36 };
+      return {
+        maxCards: Math.min(Math.max(requested, 200), 250),
+        maxPages: 40,
+        detailLimit: 24,
+        targetCards: Math.min(Math.max(requested, 150), 200),
+        stopAtTarget: true,
+      };
     case "light":
     default:
-      return { maxCards: Math.max(requested, DEVPOST_MAX_EVENTS), maxPages: DEVPOST_MAX_PAGES, detailLimit: 18 };
+      return {
+        maxCards: Math.min(Math.max(requested, 75), 100),
+        maxPages: 14,
+        detailLimit: 8,
+        targetCards: Math.min(Math.max(requested, 50), 75),
+        stopAtTarget: true,
+      };
   }
 }
+
+/** How Devpost listing acquisition was scoped — never confuse subset with full directory. */
+export type DevpostAcquisitionScope =
+  | "full_directory_api"
+  | "open_upcoming_api_subset"
+  | "full_rendered_directory";
 
 export function buildDevpostListingsUrl(page: number): string {
   const pageNumber = Math.max(1, Math.floor(page));
   return `${DEVPOST_BASE}/hackathons?status[]=upcoming&status[]=open&page=${pageNumber}`;
 }
 export const DEVPOST_OPEN_UPCOMING_URL = buildDevpostListingsUrl(1);
-export function buildDevpostApiUrl(page: number): string {
+/** Unfiltered public directory HTML (browser-visible surface). */
+export const DEVPOST_FULL_DIRECTORY_URL = `${DEVPOST_BASE}/hackathons`;
+
+/**
+ * Structured listing endpoint observed while scrolling https://devpost.com/hackathons:
+ * GET /api/hackathons?page=N (no status filter) with meta.total_count spanning the full directory.
+ */
+export function buildDevpostFullDirectoryApiUrl(page: number): string {
+  const pageNumber = Math.max(1, Math.floor(page));
+  return `${DEVPOST_BASE}/api/hackathons?page=${pageNumber}`;
+}
+
+/** Subset query only — label telemetry as open_upcoming_api_subset, never full inventory. */
+export function buildDevpostOpenUpcomingApiUrl(page: number): string {
   const pageNumber = Math.max(1, Math.floor(page));
   return `${DEVPOST_BASE}/api/hackathons?status[]=upcoming&status[]=open&page=${pageNumber}`;
+}
+
+export function buildDevpostApiUrl(
+  page: number,
+  scope: DevpostAcquisitionScope = "full_directory_api",
+): string {
+  if (scope === "open_upcoming_api_subset") return buildDevpostOpenUpcomingApiUrl(page);
+  return buildDevpostFullDirectoryApiUrl(page);
+}
+
+export function parseDevpostApiRequestScope(url: string): DevpostAcquisitionScope {
+  try {
+    const parsed = new URL(url);
+    const statuses = parsed.searchParams.getAll("status[]");
+    if (statuses.length === 0) return "full_directory_api";
+    const normalized = new Set(statuses.map((value) => value.toLowerCase()));
+    if (
+      normalized.size === 2 &&
+      normalized.has("open") &&
+      normalized.has("upcoming")
+    ) {
+      return "open_upcoming_api_subset";
+    }
+    return "full_directory_api";
+  } catch {
+    return "full_directory_api";
+  }
+}
+
+export function classifyDevpostOpenState(
+  status: string | undefined,
+): "open" | "upcoming" | "ended" | "unknown" {
+  const raw = (status ?? "").trim().toLowerCase();
+  if (raw === "open") return "open";
+  if (raw === "upcoming") return "upcoming";
+  if (raw === "ended" || raw === "closed" || raw === "archive") return "ended";
+  if (!raw) return "unknown";
+  if (isEndedStatus(status, "")) return "ended";
+  return "unknown";
 }
 
 export function buildDevpostDatesUrl(url: string): string | undefined {
@@ -101,6 +196,7 @@ export type DevpostLazyLoadStopReason =
   | "no_additional_cards"
   | "maximum_scrolls_reached"
   | "maximum_cards_reached"
+  | "target_reached"
   | "timeout"
   | "parser_failure";
 
@@ -154,6 +250,7 @@ export type DevpostApiPageResult = {
   status: "completed" | "degraded" | "failed";
   stopReason?: string;
   error?: string;
+  metaTotalCount?: number;
 };
 
 export function describeDevpostFailure(hint: DevpostFailureHint, detail?: string): string {
@@ -646,7 +743,9 @@ export function devpostFingerprint(urls: string[]): string {
 export function parseDevpostApiPayload(
   payload: DevpostApiPayload,
   maxResults: number,
+  options: { includeEnded?: boolean } = {},
 ): RawLead[] {
+  const includeEnded = options.includeEnded !== false;
   const leads: RawLead[] = [];
   for (const item of payload.hackathons ?? []) {
     if (leads.length >= maxResults) break;
@@ -671,7 +770,9 @@ export function parseDevpostApiPayload(
     ]
       .filter(Boolean)
       .join(" - ");
-    if (isEndedStatus(status, text)) continue;
+    const openStateClass = classifyDevpostOpenState(status);
+    // Collection gathers directory cards first; pipeline filters closed events later.
+    if (!includeEnded && openStateClass === "ended") continue;
 
     leads.push({
       id: `devpost-${item.id ?? slugify(title)}`,
@@ -687,6 +788,7 @@ export function parseDevpostApiPayload(
         ...displayedRangeMetadata(dateText, url, "api", "submission_period"),
         location,
         status,
+        openState: openStateClass,
         organizer: item.organization_name,
         themes,
         mode:
@@ -700,6 +802,7 @@ export function parseDevpostApiPayload(
         attribution: "devpost",
         provenance: "native_devpost",
         discoveryMode: "native_devpost",
+        acquisitionScope: "full_directory_api",
         sourceAuthority: "devpost",
         sourceIds: { devpost: item.id ?? slugify(title) },
       },
@@ -712,8 +815,9 @@ async function fetchDevpostApiPage(
   pageNumber: number,
   maxResults: number,
   timeoutMs: number,
+  scope: DevpostAcquisitionScope = "full_directory_api",
 ): Promise<DevpostApiPageResult> {
-  const requestedUrl = buildDevpostApiUrl(pageNumber);
+  const requestedUrl = buildDevpostApiUrl(pageNumber, scope);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -740,7 +844,15 @@ async function fetchDevpostApiPage(
       };
     }
     const payload = (await response.json()) as DevpostApiPayload;
-    const leads = parseDevpostApiPayload(payload, maxResults);
+    const leads = parseDevpostApiPayload(payload, maxResults, { includeEnded: true }).map(
+      (lead) => ({
+        ...lead,
+        metadata: {
+          ...lead.metadata,
+          acquisitionScope: parseDevpostApiRequestScope(finalUrl),
+        },
+      }),
+    );
     const urls = leads.map((lead) => lead.url).filter(Boolean) as string[];
     const perPage = payload.meta?.per_page ?? (payload.hackathons ?? []).length;
     const totalCount = payload.meta?.total_count ?? undefined;
@@ -762,6 +874,7 @@ async function fetchDevpostApiPage(
       nextPage: hasNext ? pageNumber + 1 : undefined,
       status: "completed",
       stopReason: hasNext ? undefined : "no_next_page",
+      metaTotalCount: totalCount,
     };
   } catch (error) {
     return {
@@ -810,7 +923,7 @@ async function collectRenderedDevpostListing(
   const startedAt = Date.now();
 
   return withPlaywright(async ({ page }) => {
-    logger?.(`Opening filtered listings page ${pageNumber}...`);
+    logger?.(`Opening Devpost directory page ${pageNumber}...`);
     const response = await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: timeoutMs,
@@ -824,13 +937,20 @@ async function collectRenderedDevpostListing(
     const finalUrl = page.url();
     let redirected = !finalUrl.includes("/hackathons");
     try {
+      const requested = new URL(url, DEVPOST_BASE);
       const parsed = new URL(finalUrl);
+      const requestedStatuses = requested.searchParams.getAll("status[]");
       const statuses = parsed.searchParams.getAll("status[]");
-      redirected =
-        redirected ||
-        !statuses.includes("upcoming") ||
-        !statuses.includes("open") ||
-        parsed.searchParams.get("page") !== String(pageNumber);
+      // Only enforce open+upcoming filter parity when the request itself was filtered.
+      if (requestedStatuses.length > 0) {
+        redirected =
+          redirected ||
+          !statuses.includes("upcoming") ||
+          !statuses.includes("open") ||
+          parsed.searchParams.get("page") !== String(pageNumber);
+      } else {
+        redirected = redirected || !parsed.pathname.includes("/hackathons");
+      }
     } catch {
       redirected = true;
     }
@@ -936,29 +1056,77 @@ function hasDevpostChallengePage(html: string): boolean {
   return /captcha|cloudflare|verify you are human|access denied|blocked/i.test(html);
 }
 
+function stopEvidenceForDevpost(
+  stopReason: string,
+  metaTotalCount: number | null,
+  targetCards?: number,
+): string {
+  switch (stopReason) {
+    case "no_next_page":
+      return metaTotalCount != null
+        ? `api_meta_total_count_reached:${metaTotalCount}`
+        : "source_reported_no_next_page";
+    case "no_additional_cards":
+      return "batch_added_zero_unique_identities";
+    case "repeated_fingerprint":
+      return "identical_page_fingerprint_repeated";
+    case "target_reached":
+      return `profile_target_reached:${targetCards ?? "unknown"}`;
+    case "maximum_cards_reached":
+      return "safety_card_budget_reached_not_source_exhaustion";
+    case "maximum_pages_reached":
+      return "safety_page_budget_reached_not_source_exhaustion";
+    case "timeout":
+      return "source_timeout_not_source_exhaustion";
+    case "api_page_failed":
+      return "first_api_page_failed";
+    default:
+      return stopReason;
+  }
+}
+
 async function collectDevpostApiPages(
   maxResults: number,
   maxPages: number,
   timeoutMs: number,
   logger?: (message: string) => void,
+  scope: DevpostAcquisitionScope = "full_directory_api",
+  options?: { targetCards?: number; stopAtTarget?: boolean },
 ): Promise<{
   leads: RawLead[];
   pages: DevpostApiPageResult[];
   duplicateUrls: number;
   repeatedPages: number;
   stopReason: string;
+  stopEvidence: string;
+  acquisitionScope: DevpostAcquisitionScope;
+  metaTotalCount: number | null;
+  statusCounts: Record<string, number>;
+  listingDurationMs: number;
+  targetReached: boolean;
 }> {
+  const targetCards = Math.max(1, options?.targetCards ?? maxResults);
+  const stopAtTarget = Boolean(options?.stopAtTarget);
+  const collectLimit = stopAtTarget ? Math.min(targetCards, maxResults) : maxResults;
   const startedAt = Date.now();
   const pages: DevpostApiPageResult[] = [];
   const leads: RawLead[] = [];
   const seenUrls = new Set<string>();
   const seenFingerprints = new Map<string, number>();
+  const statusCounts: Record<string, number> = {
+    open: 0,
+    upcoming: 0,
+    ended: 0,
+    unknown: 0,
+  };
   let duplicateUrls = 0;
   let repeatedPages = 0;
   let stopReason = "no_next_page";
+  let metaTotalCount: number | null = null;
 
   const mergePage = (page: DevpostApiPageResult) => {
     pages.push(page);
+    if (typeof page.metaTotalCount === "number") metaTotalCount = page.metaTotalCount;
     if (page.fingerprint) {
       const prior = seenFingerprints.get(page.fingerprint);
       if (prior != null) {
@@ -974,7 +1142,7 @@ async function collectDevpostApiPages(
     let added = 0;
     let duplicateExisting = 0;
     for (const lead of page.leads) {
-      if (leads.length >= maxResults) break;
+      if (leads.length >= collectLimit) break;
       const key = lead.url ? normalizeUrlForDedupe(lead.url) : lead.id;
       if (seenUrls.has(key)) {
         duplicateUrls += 1;
@@ -983,6 +1151,10 @@ async function collectDevpostApiPages(
       }
       seenUrls.add(key);
       leads.push(lead);
+      const bucket = classifyDevpostOpenState(
+        typeof lead.metadata?.status === "string" ? lead.metadata.status : undefined,
+      );
+      statusCounts[bucket] = (statusCounts[bucket] ?? 0) + 1;
       added += 1;
     }
     const capped = Math.max(0, page.leads.length - added - duplicateExisting);
@@ -999,19 +1171,45 @@ async function collectDevpostApiPages(
     }
   };
 
-  logger?.("Fetching native API page 1...");
+  logger?.(
+    scope === "open_upcoming_api_subset"
+      ? "Fetching open+upcoming API subset page 1..."
+      : "Fetching full-directory API page 1 (unfiltered /api/hackathons)...",
+  );
+  const cardStopReason = (): string =>
+    stopAtTarget && leads.length >= targetCards && leads.length < maxResults
+      ? "target_reached"
+      : "maximum_cards_reached";
+
   const first = await fetchDevpostApiPage(
     1,
-    maxResults,
+    collectLimit,
     Math.min(timeoutMs, DEVPOST_PAGE_TIMEOUT_MS),
+    scope,
   );
   mergePage(first);
   if (first.status === "failed") {
-    return { leads, pages, duplicateUrls, repeatedPages, stopReason: "api_page_failed" };
+    return {
+      leads,
+      pages,
+      duplicateUrls,
+      repeatedPages,
+      stopReason: "api_page_failed",
+      stopEvidence: stopEvidenceForDevpost("api_page_failed", metaTotalCount, targetCards),
+      acquisitionScope: scope,
+      metaTotalCount,
+      statusCounts,
+      listingDurationMs: Date.now() - startedAt,
+      targetReached: leads.length >= targetCards,
+    };
   }
 
   let nextPage = first.nextPage;
-  while (nextPage && leads.length < maxResults && nextPage <= maxPages) {
+  if (leads.length >= collectLimit) {
+    stopReason = cardStopReason();
+    nextPage = undefined;
+  }
+  while (nextPage && leads.length < collectLimit && nextPage <= maxPages) {
     if (Date.now() - startedAt > timeoutMs) {
       stopReason = "timeout";
       break;
@@ -1026,8 +1224,9 @@ async function collectDevpostApiPages(
       batchPages.map((pageNumber) =>
         fetchDevpostApiPage(
           pageNumber,
-          maxResults,
+          collectLimit,
           Math.min(remaining, DEVPOST_PAGE_TIMEOUT_MS),
+          scope,
         ),
       ),
     );
@@ -1037,8 +1236,8 @@ async function collectDevpostApiPages(
         const pageNumber = batchPages[index]!;
         return {
           requestedPage: pageNumber,
-          requestedUrl: buildDevpostApiUrl(pageNumber),
-          finalUrl: buildDevpostApiUrl(pageNumber),
+          requestedUrl: buildDevpostApiUrl(pageNumber, scope),
+          finalUrl: buildDevpostApiUrl(pageNumber, scope),
           activePage: pageNumber,
           leads: [],
           cardCount: 0,
@@ -1060,8 +1259,8 @@ async function collectDevpostApiPages(
       mergePage(page);
       batchAdded += leads.length - before;
       if (page.hasNext) batchHadNext = true;
-      if (leads.length >= maxResults) {
-        stopReason = "maximum_cards_reached";
+      if (leads.length >= collectLimit) {
+        stopReason = cardStopReason();
         break;
       }
     }
@@ -1080,9 +1279,23 @@ async function collectDevpostApiPages(
     nextPage = batchPages.at(-1)! + 1;
   }
 
-  if (leads.length >= maxResults) stopReason = "maximum_cards_reached";
-  if (nextPage && nextPage > maxPages) stopReason = "maximum_pages_reached";
-  return { leads, pages, duplicateUrls, repeatedPages, stopReason };
+  if (leads.length >= collectLimit) stopReason = cardStopReason();
+  if (nextPage && nextPage > maxPages && leads.length < collectLimit) {
+    stopReason = "maximum_pages_reached";
+  }
+  return {
+    leads,
+    pages,
+    duplicateUrls,
+    repeatedPages,
+    stopReason,
+    stopEvidence: stopEvidenceForDevpost(stopReason, metaTotalCount, targetCards),
+    acquisitionScope: scope,
+    metaTotalCount,
+    statusCounts,
+    listingDurationMs: Date.now() - startedAt,
+    targetReached: leads.length >= targetCards,
+  };
 }
 
 function shouldFetchDevpostSchedule(lead: RawLead): boolean {
@@ -1203,26 +1416,27 @@ export const devpostCollector: Collector = {
     let parserFailures = 0;
     let stopReason: DevpostLazyLoadStopReason | "maximum_pages_reached" = "no_additional_cards";
 
+    const acquisitionScope: DevpostAcquisitionScope = "full_directory_api";
     result.warnings.push(
-      "Devpost uses Playwright for public open/upcoming hackathon listings because static HTML may omit challenge tiles.",
+      "Devpost listing uses the browser-observed full-directory API GET /api/hackathons?page=N (no status filter). open+upcoming is a subset only.",
     );
+    result.warnings.push(`acquisition_scope=${acquisitionScope}`);
 
     try {
       void searchUrls;
-      input.logger?.("Using observed read-only Devpost API pagination...");
-      const api = await collectDevpostApiPages(maxAccepted, budget.maxPages, input.timeoutMs, input.logger);
-      const enriched = await enrichDevpostSchedules(api.leads, {
-        limit: budget.detailLimit,
-        timeoutMs: input.timeoutMs,
-        startedAt,
-        logger: input.logger,
-      });
-      result.leads = enriched.leads;
-      result.warnings.push(...enriched.warnings);
-      detailPagesOpened = enriched.opened;
-      detailFailures = enriched.failures;
+      input.logger?.(
+        "Using full-directory Devpost API pagination (same endpoint the live /hackathons page loads while scrolling)...",
+      );
+      const api = await collectDevpostApiPages(
+        maxAccepted,
+        budget.maxPages,
+        input.timeoutMs,
+        input.logger,
+        acquisitionScope,
+        { targetCards: budget.targetCards, stopAtTarget: budget.stopAtTarget },
+      );
       pagesFetched = api.pages.length;
-      finalCardCount = api.pages.reduce((sum, page) => sum + page.cardCount, 0);
+      finalCardCount = api.leads.length;
       initialCardCount = api.pages[0]?.cardCount ?? 0;
       duplicateUrls = api.duplicateUrls;
       parserFailures = api.pages.filter((page) => page.status === "failed").length;
@@ -1237,17 +1451,48 @@ export const devpostCollector: Collector = {
           result.warnings.push(`page_${page.requestedPage}_stop_reason=${page.stopReason}`);
         }
       }
+      result.warnings.push(`stop_evidence=${api.stopEvidence}`);
+      result.warnings.push(`meta_total_count=${api.metaTotalCount ?? "unknown"}`);
+      result.warnings.push(`directory_reported_total=${api.metaTotalCount ?? "unknown"}`);
+      result.warnings.push(`target_for_profile=${budget.targetCards}`);
+      result.warnings.push(`target_reached=${api.targetReached ? "true" : "false"}`);
+      result.warnings.push(`status_open=${api.statusCounts.open ?? 0}`);
+      result.warnings.push(`status_upcoming=${api.statusCounts.upcoming ?? 0}`);
+      result.warnings.push(`status_ended=${api.statusCounts.ended ?? 0}`);
+      result.warnings.push(`status_unknown=${api.statusCounts.unknown ?? 0}`);
+      result.warnings.push(`listing_duration_ms=${api.listingDurationMs}`);
+
+      input.logger?.(
+        `Listing acquisition complete (${api.leads.length} unique, stop=${api.stopReason}, target=${budget.targetCards}, targetReached=${api.targetReached}). Starting detail enrichment…`,
+      );
+      const detailStartedAt = Date.now();
+      const enriched = await enrichDevpostSchedules(api.leads, {
+        limit: budget.detailLimit,
+        timeoutMs: input.timeoutMs,
+        startedAt,
+        logger: input.logger,
+      });
+      const detailDurationMs = Date.now() - detailStartedAt;
+      result.leads = enriched.leads;
+      result.warnings.push(...enriched.warnings);
+      detailPagesOpened = enriched.opened;
+      detailFailures = enriched.failures;
+      result.warnings.push(`detail_duration_ms=${detailDurationMs}`);
 
       result.metrics = {
         pagesFetched,
         playwrightPages: 0,
         initialCardCount,
         finalCardCount,
+        uniqueCards: api.leads.length,
         detailPagesOpened,
         detailFailures,
         maxCards: budget.maxCards,
         maxPages: budget.maxPages,
         detailLimit: budget.detailLimit,
+        targetForProfile: budget.targetCards,
+        targetReached: api.targetReached ? 1 : 0,
+        directoryReportedTotal: api.metaTotalCount ?? 0,
         scrollAttempts,
         noGrowthAttempts,
         pageNoGrowthAttempts,
@@ -1256,21 +1501,30 @@ export const devpostCollector: Collector = {
         repeatedPages: api.repeatedPages,
         leadsEmitted: result.leads.length,
         searchUrls: pagesFetched,
+        listingDurationMs: api.listingDurationMs,
+        detailDurationMs,
+        metaTotalCount: api.metaTotalCount ?? 0,
+        statusOpen: api.statusCounts.open ?? 0,
+        statusUpcoming: api.statusCounts.upcoming ?? 0,
+        statusEnded: api.statusCounts.ended ?? 0,
+        statusUnknown: api.statusCounts.unknown ?? 0,
       };
       result.warnings.push(`stop_reason=${stopReason}`);
       result.warnings.push(`profile_budget_cards=${budget.maxCards}`);
       result.warnings.push(`profile_budget_pages=${budget.maxPages}`);
       result.warnings.push(`profile_budget_detail_limit=${budget.detailLimit}`);
+      result.warnings.push(`profile_target_cards=${budget.targetCards}`);
+      result.warnings.push(`profile_stop_at_target=${budget.stopAtTarget ? "true" : "false"}`);
       result.warnings.push(`details_opened=${detailPagesOpened}`);
       result.warnings.push(`detail_failures=${detailFailures}`);
-      result.warnings.push(`unique_cards=${finalCardCount}`);
+      result.warnings.push(`unique_cards=${api.leads.length}`);
       result.warnings.push(`scrolls=${scrollAttempts}`);
       result.warnings.push(`no_growth_attempts=${noGrowthAttempts}`);
       result.warnings.push(`page_no_growth_attempts=${pageNoGrowthAttempts}`);
       result.warnings.push(`duplicates=${duplicateUrls}`);
 
       if (result.leads.length === 0 && result.errors.length === 0) {
-        const searchUrl = searchUrls[0] ?? DEVPOST_OPEN_UPCOMING_URL;
+        const searchUrl = DEVPOST_FULL_DIRECTORY_URL;
         const remaining = Math.max(1_000, input.timeoutMs - (Date.now() - startedAt));
         const rendered = await collectRenderedDevpostListing(
           searchUrl,

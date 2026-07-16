@@ -167,23 +167,84 @@ export function formatJobSummary(job: DiscoveryJob): string {
     if (!stats || typeof stats !== "object") continue;
     const row = stats as Record<string, unknown>;
     const source = typeof row.source === "string" ? row.source : "source";
-    const collected = num(row.leadsFound) ?? 0;
-    const ready = num(row.queueReady) ?? 0;
-    const review = num(row.needsReview) ?? 0;
-    const rejectedCount = num(row.rejected) ?? num(row.invalidRejected) ?? 0;
-    const elapsed = num(row.durationMs);
+    const telemetry =
+      row.telemetry && typeof row.telemetry === "object"
+        ? (row.telemetry as Record<string, unknown>)
+        : undefined;
+    const collectedRaw = num(row.collectedRaw) ?? num(telemetry?.collectedRaw) ?? num(row.leadsFound) ?? 0;
+    const collectedUnique =
+      num(row.collectedUnique) ?? num(telemetry?.collectedUnique) ?? collectedRaw;
+    const classified =
+      num(row.classifiedHackathon) ?? num(telemetry?.classifiedHackathon) ?? 0;
+    const feedTheme =
+      num(row.feedThemeCandidate) ?? num(telemetry?.feedThemeCandidate) ?? 0;
+    const contentTheme =
+      num(row.contentThemeMatched) ??
+      num(telemetry?.contentThemeMatched) ??
+      num(row.themeRelevant) ??
+      num(telemetry?.themeRelevant) ??
+      0;
+    const themeRelevant = contentTheme;
+    const queryRelevant =
+      num(row.queryRelevant) ?? num(telemetry?.queryRelevant) ?? num(row.accepted) ?? 0;
+    const ready = num(row.queueReady) ?? num(telemetry?.queueReady) ?? 0;
+    const review = num(row.needsReview) ?? num(telemetry?.needsReview) ?? 0;
+    const rejectedCount =
+      num(row.rejected) ??
+      num(telemetry?.rejected) ??
+      num(row.invalidRejected) ??
+      0;
+    const elapsed = num(row.durationMs) ?? num(telemetry?.totalDurationMs);
+    const scope =
+      typeof row.acquisitionScope === "string"
+        ? row.acquisitionScope
+        : typeof telemetry?.acquisitionScope === "string"
+          ? telemetry.acquisitionScope
+          : "unknown";
+    const inventory = formatInventoryEstimate(
+      row.observedDirectoryInventory ??
+        telemetry?.observedDirectoryInventory ??
+        row.observedInventory ??
+        telemetry?.observedInventory,
+    );
+    const directoryReported =
+      num(row.directoryReportedTotal) ??
+      num(telemetry?.directoryReportedTotal) ??
+      undefined;
+    const targetForProfile =
+      num(row.targetForProfile) ?? num(telemetry?.targetForProfile) ?? undefined;
+    const targetReached =
+      typeof row.targetReached === "boolean"
+        ? row.targetReached
+        : typeof telemetry?.targetReached === "boolean"
+          ? telemetry.targetReached
+          : undefined;
     const stopReason =
       typeof row.stopReason === "string"
         ? row.stopReason
-        : Array.isArray(row.warnings) && typeof row.warnings[0] === "string"
-          ? String(row.warnings[0])
-          : typeof row.outcome === "string"
-            ? row.outcome
-            : undefined;
+        : typeof telemetry?.stopReason === "string"
+          ? telemetry.stopReason
+          : Array.isArray(row.warnings) && typeof row.warnings[0] === "string"
+            ? String(row.warnings[0])
+            : typeof row.outcome === "string"
+              ? row.outcome
+              : undefined;
+    const stopEvidence =
+      typeof row.stopEvidence === "string"
+        ? row.stopEvidence
+        : typeof telemetry?.stopEvidence === "string"
+          ? telemetry.stopEvidence
+          : undefined;
+    const targetLabel =
+      typeof targetForProfile === "number"
+        ? `, target ${targetForProfile}${typeof targetReached === "boolean" ? (targetReached ? "✓" : "✗") : ""}`
+        : "";
+    const reportedLabel =
+      typeof directoryReported === "number" ? `, directory-reported ${directoryReported}` : "";
     lines.push(
-      `  [${source}] collected ${collected}, queue-ready ${ready}, needs review ${review}, rejected ${rejectedCount}${
+      `  [${source}] scope ${scope}, directory-inventory ${inventory}${reportedLabel}, raw ${collectedRaw}, unique ${collectedUnique}${targetLabel}, classified-hackathon ${classified}, feed-theme ${feedTheme}, content-theme ${contentTheme}, theme-relevant ${themeRelevant}, query-relevant ${queryRelevant}, queue-ready ${ready}, needs review ${review}, rejected ${rejectedCount}${
         typeof elapsed === "number" ? `, ${formatDuration(elapsed)}` : ""
-      }${stopReason ? `, stop: ${stopReason}` : ""}`,
+      }${stopReason ? `, stop: ${stopReason}` : ""}${stopEvidence ? ` (${stopEvidence})` : ""}`,
     );
   }
 
@@ -242,6 +303,16 @@ export function formatJobSummary(job: DiscoveryJob): string {
   }
 
   return lines.join("\n").trimEnd();
+}
+
+function formatInventoryEstimate(value: unknown): string {
+  if (!value || typeof value !== "object") return "n/a";
+  const row = value as Record<string, unknown>;
+  const count = num(row.value);
+  const method = typeof row.method === "string" ? row.method : undefined;
+  const confidence = typeof row.confidence === "string" ? row.confidence : undefined;
+  if (typeof count !== "number" || !method || !confidence) return "n/a";
+  return `${count} (${method}/${confidence})`;
 }
 
 function num(value: unknown): number | undefined {
