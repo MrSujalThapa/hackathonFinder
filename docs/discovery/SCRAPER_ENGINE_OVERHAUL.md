@@ -18,7 +18,7 @@
   - [x] A0 — Inventory and telemetry truth *(interpretation corrected: 166 ≠ full directory)*
   - [x] A1 — Devpost full-directory acquisition + listing-before-detail *(see FULL_DIRECTORY_RECALL.md; product: light 50–100, deep ≥300)*
   - [x] A2 — Luma collect-first multi-route *(see FULL_DIRECTORY_RECALL.md; deep ≥100 unique provisional)*
-  - [ ] B1 — Kernel extraction, no behavior change *(in progress on experiment/scraper-overhaul-b1-kernel-extraction)*
+  - [x] B1 — Kernel extraction, no behavior change *(see B1_KERNEL_EXTRACTION.md / B1_PARITY_REPORT.md)*
   - [ ] B2 — Custom sources → kernel
   - [ ] B3 — Native growth → shared primitives
   - [ ] B4 — Remove obsolete paths
