@@ -171,7 +171,16 @@ No `phase5*.test.ts` remains in the tracked tree (removed in earlier B4 runtime 
 
 ## 17. Commits
 
-Recorded at push time on this branch only.
+| SHA | Message |
+|---|---|
+| `acd6ddc` | test(crawl): consolidate kernel and adapter contracts |
+| `d6b83ce` | test(discovery): remove obsolete phase snapshots |
+| `d9c6696` | test(persistence): consolidate batch idempotency coverage |
+| `c6e524b` | test(terminal): consolidate progressive polling contracts |
+| `d82be29` | chore(test): remove dead fixtures and scripts |
+| `c33cc68` | docs(test): document production contract suites |
+
+Pushed only to `origin/experiment/scraper-overhaul-c3-test-cleanup`.
 
 ## 18. Confirmations
 
