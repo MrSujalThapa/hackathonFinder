@@ -31,6 +31,7 @@ Preserve this workflow unless the task explicitly requires architectural changes
 - Preserve existing behavior unless the task explicitly changes it.
 - Commit after each meaningful, independently valid step.
 - Stop and report when the requested scope is complete.
+- Tests protect current production contracts, not historical implementation phases. Do not add phase-snapshot suites or import archived/removed experiment runtimes.
 
 ---
 
