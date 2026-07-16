@@ -529,6 +529,7 @@ type SourceRunTelemetry = {
 
   - only one production growth loop
   - only one batch persistence path (after C1; batch is production-only)
+  - progressive job events coalesced (C2); cursor polling for Terminal
   - no production imports from `src/experiments/**` after B4
   - no new `phase-N` runtime directories
   - no second crawler framework
