@@ -528,7 +528,7 @@ type SourceRunTelemetry = {
   ## 13. Anti-bloat constraints (hard)
 
   - only one production growth loop
-  - only one batch persistence path (after C1 soak)
+  - only one batch persistence path (after C1; batch is production-only)
   - no production imports from `src/experiments/**` after B4
   - no new `phase-N` runtime directories
   - no second crawler framework

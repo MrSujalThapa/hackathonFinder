@@ -38,7 +38,7 @@ native source
 | Module | Why |
 |---|---|
 | `src/collectors/customSource.ts` (V1 impl) | Soak gate unmet; **unreachable** from production routing / site check |
-| `src/experiments/batchPersistenceBenchmark*` | Persistence benchmark for future C1 — not a crawl runtime |
+| `scripts/persistence/batchPersistenceBenchmark.ts` | Moved in C1; audit-only, not production runtime |
 | `src/lib/browser/collectUntilStable.ts` | Thin re-export of `@/crawl` (no duplicated impl) |
 | `genericScraperV2Mode.ts` filename | Pipeline import stability; body is kernel-only |
 | Source-specific budget helpers in collectors | Product thresholds unchanged |
