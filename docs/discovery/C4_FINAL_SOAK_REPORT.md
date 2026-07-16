@@ -168,7 +168,14 @@ Deferred follow-up (post-soak, separate PR): delete custom V1 body + persistence
 
 ## 22. Commits
 
-Recorded on push.
+| SHA | Message |
+|---|---|
+| `a4a7821` | chore(discovery): verify final scraper soak gates |
+| `66e124f` | test(discovery): verify final single-path architecture |
+
+**HEAD:** `66e124f` (includes architecture docs, ops runbook, C4 report, single-path tests, next.config cleanup)
+
+Pushed only to `origin/experiment/scraper-overhaul-c4-final-soak`.
 
 ## 23. Confirmations
 
