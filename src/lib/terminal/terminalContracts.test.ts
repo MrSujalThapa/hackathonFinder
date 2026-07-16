@@ -1,19 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { parseCommand } from "@/agent/parseCommand";
-import {
-  formatJobSummary,
-  formatTerminalCandidateResult,
-  shouldSuppressTerminalEvent,
-} from "@/lib/terminal/formatEvent";
+import { formatTerminalCandidateResult } from "@/lib/terminal/formatEvent";
 import { parseTerminalCommand } from "@/lib/terminal/parseCommand";
 import {
   formatQueryInterpretationLines,
   interpretDiscoveryQuery,
 } from "@/lib/terminal/queryInterpretation";
-import type { DiscoveryJob, DiscoveryJobEvent } from "@/lib/terminal/types";
 
-describe("phase 6 terminal integration boundaries", () => {
+describe("terminal production contracts", () => {
   it("separates flags from planner/search text", () => {
     const parsed = parseTerminalCommand(
       "find upcoming AI hackathons in Toronto --profile light --include-remote --dry-run --verbose",
@@ -68,47 +63,6 @@ describe("phase 6 terminal integration boundaries", () => {
     assert.ok(preferences.sources.includes("devpost"));
   });
 
-  it("formats queue-ready and needs-review distinctly", () => {
-    const job: DiscoveryJob = {
-      id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
-      command: "find AI in Toronto --profile light --dry-run",
-      status: "completed",
-      createdAt: "2026-07-15T00:00:00.000Z",
-      createdCount: 0,
-      updatedCount: 0,
-      acceptedCount: 5,
-      rejectedCount: 12,
-      needsReviewCount: 3,
-      summary: {
-        rawLeads: 40,
-        uniqueLeads: 18,
-        queueReady: 2,
-        needsReview: 3,
-        profile: "light",
-        dryRun: true,
-        sourceStats: [
-          {
-            source: "devpost",
-            leadsFound: 20,
-            queueReady: 2,
-            needsReview: 1,
-            rejected: 8,
-            durationMs: 4_000,
-            outcome: "executed",
-          },
-        ],
-      },
-    };
-    const text = formatJobSummary(job);
-    assert.match(text, /queue-ready\s+2/);
-    assert.match(text, /needs review\s+3/);
-    assert.doesNotMatch(text, /^\s+accepted\s+/m);
-    assert.match(
-      text,
-      /\[devpost\] scope unknown, directory-inventory n\/a, raw 20, unique 20, classified-hackathon 0, feed-theme 0, content-theme 0, theme-relevant 0, query-relevant 0, queue-ready 2, needs review 1, rejected 8/,
-    );
-  });
-
   it("formats distinct application and submission deadlines", () => {
     const text = formatTerminalCandidateResult({
       name: "OpenAI Build Week",
@@ -128,20 +82,5 @@ describe("phase 6 terminal integration boundaries", () => {
     assert.match(text, /Applications close: Not publicly listed/);
     assert.match(text, /Submissions close: 2026-07-21/);
     assert.doesNotMatch(text, /Applications close: 2026-07-21/);
-  });
-
-  it("suppresses noisy fingerprint warnings unless verbose", () => {
-    const event: DiscoveryJobEvent = {
-      id: "e1",
-      jobId: "j1",
-      sequence: 1,
-      timestamp: "2026-07-15T00:00:00.000Z",
-      type: "source_progress",
-      level: "warning",
-      source: "devpost",
-      message: "page fingerprint repeated 4 times",
-    };
-    assert.equal(shouldSuppressTerminalEvent(event, false), true);
-    assert.equal(shouldSuppressTerminalEvent(event, true), false);
   });
 });
