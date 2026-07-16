@@ -148,7 +148,13 @@ Collection behavior unchanged by C1.
 
 ## 19. Commits
 
-See git log on this branch after push.
+1. `33e820b` refactor(persistence): make batch strategy production-only  
+2. `d0de653` test(persistence): verify idempotency and protected fields  
+3. `57e1d3d` perf(persistence): move batch benchmark out of production paths  
+4. `b73e629` docs(discovery): document batch-only persistence architecture  
+5. `2311109` chore(persistence): remove relocated batch benchmark from experiments  
+
+Pushed: `origin/experiment/scraper-overhaul-c1-batch-only-persistence` @ `2311109`
 
 ## 20. Exclusions confirmed
 
