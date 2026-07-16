@@ -56,7 +56,8 @@ export async function GET(
         await Promise.all(
           jobs.map(async (job) => [
             job.id,
-            await jobStore.listEvents(job.id, { afterSequence: 0, limit: 200 }),
+            // Compact history: cursor from 0 with a tight limit; live runs use SSE afterSequence.
+            await jobStore.listEvents(job.id, { afterSequence: 0, limit: 80 }),
           ]),
         ),
       );
