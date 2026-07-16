@@ -26,7 +26,7 @@ import {
   isPlaywrightBrowserMissingError,
   withPlaywright,
 } from "@/lib/browser/playwright";
-import { collectUntilStable } from "@/crawl";
+import { collectLumaFeedViaKernel } from "@/crawl/adapters/luma";
 import { normalizeUrl, normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
 const LUMA_BASE = "https://luma.com";
@@ -901,7 +901,7 @@ export function parseLumaHtml(
   for (const card of cards) {
     if (card.pageKind && card.pageKind !== "event" && card.pageKind !== "unknown") continue;
     if (isRejectedLumaLeadUrl(card.url)) continue;
-    if (!isUpcoming(card.startDate ?? card.dateText, card.endDate)) continue;
+    if (!isUpcoming(card.startDate ?? card.dateText, card.endDate, now)) continue;
 
     const dedupeKey = card.url
       ? normalizeUrlForDedupe(card.url)
@@ -1129,26 +1129,28 @@ async function collectRenderedLumaFeed(
           });
         await page.waitForTimeout(500);
 
-        const collected = await collectUntilStable<RawLead>({
-          collectItems: () => collectLumaLeadsFromPage(page, feed.mode, budget.maxEvents),
-          getKey: (lead) => normalizeUrlForDedupe(lead.url ?? lead.id),
-          scroll: async () => {
-            await page.mouse.wheel(0, 2_400);
-          },
-          waitForIdle: async () => {
-            await page
-              .waitForLoadState("networkidle", { timeout: LUMA_SCROLL_WAIT_MS })
-              .catch(() => undefined);
-          },
-          maxItems: budget.maxEvents,
+        const collected = await collectLumaFeedViaKernel({
+          feedUrl: feed.url,
+          maxEvents: budget.maxEvents,
           maxScrolls: budget.maxScrolls,
-          noGrowthLimit: LUMA_NO_GROWTH_LIMIT,
           timeoutMs,
-          waitMs: LUMA_SCROLL_WAIT_MS,
-          logger,
-          loadingMessage: "Loading more events...",
-          countMessage: (count) =>
-            count === 1 ? "1 unique event found" : `${count} unique events found`,
+          hooks: {
+            collectLeads: () => collectLumaLeadsFromPage(page, feed.mode, budget.maxEvents),
+            scroll: async () => {
+              await page.mouse.wheel(0, 2_400);
+            },
+            waitForIdle: async () => {
+              await page
+                .waitForLoadState("networkidle", { timeout: LUMA_SCROLL_WAIT_MS })
+                .catch(() => undefined);
+            },
+            waitMs: LUMA_SCROLL_WAIT_MS,
+            noGrowthLimit: LUMA_NO_GROWTH_LIMIT,
+            logger,
+            loadingMessage: "Loading more events...",
+            countMessage: (count) =>
+              count === 1 ? "1 unique event found" : `${count} unique events found`,
+          },
         });
 
         if (collected.noGrowthAttempts >= LUMA_NO_GROWTH_LIMIT) {
@@ -1158,8 +1160,8 @@ async function collectRenderedLumaFeed(
 
         return {
           feed,
-          urls: collected.items.map((lead) => lead.url).filter((url): url is string => Boolean(url)),
-          leads: collected.items,
+          urls: collected.leads.map((lead) => lead.url).filter((url): url is string => Boolean(url)),
+          leads: collected.leads,
           uniqueCount: collected.uniqueCount,
           scrollAttempts: collected.scrollAttempts,
           noGrowthAttempts: collected.noGrowthAttempts,
