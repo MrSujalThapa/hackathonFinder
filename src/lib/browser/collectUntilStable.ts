@@ -1,6 +1,6 @@
 /**
- * Browser-facing re-export — implementation lives in src/crawl (B1 move).
- * Do not reintroduce a second growth loop here.
+ * Compatibility re-export — implementation lives in `@/crawl/growth/collectUntilStable`.
+ * Prefer `@/crawl` in new code. No duplicated growth loop. Post-C caller migration candidate.
  */
 export {
   collectUntilStable,

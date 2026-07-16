@@ -20,8 +20,7 @@
   - [x] A2 — Luma collect-first multi-route *(see FULL_DIRECTORY_RECALL.md; deep ≥100 unique provisional)*
   - [x] B1 — Kernel extraction, no behavior change *(see B1_KERNEL_EXTRACTION.md / B1_PARITY_REPORT.md)*
   - [x] B2 — Custom sources → kernel *(see B2_CUSTOM_KERNEL.md)*
-  - [x] B3 — Native growth → shared primitives
-  - [ ] B4 — Remove obsolete paths
+  - [x] B4 — Remove obsolete paths
   - [ ] C1 — Batch-only persistence
   - [ ] C2 — Pipeline / event payload optimization
   - [ ] C3 — Test/archive cleanup

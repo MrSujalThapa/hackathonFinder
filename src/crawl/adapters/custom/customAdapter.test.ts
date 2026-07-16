@@ -23,7 +23,7 @@ import { extractListingCards } from "@/crawl/adapters/custom/extractCards";
 import { makeArtifact } from "@/crawl/adapters/custom/generic/acquisition";
 import type { SourceExperiment } from "@/crawl/adapters/custom/generic/types";
 
-describe("B2 custom routing defaults", () => {
+describe("B4 custom routing defaults", () => {
   it("defaults to kernel, not V1", () => {
     assert.equal(readCustomSourceRuntimeMode({}), "kernel");
     assert.equal(readCustomSourceRuntimeMode({ GENERIC_SCRAPER_V2_MODE: "off" }), "kernel");
@@ -31,27 +31,17 @@ describe("B2 custom routing defaults", () => {
     assert.equal(readCustomSourceRuntimeMode({ GENERIC_SCRAPER_V2_MODE: "weird" }), "kernel");
   });
 
-  it("explicit rollback reaches V1 mode", () => {
-    assert.equal(
-      readCustomSourceRuntimeMode({ CUSTOM_SOURCE_ROLLBACK_V1: "1" }),
-      "rollback_v1",
-    );
-    assert.equal(
-      readCustomSourceRuntimeMode({ CUSTOM_CRAWL_MODE: "rollback_v1" }),
-      "rollback_v1",
-    );
-    assert.equal(isCustomSourceRollbackV1({ CUSTOM_SOURCE_ROLLBACK_V1: "true" }), true);
+  it("obsolete rollback/shadow flags no longer select alternate runtimes", () => {
+    assert.equal(readCustomSourceRuntimeMode({ CUSTOM_SOURCE_ROLLBACK_V1: "1" }), "kernel");
+    assert.equal(readCustomSourceRuntimeMode({ CUSTOM_CRAWL_MODE: "rollback_v1" }), "kernel");
+    assert.equal(isCustomSourceRollbackV1({ CUSTOM_SOURCE_ROLLBACK_V1: "true" }), false);
+    assert.equal(readCustomSourceRuntimeMode({ CUSTOM_SOURCE_SHADOW: "1" }), "kernel");
+    assert.equal(readCustomSourceRuntimeMode({ GENERIC_SCRAPER_V2_MODE: "shadow" }), "kernel");
   });
 
   it("invalid flag does not silently select V1", () => {
     assert.equal(readCustomSourceRuntimeMode({ CUSTOM_CRAWL_MODE: "garbage" }), "kernel");
     assert.equal(readCustomSourceRuntimeMode({ GENERIC_SCRAPER_V2_MODE: "" }), "kernel");
-    assert.notEqual(readCustomSourceRuntimeMode({ GENERIC_SCRAPER_V2_MODE: "off" }), "rollback_v1");
-  });
-
-  it("shadow is explicit only", () => {
-    assert.equal(readCustomSourceRuntimeMode({ CUSTOM_SOURCE_SHADOW: "1" }), "shadow");
-    assert.equal(readCustomSourceRuntimeMode({ GENERIC_SCRAPER_V2_MODE: "shadow" }), "shadow");
   });
 });
 

@@ -1,88 +1,79 @@
 /**
- * B2 temporary custom-source routing flags.
+ * Custom-source runtime routing (B4).
  *
- * Default (accepted B2 behavior): kernel production path.
- * Invalid / missing values resolve to kernel — never silent V1.
+ * Production path is always the DirectoryCrawlKernel custom adapter.
+ * Obsolete flags (shadow, rollback_v1, GENERIC_SCRAPER_V2_MODE) are ignored
+ * with a one-time deprecation warning when present.
  *
- * Flags (delete gate: B4 after ≤14 days soak OR 3 controlled live custom runs
- * across ≥3 days, whichever approved gate is reached):
- *
- * - CUSTOM_SOURCE_RUNTIME / CUSTOM_CRAWL_MODE
- *     kernel (default) | shadow | rollback_v1
- * - CUSTOM_SOURCE_ROLLBACK_V1=1
- *     explicit emergency V1 rollback (dev-only intent; logged)
- * - CUSTOM_SOURCE_SHADOW=1
- *     optional shadow comparison; never writes shadow leads
- * - GENERIC_SCRAPER_V2_MODE (legacy)
- *     off/live → kernel; shadow → kernel+shadow; rollback_v1 → V1;
- *     invalid → kernel (no longer maps to permanent V1)
- *
- * Planned removal: B4.
+ * Custom V1 collector remains on disk but unreachable from production routing
+ * until the soak deletion gate is satisfied (see docs/discovery/B4_REMOVE_OBSOLETE.md).
  */
 
-export type CustomSourceRuntimeMode = "kernel" | "shadow" | "rollback_v1";
+export type CustomSourceRuntimeMode = "kernel";
 
-export const CUSTOM_ROUTING_DELETION_GATE =
-  "B4 after ≤14 days soak or 3 controlled live custom runs across ≥3 days";
+const DEPRECATED_FLAG_KEYS = [
+  "CUSTOM_SOURCE_ROLLBACK_V1",
+  "CUSTOM_SOURCE_SHADOW",
+  "CUSTOM_CRAWL_MODE",
+  "CUSTOM_SOURCE_RUNTIME",
+  "GENERIC_SCRAPER_V2_MODE",
+] as const;
 
-function normalizeMode(raw: string | undefined): CustomSourceRuntimeMode | undefined {
-  if (!raw) return undefined;
-  const value = raw.trim().toLowerCase();
-  if (value === "kernel" || value === "production" || value === "live" || value === "off") {
-    return value === "off" ? "kernel" : value === "live" || value === "production" ? "kernel" : "kernel";
-  }
-  if (value === "shadow") return "shadow";
-  if (value === "rollback_v1" || value === "v1" || value === "rollback") return "rollback_v1";
-  return undefined;
+let deprecationLogged = false;
+
+function deprecatedFlagsPresent(env: Record<string, string | undefined>): string[] {
+  return DEPRECATED_FLAG_KEYS.filter((key) => {
+    const value = String(env[key] ?? "").trim();
+    if (!value) return false;
+    if (key === "GENERIC_SCRAPER_V2_MODE" && value.toLowerCase() === "off") return true;
+    if (
+      (key === "CUSTOM_CRAWL_MODE" || key === "CUSTOM_SOURCE_RUNTIME") &&
+      ["kernel", "live", "off", "production"].includes(value.toLowerCase())
+    ) {
+      return false;
+    }
+    return true;
+  });
 }
 
+export function warnDeprecatedCustomRoutingFlags(
+  env?: Record<string, string | undefined>,
+  logger?: (message: string) => void,
+): void {
+  const source = env ?? process.env;
+  const present = deprecatedFlagsPresent(source);
+  if (present.length === 0 || deprecationLogged) return;
+  deprecationLogged = true;
+  const message =
+    `[custom] Ignoring obsolete scraper flags (${present.join(", ")}); ` +
+    "custom sources always use DirectoryCrawlKernel. See docs/discovery/B4_REMOVE_OBSOLETE.md.";
+  logger?.(message);
+  if (!logger && typeof console !== "undefined") {
+    console.warn(message);
+  }
+}
+
+/** Always kernel — retained for call-site compatibility. */
 export function readCustomSourceRuntimeMode(
   env?: Record<string, string | undefined>,
 ): CustomSourceRuntimeMode {
-  const source = env ?? process.env;
-
-  if (
-    ["1", "true", "yes", "on"].includes(
-      String(source.CUSTOM_SOURCE_ROLLBACK_V1 ?? "")
-        .trim()
-        .toLowerCase(),
-    )
-  ) {
-    return "rollback_v1";
-  }
-
-  if (
-    ["1", "true", "yes", "on"].includes(
-      String(source.CUSTOM_SOURCE_SHADOW ?? "")
-        .trim()
-        .toLowerCase(),
-    )
-  ) {
-    return "shadow";
-  }
-
-  const primary =
-    normalizeMode(source.CUSTOM_SOURCE_RUNTIME) ??
-    normalizeMode(source.CUSTOM_CRAWL_MODE);
-  if (primary) return primary;
-
-  const legacy = String(source.GENERIC_SCRAPER_V2_MODE ?? "")
-    .trim()
-    .toLowerCase();
-  if (legacy === "shadow") return "shadow";
-  if (legacy === "rollback_v1" || legacy === "v1") return "rollback_v1";
-  // off / live / missing / invalid → kernel (B2 accepted default)
+  warnDeprecatedCustomRoutingFlags(env);
   return "kernel";
 }
 
+/** @deprecated Shadow comparison removed in B4. */
 export function isCustomSourceShadowEnabled(
-  env?: Record<string, string | undefined>,
+  _env?: Record<string, string | undefined>,
 ): boolean {
-  return readCustomSourceRuntimeMode(env) === "shadow";
+  return false;
 }
 
+/** @deprecated V1 rollback unreachable in B4 pending soak file deletion. */
 export function isCustomSourceRollbackV1(
-  env?: Record<string, string | undefined>,
+  _env?: Record<string, string | undefined>,
 ): boolean {
-  return readCustomSourceRuntimeMode(env) === "rollback_v1";
+  return false;
 }
+
+export const CUSTOM_V1_SOAK_BLOCKER =
+  "Custom V1 file deletion awaits ≤14-day soak or 3 controlled live custom runs across ≥3 days after B2 kernel cutover (2026-07-16). V1 is unreachable from production routing.";

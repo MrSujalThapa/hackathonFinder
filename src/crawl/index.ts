@@ -35,3 +35,9 @@ export {
   type CollectUntilStableOptions,
   type CollectUntilStableResult,
 } from "@/crawl/growth/collectUntilStable";
+export {
+  CRAWL_PROFILE_NAMES,
+  isCrawlProfileName,
+  type CrawlProfile,
+  type CrawlProfileName,
+} from "@/crawl/profiles";

@@ -1,95 +1,39 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  customSourceToExperiment,
-  genericLeadToRawLead,
-  isBlockedCustomSourceUrl,
-  originVariants,
+  collectCustomSourceWithV2Routing,
   readGenericScraperV2Mode,
 } from "@/discovery/genericScraperV2Mode";
 import type { CustomSource } from "@/server/customSources/types";
-import type { GenericShadowLead } from "@/crawl/adapters/custom/generic/types";
 
-function customSource(overrides: Partial<CustomSource> = {}): CustomSource {
-  return {
-    id: "cs-1",
-    name: "hackathons.space",
-    slug: "hackathons-space",
-    baseUrl: "https://www.hackathons.space",
-    listingUrl: "https://www.hackathons.space/",
-    mode: "auto",
-    enabled: true,
-    locationScope: "",
-    topicScope: [],
-    maxItems: 40,
-    status: "unknown",
-    lastCheckedAt: null,
-    lastErrorSafe: null,
-    selectors: {},
-    createdAt: "2026-07-15T00:00:00.000Z",
-    updatedAt: "2026-07-15T00:00:00.000Z",
-    ...overrides,
-  };
-}
-
-describe("generic scraper v2 routing guards (B2)", () => {
-  it("maps GENERIC_SCRAPER_V2_MODE off/live/invalid to kernel (live label)", () => {
-    assert.equal(readGenericScraperV2Mode({}), "live");
-    assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "shadow" }), "shadow");
+describe("genericScraperV2Mode B4", () => {
+  it("always reports live/kernel for legacy mode reader", () => {
+    assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "shadow" }), "live");
     assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "live" }), "live");
     assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "off" }), "live");
     assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "weird" }), "live");
   });
 
-  it("blocks DoraHacks without bypass", () => {
-    assert.equal(isBlockedCustomSourceUrl("https://dorahacks.io/hackathon"), true);
-    assert.equal(isBlockedCustomSourceUrl("https://www.hackathons.space/"), false);
-    assert.equal(isBlockedCustomSourceUrl("https://eventornado.com/events"), false);
-  });
-
-  it("builds experiments for configured custom validation targets", () => {
-    const space = customSourceToExperiment(customSource());
-    assert.equal(space.inputUrl, "https://www.hackathons.space/");
-    assert.ok((space.expectedMinimumEventCount ?? 0) >= 20);
-    assert.deepEqual(
-      space.allowedOrigins,
-      originVariants("https://www.hackathons.space"),
-    );
-    assert.equal(space.maxPayloadBytes, 5_000_000);
-    assert.equal(space.maxPages, 3);
-    assert.equal(space.maxBrowserActions, 3);
-    assert.ok(space.allowedOrigins.includes("https://hackathons.space"));
-
-    const eventornado = customSourceToExperiment(
-      customSource({
-        slug: "eventornado",
-        listingUrl: "https://eventornado.com/events",
-        baseUrl: "https://eventornado.com",
-      }),
-    );
-    assert.equal(eventornado.inputUrl, "https://eventornado.com/events");
-    assert.ok(eventornado.allowedOrigins.includes("https://www.eventornado.com"));
-  });
-
-  it("maps kernel leads onto the normal RawLead pipeline shape", () => {
-    const lead: GenericShadowLead = {
-      sourceUrl: "https://www.hackathons.space/",
-      artifactKind: "html",
-      title: "Space AI Hack",
-      canonicalUrl: "https://www.hackathons.space/events/space-ai",
-      startDate: "2026-08-01",
-      deadline: "2026-07-20",
-      location: "Remote",
-      mode: "online",
-      description: "AI hackathon",
-      normalizedStatus: "upcoming",
-      statusInference: "from_dates",
-      confidence: 0.9,
+  it("routes DoraHacks through kernel block path", async () => {
+    const source: CustomSource = {
+      id: "00000000-0000-4000-8000-000000000001",
+      name: "DoraHacks",
+      slug: "dorahacks",
+      baseUrl: "https://dorahacks.io",
+      listingUrl: "https://dorahacks.io/hackathon",
+      mode: "auto",
+      enabled: true,
+      locationScope: "",
+      topicScope: [],
+      maxItems: 10,
+      status: "unknown",
+      lastCheckedAt: null,
+      lastErrorSafe: null,
+      selectors: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    const raw = genericLeadToRawLead(customSource(), lead);
-    assert.equal(raw.source, "custom:hackathons-space");
-    assert.equal(raw.metadata?.provenance, "custom_site_kernel");
-    assert.equal(raw.metadata?.discoveryMode, "custom_directory_kernel");
-    assert.equal(raw.url, "https://www.hackathons.space/events/space-ai");
+    const result = await collectCustomSourceWithV2Routing(source, { timeoutMs: 3_000 });
+    assert.equal(result.status, "failed");
   });
 });

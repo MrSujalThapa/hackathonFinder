@@ -1,3 +1,7 @@
+import type { CrawlProfile } from "@/crawl/profiles";
+
+export type { CrawlProfile } from "@/crawl/profiles";
+
 export type SourceExperiment = {
   inputUrl: string;
   allowedOrigins: string[];
@@ -28,7 +32,7 @@ export type CrawlIntent = {
 };
 
 export type DiscoveryBudget = {
-  profile: "quick" | "standard" | "deep" | "exhaustive";
+  profile: CrawlProfile;
   targetAcceptedEvents: number;
   maxRawRecords: number;
   maxSources: number;
@@ -41,8 +45,6 @@ export type DiscoveryBudget = {
   prioritizeLatency: boolean;
   prioritizeCoverage: boolean;
 };
-
-export type CrawlProfile = "light" | "standard" | "deep" | "exhaustive";
 
 export type CrawlPlan = {
   profile: CrawlProfile;
@@ -201,7 +203,7 @@ export type AcquisitionDiagnostics = {
   rssLinks: string[];
   sitemapLinks: string[];
   canonicalUrl?: string;
-  runtime?: "custom" | "crawlee";
+  runtime?: "custom";
   queueRequestsAdded?: number;
   queueDuplicateRequests?: number;
   retriesAttempted?: number;
@@ -250,27 +252,6 @@ export type AcquisitionDiagnostics = {
   };
   checkpointSaved?: boolean;
   checkpointLoaded?: boolean;
-};
-
-export type CrawlRuntimeName = "custom" | "crawlee";
-
-export type CrawlRuntimeInput = {
-  experiment: SourceExperiment;
-  budget?: DiscoveryBudget;
-  signal?: AbortSignal;
-  checkpointDir?: string;
-  staticArtifactsSufficient: (artifacts: AcquiredArtifact[]) => boolean;
-};
-
-export type CrawlRuntimeResult = {
-  runtime: CrawlRuntimeName;
-  artifacts: AcquiredArtifact[];
-  diagnostics: AcquisitionDiagnostics;
-};
-
-export type CrawlRuntime = {
-  readonly name: CrawlRuntimeName;
-  crawl(input: CrawlRuntimeInput): Promise<CrawlRuntimeResult>;
 };
 
 export type FieldCoverage = Record<string, number>;

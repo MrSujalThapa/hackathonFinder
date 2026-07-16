@@ -29,10 +29,11 @@ export {
   originVariants,
 } from "@/crawl/adapters/custom/origins";
 export {
-  CUSTOM_ROUTING_DELETION_GATE,
+  readCustomSourceRuntimeMode,
+  warnDeprecatedCustomRoutingFlags,
   isCustomSourceRollbackV1,
   isCustomSourceShadowEnabled,
-  readCustomSourceRuntimeMode,
+  CUSTOM_V1_SOAK_BLOCKER,
   type CustomSourceRuntimeMode,
 } from "@/crawl/adapters/custom/routing";
 export { extractListingCards, artifactsSufficientForStatic } from "@/crawl/adapters/custom/extractCards";
