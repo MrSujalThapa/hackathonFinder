@@ -60,6 +60,7 @@ import {
 import type { IncomingCandidateWrite } from "@/discovery/persistence/persistencePlan";
 import {
   createPersistenceStrategy,
+  formatPersistenceSummary,
   selectPersistenceStrategyFromEnv,
 } from "@/discovery/persistence/strategies";
 
@@ -881,9 +882,7 @@ export async function executeDiscoveryPipeline(
     assertNotCancelled(options.cancellationSignal);
     await emitter.emit(
       "persistence_started",
-      `[persistence] Strategy: ${
-        persistenceStrategy.name === "batch" ? "batch (experimental)" : "v1"
-      }`,
+      `[persistence] Strategy: ${persistenceStrategy.name}`,
     );
     if (dryRun) {
       await emitter.emit("persistence_started", "Dry-run persistence…");
@@ -928,6 +927,7 @@ export async function executeDiscoveryPipeline(
     summary.storageFailures += persistenceResult.storageFailures;
     summary.warnings.push(...persistenceResult.warnings);
     summary.errors.push(...persistenceResult.errors);
+    await emitter.emit("persistence_started", formatPersistenceSummary(persistenceResult));
     if (persistenceResult.strategy === "batch" && persistenceResult.postWriteParity) {
       await emitter.emit(
         "persistence_started",
