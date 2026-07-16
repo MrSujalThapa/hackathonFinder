@@ -7,7 +7,7 @@ import {
   evidenceExistenceDeltas,
   parseArgs,
   verifyPlanSafety,
-} from "../../../scripts/persistence/batchPersistenceBenchmark";
+} from "./batchPersistenceBenchmark";
 
 const BENCHMARK_BRANCH = "experiment/phase-3a-2-live-batch-benchmark";
 
