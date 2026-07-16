@@ -1,70 +1,41 @@
-import type { DiscoverySourceId, RawLead } from "@/core/discovery/types";
-import { emptyCollectorResult, type CollectorResult } from "@/collectors/types";
+import type { CollectorResult } from "@/collectors/types";
 import { collectCustomSource } from "@/collectors/customSource";
-import { inferDiscoveryBudget } from "@/experiments/scraper-v2/generic/budget";
-import type {
-  GenericShadowLead,
-  GenericStructuredExtractionResult,
-  SourceExperiment,
-} from "@/experiments/scraper-v2/generic/types";
-import { hasLlmConfig } from "@/config/env";
+import {
+  collectCustomSourceViaKernel,
+  genericLeadToRawLead,
+  isBlockedCustomSourceUrl,
+  isCustomSourceRollbackV1,
+  originVariants,
+  readCustomSourceRuntimeMode,
+  type CustomSourceRuntimeMode,
+} from "@/crawl/adapters/custom";
 import type { CustomSource } from "@/server/customSources/types";
-import { slugify, uniqueUrls } from "@/lib/http/url";
 
-async function loadGenericStructuredExtraction() {
-  // Dynamic import keeps Crawlee/Puppeteer out of the default Next.js server graph
-  // when GENERIC_SCRAPER_V2_MODE=off.
-  const mod = await import("@/experiments/scraper-v2/generic/structuredExtraction");
-  return mod.runGenericStructuredExtraction;
-}
+/** @deprecated Use CustomSourceRuntimeMode — kept for Phase 6.1 test compatibility. */
+export type GenericScraperV2Mode = "off" | "shadow" | "live" | "rollback_v1";
 
-/** Match Phase 5.6 harness: allow www and apex origins for safe pagination/actions. */
-export function originVariants(origin: string): string[] {
-  try {
-    const parsed = new URL(origin);
-    const host = parsed.hostname;
-    const variants = new Set([parsed.origin]);
-    if (host.startsWith("www.")) {
-      variants.add(
-        `${parsed.protocol}//${host.slice(4)}${parsed.port ? `:${parsed.port}` : ""}`,
-      );
-    } else if (host.includes(".")) {
-      variants.add(
-        `${parsed.protocol}//www.${host}${parsed.port ? `:${parsed.port}` : ""}`,
-      );
-    }
-    return [...variants];
-  } catch {
-    return [origin];
-  }
-}
+export {
+  genericLeadToRawLead,
+  isBlockedCustomSourceUrl,
+  originVariants,
+  readCustomSourceRuntimeMode,
+};
 
-export type GenericScraperV2Mode = "off" | "shadow" | "live";
-
-const BLOCKED_HOSTS = [/dorahacks\.io$/i];
-
+/**
+ * Legacy reader: maps GENERIC_SCRAPER_V2_MODE onto B2 runtime modes.
+ * Invalid/missing/off/live → kernel. shadow → shadow. rollback_v1 → V1.
+ * `off` no longer means permanent weak V1.
+ */
 export function readGenericScraperV2Mode(
   env?: { GENERIC_SCRAPER_V2_MODE?: string | undefined },
 ): GenericScraperV2Mode {
-  // When a caller supplies an env object, do not fall back to process.env.
-  const source = env ?? process.env;
-  const raw = String(source["GENERIC_SCRAPER_V2_MODE"] ?? "off")
-    .trim()
-    .toLowerCase();
-  if (raw === "shadow" || raw === "live" || raw === "off") return raw;
-  return "off";
+  const mode = readCustomSourceRuntimeMode(env);
+  if (mode === "shadow") return "shadow";
+  if (mode === "rollback_v1") return "rollback_v1";
+  return "live"; // kernel path; "off" historically meant V1 — now kernel
 }
 
-export function isBlockedCustomSourceUrl(url: string): boolean {
-  try {
-    const host = new URL(url).hostname.replace(/^www\./i, "");
-    return BLOCKED_HOSTS.some((pattern) => pattern.test(host));
-  } catch {
-    return false;
-  }
-}
-
-export function customSourceToExperiment(source: CustomSource): SourceExperiment {
+export function customSourceToExperiment(source: CustomSource) {
   let origin = source.listingUrl;
   try {
     origin = new URL(source.listingUrl).origin;
@@ -76,246 +47,110 @@ export function customSourceToExperiment(source: CustomSource): SourceExperiment
     inputUrl: source.listingUrl,
     allowedOrigins: originVariants(origin),
     maxRequests: Math.max(8, Math.min(40, source.maxItems)),
-    // Parity with Phase 5.6 harness for directory coverage (≈3 pages / Next actions).
     maxPages: isHackathonsSpace
       ? 3
       : Math.max(3, Math.min(20, Math.ceil(source.maxItems / 10))),
     maxBrowserActions: isHackathonsSpace ? 3 : 8,
     maxPayloadBytes: 5_000_000,
     browserAllowed: source.mode !== "static",
-    expectedContentCategory: "public_event_directory",
+    expectedContentCategory: "public_event_directory" as const,
     expectedMinimumEventCount: isHackathonsSpace ? 20 : undefined,
   };
 }
 
-export function genericLeadToRawLead(
+async function runShadowComparison(
   source: CustomSource,
-  lead: GenericShadowLead,
-): RawLead {
-  const sourceId = `custom:${source.slug}` as const;
-  const url = lead.canonicalUrl ?? lead.sourceUrl;
-  const key = slugify(`${source.slug}-${lead.sourceRecordId ?? lead.title}-${url}`);
-  return {
-    id: `custom-${source.slug}-${key}`,
-    source: sourceId,
-    title: lead.title,
-    url,
-    text: lead.description ?? lead.title,
-    links: uniqueUrls([url, source.listingUrl], source.listingUrl),
-    postedAt: new Date().toISOString(),
-    metadata: {
-      attribution: sourceId,
-      provenance: "custom_site_v2",
-      discoveryMode: "generic_scraper_v2",
-      listingUrl: source.listingUrl,
-      officialUrl: url,
-      applyUrl: url,
-      startDate: lead.startDate,
-      endDate: lead.endDate,
-      applicationDeadline: lead.deadline,
-      location: lead.location,
-      format: lead.mode,
-      genericV2Status: lead.normalizedStatus,
-      genericV2Confidence: lead.confidence,
-      sourceIds: { [sourceId]: key },
-    },
-  };
-}
-
-function customSourceId(source: CustomSource): DiscoverySourceId {
-  return `custom:${source.slug}` as DiscoverySourceId;
-}
-
-function blockedResult(source: CustomSource, startedAt: number): CollectorResult {
-  const result = emptyCollectorResult(customSourceId(source), startedAt);
-  result.status = "failed";
-  result.warnings.push("blocked_human_verification");
-  result.errors.push(
-    "Source blocked by human verification / WAF. No bypass attempted.",
-  );
-  result.diagnostics = {
-    discovered: 0,
-    returned: 0,
-    enriched: 0,
-    partial: 0,
-    dropped: 0,
-    stopReason: "blocked_human_verification",
-    safeMessage: "blocked_human_verification",
-  };
-  return result;
-}
-
-function shadowMetrics(
-  extraction: GenericStructuredExtractionResult,
-): Record<string, number> {
-  return {
-    v2Discovered: extraction.quality.discoveredRecords,
-    v2Normalized: extraction.quality.normalizedLeads,
-    v2Valid: extraction.quality.validEventLeads,
-    v2Pages: extraction.pagination.pageCount,
-  };
+  kernelResult: CollectorResult,
+  options: {
+    timeoutMs?: number;
+    logger?: (message: string) => void;
+  },
+): Promise<CollectorResult> {
+  // Shadow-only: dynamic import keeps experiment runtime out of the normal graph.
+  try {
+    const { inferDiscoveryBudget } = await import("@/experiments/scraper-v2/generic/budget");
+    const { runGenericStructuredExtraction } = await import(
+      "@/experiments/scraper-v2/generic/structuredExtraction"
+    );
+    const experiment = customSourceToExperiment(source);
+    const budget = inferDiscoveryBudget({
+      query: "standard public hackathon directory coverage",
+    });
+    const extraction = await runGenericStructuredExtraction(experiment, { budget });
+    options.logger?.(
+      `[custom:${source.slug}] shadow experiment valid=${extraction.quality.validEventLeads} writes=0`,
+    );
+    kernelResult.warnings.push(
+      "custom_runtime=shadow",
+      "custom_shadow_writes=0",
+      `shadow_classification=${extraction.quality.classification}`,
+      `shadow_valid=${extraction.quality.validEventLeads}`,
+    );
+    kernelResult.metrics = {
+      ...(kernelResult.metrics ?? {}),
+      shadowValid: extraction.quality.validEventLeads,
+      shadowWrites: 0,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "shadow failed";
+    kernelResult.warnings.push(`custom_shadow_error=${message}`, "custom_shadow_writes=0");
+  }
+  return kernelResult;
 }
 
 /**
- * Collect a configured custom source through production V1 and/or guarded Generic V2.
- * - off: existing custom collector only
- * - shadow: run V2 for metrics, write nothing from V2
- * - live: prefer validated V2 leads in the normal pipeline
+ * Collect a configured custom source.
+ * B2 default: shared DirectoryCrawlKernel via custom directory adapter.
+ * Emergency V1 only when CUSTOM_SOURCE_ROLLBACK_V1 / mode=rollback_v1.
+ * Shadow never writes comparison leads.
  */
 export async function collectCustomSourceWithV2Routing(
   source: CustomSource,
   options: {
-    mode?: GenericScraperV2Mode;
+    mode?: CustomSourceRuntimeMode | GenericScraperV2Mode;
     timeoutMs?: number;
     logger?: (message: string) => void;
     persistHealth?: boolean;
   } = {},
 ): Promise<CollectorResult> {
-  const startedAt = Date.now();
-  const mode = options.mode ?? readGenericScraperV2Mode();
-  const customId = customSourceId(source);
+  const mode: CustomSourceRuntimeMode = (() => {
+    if (options.mode === "rollback_v1" || options.mode === "off") {
+      // Explicit "off" in options was historical V1; B2 treats bare off as kernel
+      // unless rollback flag is set. Prefer explicit rollback.
+      if (options.mode === "rollback_v1") return "rollback_v1";
+      return readCustomSourceRuntimeMode();
+    }
+    if (options.mode === "shadow") return "shadow";
+    if (options.mode === "live" || options.mode === "kernel") return "kernel";
+    return readCustomSourceRuntimeMode();
+  })();
 
   if (isBlockedCustomSourceUrl(source.listingUrl)) {
-    options.logger?.(
-      `[${customId}] blocked_human_verification — stopping without bypass`,
-    );
-    return blockedResult(source, startedAt);
+    return collectCustomSourceViaKernel(source, options);
   }
 
-  if (mode === "off") {
-    return collectCustomSource(source, {
-      timeoutMs: options.timeoutMs,
-      logger: options.logger,
-      persistHealth: options.persistHealth,
-    });
-  }
-
-  options.logger?.(`[${customId}] Generic V2 mode=${mode}`);
-  if (!hasLlmConfig()) {
+  if (mode === "rollback_v1" || isCustomSourceRollbackV1()) {
     options.logger?.(
-      `[${customId}] LLM not configured (LLM_PROVIDER/LLM_API_KEY) — V2 AI assist unavailable`,
+      `[custom:${source.slug}] EMERGENCY rollback_v1 — logged; soak gate ≤14 days / B4 delete`,
     );
-  }
-  const experiment = customSourceToExperiment(source);
-  const budget = inferDiscoveryBudget({
-    query: "standard public hackathon directory coverage",
-  });
-  let extraction: GenericStructuredExtractionResult | undefined;
-  try {
-    const runGenericStructuredExtraction = await loadGenericStructuredExtraction();
-    extraction = await runGenericStructuredExtraction(experiment, { budget });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Generic V2 failed";
-    options.logger?.(`[${customId}] Generic V2 error: ${message}`);
-    if (mode === "live") {
-      options.logger?.(`[${customId}] Falling back to production custom collector`);
-      return collectCustomSource(source, {
-        timeoutMs: options.timeoutMs,
-        logger: options.logger,
-        persistHealth: options.persistHealth,
-      });
-    }
-    const shadow = emptyCollectorResult(customId, startedAt);
-    shadow.status = "degraded";
-    shadow.warnings.push(`generic_v2_shadow_error=${message}`);
-    // Shadow never writes V2 leads.
     const v1 = await collectCustomSource(source, {
       timeoutMs: options.timeoutMs,
       logger: options.logger,
       persistHealth: options.persistHealth,
     });
-    v1.warnings.push(...shadow.warnings, "generic_v2_mode=shadow", "generic_v2_writes=0");
+    v1.warnings.push(
+      "custom_runtime=rollback_v1",
+      "custom_rollback_logged=1",
+      "custom_rollback_gate=B4",
+    );
     return v1;
   }
 
-  if (extraction.quality.classification === "blocked_human_verification") {
-    options.logger?.(
-      `[${customId}] blocked_human_verification — stopping without bypass`,
-    );
-    return blockedResult(source, startedAt);
-  }
-
-  const v2Leads = extraction.leads.map((lead) => genericLeadToRawLead(source, lead));
-  options.logger?.(
-    `[${customId}] V2 ${extraction.quality.validEventLeads}/${extraction.quality.normalizedLeads} valid/normalized; class=${extraction.quality.classification}`,
-  );
+  const kernel = await collectCustomSourceViaKernel(source, options);
 
   if (mode === "shadow") {
-    const v1 = await collectCustomSource(source, {
-      timeoutMs: options.timeoutMs,
-      logger: options.logger,
-      persistHealth: options.persistHealth,
-    });
-    v1.warnings.push(
-      "generic_v2_mode=shadow",
-      "generic_v2_writes=0",
-      `generic_v2_classification=${extraction.quality.classification}`,
-      `generic_v2_valid=${extraction.quality.validEventLeads}`,
-      `generic_v2_pages=${extraction.pagination.pageCount}`,
-    );
-    v1.metrics = {
-      ...(v1.metrics ?? {}),
-      ...shadowMetrics(extraction),
-      genericV2Writes: 0,
-    };
-    return v1;
+    return runShadowComparison(source, kernel, options);
   }
 
-  // live mode — feed V2 leads through the normal pipeline path
-  const result = emptyCollectorResult(customId, startedAt);
-  const usable =
-    extraction.quality.classification === "healthy_complete" ||
-    extraction.quality.classification === "healthy_bounded" ||
-    extraction.quality.classification === "usable_partial" ||
-    extraction.quality.classification === "degraded_under_extraction";
-
-  if (!usable || v2Leads.length === 0) {
-    options.logger?.(
-      `[${customId}] V2 not live-usable (${extraction.quality.classification}); using production collector`,
-    );
-    const v1 = await collectCustomSource(source, {
-      timeoutMs: options.timeoutMs,
-      logger: options.logger,
-      persistHealth: options.persistHealth,
-    });
-    v1.warnings.push(
-      "generic_v2_mode=live",
-      `generic_v2_classification=${extraction.quality.classification}`,
-      "generic_v2_fallback=production",
-    );
-    return v1;
-  }
-
-  result.leads = v2Leads.slice(0, source.maxItems);
-  result.status =
-    extraction.quality.classification.startsWith("degraded") ||
-    extraction.quality.classification === "usable_partial"
-      ? "degraded"
-      : "completed";
-  result.warnings.push(
-    "generic_v2_mode=live",
-    `generic_v2_classification=${extraction.quality.classification}`,
-  );
-  if (/eventornado/i.test(source.listingUrl)) {
-    result.warnings.push(
-      "eventornado_coverage=partial — dynamic coverage not fully proven",
-    );
-  }
-  result.diagnostics = {
-    discovered: extraction.quality.discoveredRecords,
-    returned: result.leads.length,
-    enriched: 0,
-    partial: Math.max(0, extraction.quality.normalizedLeads - extraction.quality.validEventLeads),
-    dropped: Math.max(0, extraction.quality.discoveredRecords - result.leads.length),
-    pagesTraversed: extraction.pagination.pageCount,
-    extractionStrategy: "generic_scraper_v2",
-    stopReason: extraction.pagination.stopReason,
-    safeMessage: extraction.quality.classification,
-  };
-  result.metrics = {
-    ...shadowMetrics(extraction),
-    genericV2Writes: result.leads.length,
-  };
-  result.durationMs = Date.now() - startedAt;
-  return result;
+  return kernel;
 }

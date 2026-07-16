@@ -8,7 +8,7 @@ import {
   readGenericScraperV2Mode,
 } from "@/discovery/genericScraperV2Mode";
 import type { CustomSource } from "@/server/customSources/types";
-import type { GenericShadowLead } from "@/experiments/scraper-v2/generic/types";
+import type { GenericShadowLead } from "@/crawl/adapters/custom/generic/types";
 
 function customSource(overrides: Partial<CustomSource> = {}): CustomSource {
   return {
@@ -32,12 +32,13 @@ function customSource(overrides: Partial<CustomSource> = {}): CustomSource {
   };
 }
 
-describe("generic scraper v2 routing guards", () => {
-  it("defaults GENERIC_SCRAPER_V2_MODE to off", () => {
-    assert.equal(readGenericScraperV2Mode({}), "off");
+describe("generic scraper v2 routing guards (B2)", () => {
+  it("maps GENERIC_SCRAPER_V2_MODE off/live/invalid to kernel (live label)", () => {
+    assert.equal(readGenericScraperV2Mode({}), "live");
     assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "shadow" }), "shadow");
     assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "live" }), "live");
-    assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "weird" }), "off");
+    assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "off" }), "live");
+    assert.equal(readGenericScraperV2Mode({ GENERIC_SCRAPER_V2_MODE: "weird" }), "live");
   });
 
   it("blocks DoraHacks without bypass", () => {
@@ -70,7 +71,7 @@ describe("generic scraper v2 routing guards", () => {
     assert.ok(eventornado.allowedOrigins.includes("https://www.eventornado.com"));
   });
 
-  it("maps V2 leads onto the normal RawLead pipeline shape", () => {
+  it("maps kernel leads onto the normal RawLead pipeline shape", () => {
     const lead: GenericShadowLead = {
       sourceUrl: "https://www.hackathons.space/",
       artifactKind: "html",
@@ -87,8 +88,8 @@ describe("generic scraper v2 routing guards", () => {
     };
     const raw = genericLeadToRawLead(customSource(), lead);
     assert.equal(raw.source, "custom:hackathons-space");
-    assert.equal(raw.metadata?.provenance, "custom_site_v2");
-    assert.equal(raw.metadata?.discoveryMode, "generic_scraper_v2");
+    assert.equal(raw.metadata?.provenance, "custom_site_kernel");
+    assert.equal(raw.metadata?.discoveryMode, "custom_directory_kernel");
     assert.equal(raw.url, "https://www.hackathons.space/events/space-ai");
   });
 });
