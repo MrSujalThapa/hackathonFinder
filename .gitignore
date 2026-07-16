@@ -54,3 +54,6 @@ yarn-error.log*
 /hacklist_sample.html
 /git
 /main
+
+# Local probe/audit traces (not production fixtures; do not commit phase snapshots)
+.local-audits/
