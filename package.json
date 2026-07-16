@@ -35,6 +35,7 @@
     "check:all": "npm run check && npm test && npm run check:supabase && npm run check:sheets && npm run check:llm && npm run check:prod",
     "env:check": "tsx scripts/check-env.ts",
     "secrets:scan": "tsx scripts/scan-secrets.ts",
+    "release:terminal-validate": "tsx scripts/release-terminal-validation.ts",
     "check:supabase": "tsx scripts/check-supabase.ts",
     "check:x": "tsx scripts/check-x-mcp.ts",
     "check:llm": "tsx scripts/check-llm.ts",

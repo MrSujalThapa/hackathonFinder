@@ -9,6 +9,7 @@
 | [`PRIVACY.md`](PRIVACY.md) | Data handling |
 | [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md) | Live demo flow |
 | [`DEMO_CHECKLIST.md`](DEMO_CHECKLIST.md) | Pre/during/after demo |
+| [`RELEASE_TERMINAL_VALIDATION.md`](RELEASE_TERMINAL_VALIDATION.md) | Authenticated Terminal release checks |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Hosting notes |
 | [`discovery/FINAL_ARCHITECTURE.md`](discovery/FINAL_ARCHITECTURE.md) | **Canonical** discovery architecture |
 | [`discovery/OPERATIONS_RUNBOOK.md`](discovery/OPERATIONS_RUNBOOK.md) | Ops / emergency flags |
