@@ -143,7 +143,7 @@ function assertMockWritesAllowed(
   if (!preferences.sources.includes("mock")) return;
 
   const env = getServerEnv();
-  if (env.USE_MOCK_CANDIDATES) return;
+  if (env.USE_MOCK_CANDIDATES || env.DEMO_MODE) return;
 
   throw new Error(MOCK_WRITE_REFUSED_MESSAGE);
 }
@@ -254,7 +254,16 @@ export async function executeDiscoveryPipeline(
   const startedAt = Date.now();
   const runId = options.runId ?? randomUUID();
   const emitter = createEventEmitter(runId, options.eventSink);
+  const demoMode = getServerEnv().DEMO_MODE === true;
+  if (demoMode && !dryRun) {
+    dryRun = true;
+  }
   const summary = emptySummary(preferences.rawCommand, preferences, dryRun);
+  if (demoMode) {
+    summary.warnings.push(
+      "DEMO_MODE=true forces dry-run persistence (no Supabase candidate writes).",
+    );
+  }
   const customSourceIds = (options.customSources ?? []).map(
     (source) => `custom:${source.slug}` as const,
   );

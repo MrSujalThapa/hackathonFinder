@@ -1,4 +1,4 @@
-import { getServerEnv } from "@/config/env";
+import { getServerEnv, isDemoMode, isFixtureCandidatesMode } from "@/config/env";
 import type {
   AddActionInput,
   AddCandidateAnswerInput,
@@ -54,17 +54,25 @@ export function setCandidateRepositoryForTests(
 
 export function isMockCandidatesEnabled(): boolean {
   const env = getServerEnv();
-  if (!env.USE_MOCK_CANDIDATES) {
+  if (!isFixtureCandidatesMode(env)) {
     return false;
+  }
+  if (isDemoMode(env)) {
+    return true;
   }
   const previewMockAllowed =
     env.VERCEL_ENV === "preview" && env.ALLOW_MOCK_CANDIDATES_IN_PREVIEW;
   if (env.NODE_ENV === "production" && !previewMockAllowed) {
     throw new Error(
-      "USE_MOCK_CANDIDATES=true is not allowed in production. Configure a reachable Supabase project instead.",
+      "USE_MOCK_CANDIDATES=true is not allowed in production. Use DEMO_MODE=true for a dedicated demo server, or configure Supabase.",
     );
   }
   return true;
+}
+
+/** Demo / mock fixture store — never writes to Supabase or Google Sheets. */
+export function isDemoOrMockCandidatesEnabled(): boolean {
+  return isMockCandidatesEnabled();
 }
 
 export function getCandidateRepository(): CandidateRepository {
