@@ -13,7 +13,7 @@ import {
 } from "@/discovery/genericScraperV2Mode";
 import type { CustomSource } from "@/server/customSources/types";
 
-describe("custom routing B4 kernel-only", () => {
+describe("custom routing kernel-only production path", () => {
   it("always resolves to kernel regardless of obsolete flags", () => {
     assert.equal(readCustomSourceRuntimeMode({}), "kernel");
     assert.equal(readCustomSourceRuntimeMode({ GENERIC_SCRAPER_V2_MODE: "off" }), "kernel");
