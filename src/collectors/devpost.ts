@@ -22,6 +22,7 @@ import {
   withPlaywright,
 } from "@/lib/browser/playwright";
 import { collectUntilStable } from "@/crawl";
+import { collectDevpostViaKernel } from "@/crawl/adapters/devpost";
 import { normalizeUrl, normalizeUrlForDedupe, slugify, uniqueUrls } from "@/lib/http/url";
 
 const DEVPOST_BASE = "https://devpost.com";
@@ -30,7 +31,6 @@ const DEVPOST_MAX_SCROLLS_PER_PAGE = 6;
 const DEVPOST_SCROLL_NO_GROWTH_LIMIT = 2;
 const DEVPOST_SCROLL_WAIT_MS = 800;
 const DEVPOST_PAGE_TIMEOUT_MS = 12_000;
-const DEVPOST_PAGE_CONCURRENCY = 3;
 const DEVPOST_DETAIL_TIMEOUT_MS = 7_000;
 const DEVPOST_DETAIL_CONCURRENCY = 3;
 
@@ -810,7 +810,7 @@ export function parseDevpostApiPayload(
   return leads;
 }
 
-async function fetchDevpostApiPage(
+export async function fetchDevpostApiPage(
   pageNumber: number,
   maxResults: number,
   timeoutMs: number,
@@ -1104,196 +1104,71 @@ async function collectDevpostApiPages(
   listingDurationMs: number;
   targetReached: boolean;
 }> {
-  const targetCards = Math.max(1, options?.targetCards ?? maxResults);
-  const stopAtTarget = Boolean(options?.stopAtTarget);
-  const collectLimit = stopAtTarget ? Math.min(targetCards, maxResults) : maxResults;
-  const startedAt = Date.now();
-  const pages: DevpostApiPageResult[] = [];
-  const leads: RawLead[] = [];
-  const seenUrls = new Set<string>();
-  const seenFingerprints = new Map<string, number>();
-  const statusCounts: Record<string, number> = {
-    open: 0,
-    upcoming: 0,
-    ended: 0,
-    unknown: 0,
-  };
-  let duplicateUrls = 0;
-  let repeatedPages = 0;
-  let stopReason = "no_next_page";
-  let metaTotalCount: number | null = null;
-
-  const mergePage = (page: DevpostApiPageResult) => {
-    pages.push(page);
-    if (typeof page.metaTotalCount === "number") metaTotalCount = page.metaTotalCount;
-    if (page.fingerprint) {
-      const prior = seenFingerprints.get(page.fingerprint);
-      if (prior != null) {
-        repeatedPages += 1;
-        logger?.(`Page ${page.requestedPage} repeated page ${prior}`);
-        page.status = "degraded";
-        page.stopReason = "repeated_fingerprint";
-      } else {
-        seenFingerprints.set(page.fingerprint, page.requestedPage);
-      }
-    }
-
-    let added = 0;
-    let duplicateExisting = 0;
-    for (const lead of page.leads) {
-      if (leads.length >= collectLimit) break;
-      const key = lead.url ? normalizeUrlForDedupe(lead.url) : lead.id;
-      if (seenUrls.has(key)) {
-        duplicateUrls += 1;
-        duplicateExisting += 1;
-        continue;
-      }
-      seenUrls.add(key);
-      leads.push(lead);
-      const bucket = classifyDevpostOpenState(
-        typeof lead.metadata?.status === "string" ? lead.metadata.status : undefined,
+  const result = await collectDevpostViaKernel({
+    maxResults,
+    maxPages,
+    timeoutMs,
+    scope: scope === "open_upcoming_api_subset" ? "open_upcoming_api_subset" : "full_directory_api",
+    targetCards: options?.targetCards,
+    stopAtTarget: options?.stopAtTarget,
+    fetchPage: async (pageNumber, pageMaxResults, pageTimeoutMs, pageScope) => {
+      const page = await fetchDevpostApiPage(
+        pageNumber,
+        pageMaxResults,
+        Math.min(pageTimeoutMs, DEVPOST_PAGE_TIMEOUT_MS),
+        pageScope,
       );
-      statusCounts[bucket] = (statusCounts[bucket] ?? 0) + 1;
-      added += 1;
-    }
-    const capped = Math.max(0, page.leads.length - added - duplicateExisting);
-    logger?.(
-      `Page ${page.requestedPage}: ${page.cardCount} cards - ${added} new${duplicateExisting ? ` - ${duplicateExisting} duplicate` : ""}${capped ? ` - ${capped} capped` : ""}`,
-    );
-    logger?.(
-      `Page ${page.requestedPage} URL: requested ${page.requestedUrl}; final ${page.finalUrl}`,
-    );
-    if (page.firstUrls.length > 0) {
-      logger?.(
-        `Page ${page.requestedPage} fingerprint: first ${page.firstUrls[0]} last ${page.lastUrls.at(-1)}`,
-      );
-    }
-  };
+      return {
+        requestedPage: page.requestedPage,
+        requestedUrl: page.requestedUrl,
+        finalUrl: page.finalUrl,
+        leads: page.leads,
+        cardCount: page.cardCount,
+        fingerprint: page.fingerprint,
+        firstUrls: page.firstUrls,
+        lastUrls: page.lastUrls,
+        hasNext: page.hasNext,
+        nextPage: page.nextPage,
+        status: page.status,
+        stopReason: page.stopReason,
+        error: page.error,
+        metaTotalCount: page.metaTotalCount,
+      };
+    },
+    classifyOpenState: classifyDevpostOpenState,
+    buildApiUrl: buildDevpostApiUrl,
+    stopEvidence: stopEvidenceForDevpost,
+    logger,
+  });
 
-  logger?.(
-    scope === "open_upcoming_api_subset"
-      ? "Fetching open+upcoming API subset page 1..."
-      : "Fetching full-directory API page 1 (unfiltered /api/hackathons)...",
-  );
-  const cardStopReason = (): string =>
-    stopAtTarget && leads.length >= targetCards && leads.length < maxResults
-      ? "target_reached"
-      : "maximum_cards_reached";
-
-  const first = await fetchDevpostApiPage(
-    1,
-    collectLimit,
-    Math.min(timeoutMs, DEVPOST_PAGE_TIMEOUT_MS),
-    scope,
-  );
-  mergePage(first);
-  if (first.status === "failed") {
-    return {
-      leads,
-      pages,
-      duplicateUrls,
-      repeatedPages,
-      stopReason: "api_page_failed",
-      stopEvidence: stopEvidenceForDevpost("api_page_failed", metaTotalCount, targetCards),
-      acquisitionScope: scope,
-      metaTotalCount,
-      statusCounts,
-      listingDurationMs: Date.now() - startedAt,
-      targetReached: leads.length >= targetCards,
-    };
-  }
-
-  let nextPage = first.nextPage;
-  if (leads.length >= collectLimit) {
-    stopReason = cardStopReason();
-    nextPage = undefined;
-  }
-  while (nextPage && leads.length < collectLimit && nextPage <= maxPages) {
-    if (Date.now() - startedAt > timeoutMs) {
-      stopReason = "timeout";
-      break;
-    }
-    const batchPages = Array.from(
-      { length: Math.min(DEVPOST_PAGE_CONCURRENCY, maxPages - nextPage + 1) },
-      (_value, index) => nextPage! + index,
-    );
-    logger?.(`Fetching pages ${batchPages[0]}-${batchPages.at(-1)} concurrently`);
-    const remaining = Math.max(1_000, timeoutMs - (Date.now() - startedAt));
-    const batch = await Promise.allSettled(
-      batchPages.map((pageNumber) =>
-        fetchDevpostApiPage(
-          pageNumber,
-          collectLimit,
-          Math.min(remaining, DEVPOST_PAGE_TIMEOUT_MS),
-          scope,
-        ),
-      ),
-    );
-    const results = batch
-      .map((item, index): DevpostApiPageResult => {
-        if (item.status === "fulfilled") return item.value;
-        const pageNumber = batchPages[index]!;
-        return {
-          requestedPage: pageNumber,
-          requestedUrl: buildDevpostApiUrl(pageNumber, scope),
-          finalUrl: buildDevpostApiUrl(pageNumber, scope),
-          activePage: pageNumber,
-          leads: [],
-          cardCount: 0,
-          fingerprint: "",
-          firstUrls: [],
-          lastUrls: [],
-          hasNext: false,
-          status: "failed",
-          stopReason: "api_error",
-          error: item.reason instanceof Error ? item.reason.message : "Devpost API page failed",
-        };
-      })
-      .sort((a, b) => a.requestedPage - b.requestedPage);
-
-    let batchHadNext = false;
-    let batchAdded = 0;
-    for (const page of results) {
-      const before = leads.length;
-      mergePage(page);
-      batchAdded += leads.length - before;
-      if (page.hasNext) batchHadNext = true;
-      if (leads.length >= collectLimit) {
-        stopReason = cardStopReason();
-        break;
-      }
-    }
-    if (repeatedPages > 0) {
-      stopReason = "repeated_fingerprint";
-      break;
-    }
-    if (batchAdded === 0) {
-      stopReason = "no_additional_cards";
-      break;
-    }
-    if (!batchHadNext) {
-      stopReason = "no_next_page";
-      break;
-    }
-    nextPage = batchPages.at(-1)! + 1;
-  }
-
-  if (leads.length >= collectLimit) stopReason = cardStopReason();
-  if (nextPage && nextPage > maxPages && leads.length < collectLimit) {
-    stopReason = "maximum_pages_reached";
-  }
   return {
-    leads,
-    pages,
-    duplicateUrls,
-    repeatedPages,
-    stopReason,
-    stopEvidence: stopEvidenceForDevpost(stopReason, metaTotalCount, targetCards),
-    acquisitionScope: scope,
-    metaTotalCount,
-    statusCounts,
-    listingDurationMs: Date.now() - startedAt,
-    targetReached: leads.length >= targetCards,
+    leads: result.leads,
+    pages: result.pages.map((page) => ({
+      requestedPage: page.requestedPage,
+      requestedUrl: page.requestedUrl,
+      finalUrl: page.finalUrl,
+      activePage: page.requestedPage,
+      leads: page.leads,
+      cardCount: page.cardCount,
+      fingerprint: page.fingerprint,
+      firstUrls: page.firstUrls,
+      lastUrls: page.lastUrls,
+      hasNext: page.hasNext,
+      nextPage: page.nextPage,
+      status: page.status,
+      stopReason: page.stopReason,
+      error: page.error,
+      metaTotalCount: page.metaTotalCount,
+    })),
+    duplicateUrls: result.duplicateUrls,
+    repeatedPages: result.repeatedPages,
+    stopReason: result.stopReason,
+    stopEvidence: result.stopEvidence,
+    acquisitionScope: result.acquisitionScope,
+    metaTotalCount: result.metaTotalCount,
+    statusCounts: result.statusCounts,
+    listingDurationMs: result.listingDurationMs,
+    targetReached: result.targetReached,
   };
 }
 
