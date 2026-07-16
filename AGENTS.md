@@ -32,6 +32,7 @@ Preserve this workflow unless the task explicitly requires architectural changes
 - Commit after each meaningful, independently valid step.
 - Stop and report when the requested scope is complete.
 - Tests protect current production contracts, not historical implementation phases. Do not add phase-snapshot suites or import archived/removed experiment runtimes.
+- Canonical discovery architecture: `docs/discovery/FINAL_ARCHITECTURE.md`. Ops: `docs/discovery/OPERATIONS_RUNBOOK.md`. Do not reintroduce selectable custom V1 or per-row persistence routes.
 
 ---
 

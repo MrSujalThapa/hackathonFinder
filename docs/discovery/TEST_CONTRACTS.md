@@ -13,6 +13,8 @@ Tests protect **current production contracts**, not historical implementation ph
 | `npm run test:persistence-benchmark-guards` | Audit-tool guards for `scripts/persistence/` (not default CI) |
 | `npm run test:live:sources` | Prints live probe commands only |
 
+Canonical architecture: [`FINAL_ARCHITECTURE.md`](./FINAL_ARCHITECTURE.md). Ops: [`OPERATIONS_RUNBOOK.md`](./OPERATIONS_RUNBOOK.md).
+
 ## Deterministic policy
 
 Default suites must not depend on:
