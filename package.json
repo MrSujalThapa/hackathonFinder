@@ -35,7 +35,7 @@
     "source:disconnect": "tsx scripts/source-browser.ts disconnect",
     "check:sources": "tsx scripts/check-sources.ts",
     "check:source": "tsx scripts/check-source.ts",
-    "experiment:batch-persistence": "tsx src/experiments/batchPersistenceBenchmark.ts"
+    "experiment:batch-persistence": "tsx scripts/persistence/batchPersistenceBenchmark.ts"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
