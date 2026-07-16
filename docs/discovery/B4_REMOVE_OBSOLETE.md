@@ -45,9 +45,11 @@ native source
 
 ## Custom V1 soak blocker
 
-Gate required: ≤14 days soak **or** 3 controlled live custom runs across ≥3 days after B2 cutover (`2026-07-16`).
+Gate required: ≤14 days soak **or** 3 controlled live custom runs across ≥3 days after B2 cutover (`2026-07-16`, commit `578e332`).
 
 As of B4 (`2026-07-16`): calendar soak not met; only same-day controlled runs exist (B2/B3/B4 probes).
+
+As of C4 (`2026-07-16`): still day 0 of calendar soak; distinct-day run count still 1. **File deletion deferred** to calendar **2026-07-30** or multi-day controlled evidence. See `C4_FINAL_SOAK_REPORT.md`.
 
 Therefore:
 

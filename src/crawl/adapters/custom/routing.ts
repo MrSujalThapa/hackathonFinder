@@ -76,4 +76,6 @@ export function isCustomSourceRollbackV1(
 }
 
 export const CUSTOM_V1_SOAK_BLOCKER =
-  "Custom V1 file deletion awaits ≤14-day soak or 3 controlled live custom runs across ≥3 days after B2 kernel cutover (2026-07-16). V1 is unreachable from production routing.";
+  "Custom V1 file deletion awaits soak after B2 kernel cutover 2026-07-16 (commit 578e332): " +
+  "calendar gate 2026-07-30 (14 days) OR 3 controlled live custom runs across ≥3 distinct days " +
+  "with no severity-1 regression. V1 remains unreachable from production routing (B4).";

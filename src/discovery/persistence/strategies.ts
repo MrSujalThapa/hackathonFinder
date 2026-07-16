@@ -108,8 +108,9 @@ function emptyTiming(
 /** C4 deletion gate for the legacy per-row writer (distinct from custom-source V1 soak). */
 export const PERSISTENCE_V1_SOAK_BLOCKER =
   "Legacy per-row persistence remains on disk but is unreachable in normal production. " +
-  "Deletion requires C1 idempotency A–E, controlled integration, no owner/Sheets regressions, " +
-  "and explicit C4 approval. Emergency only: PERSISTENCE_ROLLBACK_V1=1 (dev/test).";
+  "Deletion requires C1 cutover soak after 2026-07-16 (commit c307a2c): calendar gate 2026-07-30 " +
+  "(14 days) OR equivalent controlled batch runs across ≥3 distinct days, plus idempotency A–E, " +
+  "owner/Sheets protection, and explicit C4 approval. Emergency only: PERSISTENCE_ROLLBACK_V1=1 (dev/test).";
 
 function truthyFlag(value: string | undefined): boolean {
   return ["1", "true", "yes", "on"].includes(String(value ?? "").trim().toLowerCase());
