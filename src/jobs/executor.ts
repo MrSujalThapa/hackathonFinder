@@ -10,6 +10,7 @@ import type { DiscoveryJob, DiscoveryJobStatus } from "@/jobs/types";
 const stageByEvent: Partial<Record<DiscoveryEvent["type"], DiscoveryJobStatus>> = {
   planning_started: "planning",
   planning_completed: "planning",
+  query_interpreted: "planning",
   source_started: "collecting",
   source_progress: "collecting",
   source_completed: "collecting",
@@ -18,7 +19,9 @@ const stageByEvent: Partial<Record<DiscoveryEvent["type"], DiscoveryJobStatus>> 
   enrichment_started: "enriching",
   verification_started: "verifying",
   dedupe_completed: "verifying",
+  result_summary_updated: "verifying",
   persistence_started: "persisting",
+  persistence_completed: "persisting",
   run_completed: "completed",
   run_failed: "failed",
   run_cancelled: "cancelled",
@@ -47,7 +50,12 @@ function progressFor(type: DiscoveryEvent["type"]): number {
     case "dedupe_completed":
       return 85;
     case "persistence_started":
+    case "persistence_completed":
       return 90;
+    case "result_summary_updated":
+      return 88;
+    case "query_interpreted":
+      return 12;
     case "run_completed":
       return 100;
     case "run_failed":

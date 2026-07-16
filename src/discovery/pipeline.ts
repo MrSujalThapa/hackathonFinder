@@ -63,6 +63,8 @@ import {
   formatPersistenceSummary,
   selectPersistenceStrategyFromEnv,
 } from "@/discovery/persistence/strategies";
+import { createProgressCoalescer } from "@/discovery/progressCoalescer";
+import { compactStageBudget, stageBudgetForProfile } from "@/discovery/stageBudgets";
 
 const SUPABASE_ENV_MESSAGE =
   "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in .env.local, or run with --dry-run.";
@@ -334,6 +336,32 @@ export async function executeDiscoveryPipeline(
   try {
     assertNotCancelled(options.cancellationSignal);
 
+    const stageBudget = stageBudgetForProfile(preferences.profile);
+    const progressStatsBySource = new Map<
+      string,
+      { rawCallbacks: number; emitted: number; coalesced: number }
+    >();
+    const coalescers = new Map<string, ReturnType<typeof createProgressCoalescer>>();
+
+    const coalescerFor = (source: string) => {
+      let coalescer = coalescers.get(source);
+      if (!coalescer) {
+        coalescer = createProgressCoalescer({
+          emit: async (message, metadata) => {
+            await emitter.emit("source_progress", message, {
+              source,
+              metadata: {
+                ...metadata,
+                compact: true,
+              },
+            });
+          },
+        });
+        coalescers.set(source, coalescer);
+      }
+      return coalescer;
+    };
+
     for (const source of preferences.sources) {
       await emitter.emit("source_started", `Starting…`, { source });
     }
@@ -356,14 +384,20 @@ export async function executeDiscoveryPipeline(
           return missing;
         }
         const startedAt = Date.now();
+        const coalescer = coalescerFor(source);
         try {
-          return await collector.collect({
+          const result = await collector.collect({
             ...collectorInput,
             logger: (message) => {
-              void emitter.emit("source_progress", message, { source });
+              coalescer.note(message);
             },
           });
+          await coalescer.flushForce();
+          progressStatsBySource.set(source, coalescer.stats());
+          return result;
         } catch (error) {
+          await coalescer.flushForce();
+          progressStatsBySource.set(source, coalescer.stats());
           const failed = emptyCollectorResult(source, startedAt);
           failed.errors.push(
             error instanceof Error
@@ -404,17 +438,17 @@ export async function executeDiscoveryPipeline(
       const customId = `custom:${customSource.slug}` as const;
       const customStartedAtMs = performanceTracker?.now();
       await emitter.emit("source_started", "Starting...", { source: customId });
+      const customCoalescer = coalescerFor(customId);
       const customResult = await collectCustomSourceWithV2Routing(customSource, {
         timeoutMs: effectiveSourceTimeout,
         logger: (message) => {
           const unprefixed = message.replace(new RegExp(`^\\[custom:${customSource.slug}\\]\\s*`), "");
-          void emitter.emit("source_progress", unprefixed, {
-            source: customId,
-            metadata: { message: unprefixed },
-          });
+          customCoalescer.note(unprefixed);
         },
         persistHealth: !dryRun,
       });
+      await customCoalescer.flushForce();
+      progressStatsBySource.set(customId, customCoalescer.stats());
       const customEndedAtMs = performanceTracker?.now();
       if (customStartedAtMs != null && customEndedAtMs != null) {
         performanceTracker?.recordCollector({
@@ -598,23 +632,25 @@ export async function executeDiscoveryPipeline(
     }
 
     assertNotCancelled(options.cancellationSignal);
-    await emitter.emit("enrichment_started", "Enriching promising leads…");
+    await emitter.emit("enrichment_started", "Enriching promising leads…", {
+      metadata: compactStageBudget(stageBudget),
+    });
 
     const enrichment = performanceTracker
       ? await performanceTracker.measure(
           "enrichment",
           () =>
             enrichPromisingLeads(leads, {
-              timeoutMs: Math.min(10_000, effectiveSourceTimeout),
-              maxPages: 15,
-              concurrency: 4,
+              timeoutMs: Math.min(stageBudget.enrichmentTimeoutMs, effectiveSourceTimeout),
+              maxPages: stageBudget.enrichmentMaxPages,
+              concurrency: stageBudget.enrichmentConcurrency,
             }),
           { itemCount: leads.length },
         )
       : await enrichPromisingLeads(leads, {
-          timeoutMs: Math.min(10_000, effectiveSourceTimeout),
-          maxPages: 15,
-          concurrency: 4,
+          timeoutMs: Math.min(stageBudget.enrichmentTimeoutMs, effectiveSourceTimeout),
+          maxPages: stageBudget.enrichmentMaxPages,
+          concurrency: stageBudget.enrichmentConcurrency,
         });
     leads = enrichment.leads;
     summary.enriched = enrichment.enrichedCount;
@@ -927,7 +963,19 @@ export async function executeDiscoveryPipeline(
     summary.storageFailures += persistenceResult.storageFailures;
     summary.warnings.push(...persistenceResult.warnings);
     summary.errors.push(...persistenceResult.errors);
-    await emitter.emit("persistence_started", formatPersistenceSummary(persistenceResult));
+    await emitter.emit("persistence_completed", formatPersistenceSummary(persistenceResult), {
+      metadata: {
+        strategy: persistenceResult.strategy,
+        created: persistenceResult.created,
+        updated: persistenceResult.updated,
+        unchanged: persistenceResult.unchanged,
+        evidence: persistenceResult.evidenceWritten,
+        actions: persistenceResult.actionsWritten,
+        failures: persistenceResult.storageFailures,
+        dbCalls: persistenceResult.timing.databaseCalls ?? 0,
+        durationMs: Math.round(persistenceResult.timing.totalMs),
+      },
+    });
     if (persistenceResult.strategy === "batch" && persistenceResult.postWriteParity) {
       await emitter.emit(
         "persistence_started",
@@ -991,45 +1039,33 @@ export async function executeDiscoveryPipeline(
     const created = dryRun ? summary.wouldCreate : summary.created;
     const updated = dryRun ? summary.wouldUpdate : summary.updated;
     const queueReady = Math.max(0, summary.accepted - summary.needsReview);
-    await emitter.emit(
-      "source_progress",
-      `${queueReady} candidates ready`,
-      { source: "result", metadata: { queueReady } },
-    );
-    await emitter.emit(
-      "source_progress",
-      `${summary.needsReview} need review`,
-      { source: "result", metadata: { needsReview: summary.needsReview } },
-    );
-    for (const candidate of summary.acceptedCandidates.slice(0, 20)) {
-      const eventPeriod =
-        candidate.eventStartDate &&
-        candidate.eventEndDate &&
-        candidate.eventEndDate !== candidate.eventStartDate
-          ? `${candidate.eventStartDate} to ${candidate.eventEndDate}`
-          : candidate.eventStartDate ?? "Not publicly listed";
-      await emitter.emit(
-        "source_progress",
-        [
-          candidate.name,
-          `Event/competition period: ${eventPeriod}`,
-          `Applications close: ${
-            candidate.deadlineState === "missing" || !candidate.applicationDeadline
-              ? "Not publicly listed"
-              : candidate.applicationDeadline
-          }`,
-          `Submissions close: ${candidate.submissionDeadline ?? "Not publicly listed"}`,
-          `Location: ${candidate.location}`,
-          `Mode: ${candidate.participationMode ?? "unknown"}`,
-          `Status: ${candidate.status}`,
-          `Source: ${candidate.source ?? "unknown"}`,
-        ].join(" · "),
+    const coalescingSummary = Object.fromEntries(
+      [...progressStatsBySource.entries()].map(([source, stats]) => [
+        source,
         {
-          source: "result",
-          metadata: { candidate },
+          rawCallbacks: stats.rawCallbacks,
+          emitted: stats.emitted,
+          coalesced: stats.coalesced,
+          ratio:
+            stats.rawCallbacks > 0
+              ? Number((stats.emitted / stats.rawCallbacks).toFixed(3))
+              : 1,
         },
-      );
-    }
+      ]),
+    );
+    await emitter.emit(
+      "result_summary_updated",
+      `${queueReady} candidates ready · ${summary.needsReview} need review`,
+      {
+        metadata: {
+          queueReady,
+          needsReview: summary.needsReview,
+          accepted: summary.accepted,
+          rejected: summary.rejected,
+          previewNames: summary.acceptedCandidates.slice(0, 12).map((c) => c.name),
+        },
+      },
+    );
     await emitter.emit(
       "run_completed",
       dryRun
@@ -1050,7 +1086,10 @@ export async function executeDiscoveryPipeline(
           profile: preferences.profile ?? null,
           sourceAccounting: summary.sourceAccounting,
           sourceStats: compactSourceStatsForSummary(summary.sourceStats),
-          acceptedCandidates: summary.acceptedCandidates,
+          // Keep event metadata compact — full acceptedCandidates live on job.summary.
+          previewNames: summary.acceptedCandidates.slice(0, 12).map((c) => c.name),
+          progressCoalescing: coalescingSummary,
+          stageBudget: compactStageBudget(stageBudget),
           performance: performanceTracker?.finalize(),
           persistenceShadow: summary.persistenceShadow ?? null,
         },

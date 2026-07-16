@@ -38,6 +38,7 @@ import {
 } from "@/server/customSources/repository";
 import type { CustomSource } from "@/server/customSources/types";
 import { createDiscoveryPerformanceTracker } from "@/discovery/performance";
+import { stageBudgetForProfile } from "@/discovery/stageBudgets";
 import type { IncomingCandidateWrite } from "@/discovery/persistence/persistencePlan";
 import { devpostBudgetForProfile } from "@/collectors/devpost";
 import { lumaBudgetForProfile } from "@/collectors/luma";
@@ -462,44 +463,65 @@ export async function runDiscovery(
           ? "inferred open"
           : "included";
   await emitter.emit(
-    "source_progress",
-    `Theme: ${effectivePreferences.themes.join(", ") || "unspecified"}`,
-    { source: "query" },
-  );
-  await emitter.emit(
-    "source_progress",
-    `Location: ${
-      effectivePreferences.locationConstraint === "event_location"
-        ? effectivePreferences.locations.join(", ") || "unspecified"
-        : effectivePreferences.locations.join(", ") || "none"
-    }`,
-    { source: "query" },
-  );
-  await emitter.emit("source_progress", `Remote: ${remoteLabel}`, { source: "query" });
-  await emitter.emit(
-    "source_progress",
-    `Dates: ${
-      effectivePreferences.dateFrom && effectivePreferences.dateTo
-        ? `${effectivePreferences.dateFrom} – ${effectivePreferences.dateTo}`
-        : "upcoming / inferred horizon"
-    }`,
-    { source: "query" },
-  );
-  await emitter.emit("source_progress", `Profile: ${profile}`, { source: "query" });
-  await emitter.emit(
-    "source_progress",
-    `Dry-run: ${dryRun ? "yes" : "no"}`,
-    { source: "query" },
+    "query_interpreted",
+    [
+      `Theme: ${effectivePreferences.themes.join(", ") || "unspecified"}`,
+      `Location: ${
+        effectivePreferences.locationConstraint === "event_location"
+          ? effectivePreferences.locations.join(", ") || "unspecified"
+          : effectivePreferences.locations.join(", ") || "none"
+      }`,
+      `Remote: ${remoteLabel}`,
+      `Dates: ${
+        effectivePreferences.dateFrom && effectivePreferences.dateTo
+          ? `${effectivePreferences.dateFrom} – ${effectivePreferences.dateTo}`
+          : "upcoming / inferred horizon"
+      }`,
+      `Profile: ${profile}`,
+      `Dry-run: ${dryRun ? "yes" : "no"}`,
+    ].join(" · "),
+    {
+      source: "query",
+      metadata: {
+        profile,
+        dryRun,
+        themes: effectivePreferences.themes,
+        locations: effectivePreferences.locations,
+        remotePolicy: effectivePreferences.remotePolicy,
+        dateFrom: effectivePreferences.dateFrom ?? null,
+        dateTo: effectivePreferences.dateTo ?? null,
+        stageBudget: {
+          profile,
+          listingOwned: true,
+          enrichmentTimeoutMs: stageBudgetForProfile(profile).enrichmentTimeoutMs,
+          enrichmentMaxPages: stageBudgetForProfile(profile).enrichmentMaxPages,
+        },
+        sourceBudgets: {
+          devpost: {
+            target: devpostBudget.targetCards,
+            max: devpostBudget.maxCards,
+            pages: devpostBudget.maxPages,
+            details: devpostBudget.detailLimit,
+          },
+          luma: {
+            target: lumaBudget.targetEvents,
+            max: lumaBudget.maxEvents,
+            scrolls: lumaBudget.maxScrolls,
+            details: lumaBudget.detailLimit,
+          },
+        },
+      },
+    },
   );
   await emitter.emit(
     "source_progress",
     `Devpost budget: target ${devpostBudget.targetCards} / max ${devpostBudget.maxCards} cards / ${devpostBudget.maxPages} pages / ${devpostBudget.detailLimit} details (stopAtTarget=${devpostBudget.stopAtTarget})`,
-    { source: "query" },
+    { source: "query", metadata: { compact: true, budget: "devpost" } },
   );
   await emitter.emit(
     "source_progress",
     `Luma budget: target ${lumaBudget.targetEvents} / max ${lumaBudget.maxEvents} events / ${lumaBudget.maxScrolls} scrolls / ${lumaBudget.detailLimit} details`,
-    { source: "query" },
+    { source: "query", metadata: { compact: true, budget: "luma" } },
   );
 
   await emitter.emit("source_progress", `Planned: ${plannedSourceLabels.join(", ") || "(none)"}`, {
