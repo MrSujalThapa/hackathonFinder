@@ -15,7 +15,7 @@ import {
   valueAtPath,
 } from "@/crawl/adapters/custom/generic/valueUtils";
 
-const GENERIC_TITLES = /^(open|closed|past|upcoming|organize|organized by|menu|home|about|sponsor|sponsors|faq|resources?|category|filter|all|status|view|learn more|register|apply)$/i;
+const GENERIC_TITLES = /^(open|closed|past|upcoming|organize|organized by|menu|home|about|sponsor|sponsors|faq|resources?|category|filter|all|status|view|learn more|register|apply|registration start|registration end)$/i;
 const NEGATIVE_PATH = /\/(?:about|login|signin|signup|sponsors?|organizers?|contact|privacy|terms|faq|blog|resources?)\/?$/i;
 const EVENT_WORDS = /\b(hackathon|challenge|competition|event|summit|conference|demo day|build|jam|bounty|sprint|meetup|workshop)\b/i;
 const EVENT_FIELDS = /\b(date|start|end|deadline|location|venue|city|country|online|virtual|hybrid|registration|prize|track|team|eligibility|organizer|schedule)\b/i;

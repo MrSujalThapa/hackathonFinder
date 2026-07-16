@@ -179,6 +179,17 @@ Deferred follow-up (post-soak, separate PR): delete custom V1 body + persistence
 
 Pushed only to `origin/experiment/scraper-overhaul-c4-final-soak`.
 
-## 23. Confirmations
+## 23. Pre-merge validation fixes
+
+Generic gaps closed during mandatory Terminal / custom-source validation (no Reskilll-specific collector or hostname logic):
+
+1. DOM extraction: registration/status chrome vs event titles; registration dates → deadline fields; closed status preserved.
+2. NL `from <custom source>` → exclusive custom-source selection.
+3. San Francisco aliases + explicit city constraint (broad CA/US insufficient).
+4. `next N months` date parsing before generic `upcoming`.
+
+Local evidence remains under gitignored `.local-audits/c4-premerge/`.
+
+## 24. Confirmations
 
 No migration · no deploy · no X · no merge · no main push · no V1 deletion · no feature/threshold changes.

@@ -16,6 +16,10 @@ const LOCATION_ALIASES: Record<string, string> = {
   "greater toronto": "Toronto",
   waterloo: "Waterloo",
   mississauga: "Mississauga",
+  "san francisco": "San Francisco",
+  "sf bay area": "San Francisco",
+  "bay area": "San Francisco",
+  sf: "San Francisco",
   canada: "Canada",
 };
 
@@ -69,19 +73,17 @@ function extractIsoDateRange(command: string): { from?: string; to?: string } {
     return { from: between[1], to: between[2] };
   }
 
-  if (/\bupcoming\b/i.test(command)) {
-    const today = new Date();
-    const from = today.toISOString().slice(0, 10);
-    const future = new Date(today);
-    future.setMonth(future.getMonth() + 6);
-    return { from, to: future.toISOString().slice(0, 10) };
-  }
-
-  if (/\bin\s+the\s+next\s+2\s+months?\b|\bnext\s+2\s+months?\b/i.test(command)) {
-    const today = new Date();
-    const future = new Date(today);
-    future.setMonth(future.getMonth() + 2);
-    return { from: today.toISOString().slice(0, 10), to: future.toISOString().slice(0, 10) };
+  const nextMonths = command.match(
+    /\b(?:in\s+the\s+next|next)\s+(\d+)\s+months?\b/i,
+  );
+  if (nextMonths) {
+    const months = Number(nextMonths[1]);
+    if (Number.isFinite(months) && months > 0 && months <= 36) {
+      const today = new Date();
+      const future = new Date(today);
+      future.setMonth(future.getMonth() + months);
+      return { from: today.toISOString().slice(0, 10), to: future.toISOString().slice(0, 10) };
+    }
   }
 
   if (/\bin\s+the\s+next\s+month\b|\bnext\s+month\b/i.test(command)) {
@@ -89,6 +91,14 @@ function extractIsoDateRange(command: string): { from?: string; to?: string } {
     const future = new Date(today);
     future.setMonth(future.getMonth() + 1);
     return { from: today.toISOString().slice(0, 10), to: future.toISOString().slice(0, 10) };
+  }
+
+  if (/\bupcoming\b/i.test(command)) {
+    const today = new Date();
+    const from = today.toISOString().slice(0, 10);
+    const future = new Date(today);
+    future.setMonth(future.getMonth() + 6);
+    return { from, to: future.toISOString().slice(0, 10) };
   }
 
   return {};
@@ -186,7 +196,18 @@ function locationConstraintFor(
   }
   if (
     locations.length > 0 &&
-    /\b(?:in|near|around|at)\s+(toronto|gta|greater toronto|waterloo|mississauga|canada)\b/i.test(command)
+    /\b(?:in|near|around|at)\s+(toronto|gta|greater toronto|waterloo|mississauga|san francisco|sf|bay area|canada)\b/i.test(
+      command,
+    )
+  ) {
+    return "event_location";
+  }
+  // Prefer event-location whenever a concrete city/region was extracted from
+  // "in/near/around/at <place>" phrasing, even for newly aliased cities.
+  if (
+    locations.length > 0 &&
+    /\b(?:in|near|around|at)\s+[A-Za-z][A-Za-z\s.-]{1,40}\b/i.test(command) &&
+    !/\b(?:people|participants?|students?|builders?)\s+in\b/i.test(command)
   ) {
     return "event_location";
   }

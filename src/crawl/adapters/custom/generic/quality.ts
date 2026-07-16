@@ -16,6 +16,9 @@ function duplicateRate(leads: GenericShadowLead[]): number {
 
 function isObviousNonEvent(lead: GenericShadowLead): boolean {
   if (/^(open|past|upcoming|organize|menu|home|about|sponsor|faq)$/i.test(lead.title)) return true;
+  if (/^(registration\s+(start|end|opens?|closes?)|starts?|ends?|deadline)\s*:/i.test(lead.title)) {
+    return true;
+  }
   if (lead.normalizedStatus === "past" || lead.normalizedStatus === "closed") return true;
   if (!lead.canonicalUrl) return false;
   try {

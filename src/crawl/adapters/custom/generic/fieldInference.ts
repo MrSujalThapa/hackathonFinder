@@ -44,8 +44,14 @@ function scoreTextTitle(values: unknown[], path: string): FieldMapping {
   const unique = new Set(texts.map((value) => value.toLowerCase())).size / Math.max(1, texts.length);
   const goodLength = texts.filter((value) => value.length >= 4 && value.length <= 140).length / Math.max(1, texts.length);
   const badUrl = texts.filter(isLikelyUrl).length / Math.max(1, texts.length);
-  const statusish = texts.filter((value) => /^(open|closed|past|upcoming|active|online|virtual)$/i.test(value)).length / Math.max(1, texts.length);
+  const statusish = texts.filter((value) =>
+    /^(open|closed|past|upcoming|active|online|virtual|registration\s+(closed|open))$/i.test(value.trim()),
+  ).length / Math.max(1, texts.length);
   const schemaTypeish = texts.filter((value) => /^(ListItem|ItemList|Thing|WebPage|Event)$/i.test(value)).length / Math.max(1, texts.length);
+  const metaLabelish =
+    texts.filter((value) =>
+      /^(registration\s+(start|end|opens?|closes?)|starts?|ends?|deadline)\s*:/i.test(value.trim()),
+    ).length / Math.max(1, texts.length);
   const keyHint = keyMatches(path, FIELD_KEY_HINTS.title) ? 0.25 : 0;
   const identityKeyPenalty =
     keyHint === 0 && keyMatches(path, FIELD_KEY_HINTS.sourceRecordId) ? 0.35 : 0;
@@ -60,6 +66,7 @@ function scoreTextTitle(values: unknown[], path: string): FieldMapping {
     badUrl * 0.4 -
     statusish * 0.35 -
     schemaTypeish * 0.45 -
+    metaLabelish * 0.55 -
     identityKeyPenalty -
     urlKeyPenalty;
   const confidence = normalizeRatio(unique < 0.3 ? Math.min(rawConfidence, 0.45) : rawConfidence);
@@ -82,7 +89,18 @@ function scoreDate(values: unknown[], path: string, field: FieldName): FieldMapp
   const parsed = values.filter((value) => parseDateish(value)).length;
   const coverage = parsed / Math.max(1, values.length);
   const keyHint = keyMatches(path, FIELD_KEY_HINTS[field]) ? 0.4 : 0;
-  const confidence = normalizeRatio(coverage * 0.55 + keyHint);
+  // Registration/application dates are not event start/end dates.
+  const registrationPathPenalty =
+    field === "startDate" || field === "endDate"
+      ? /\b(registration|apply|application|submission|deadline)\b/i.test(path)
+        ? 0.45
+        : 0
+      : 0;
+  const registrationBoost =
+    field === "deadline" && /\b(registration|apply|application|submission|deadline)\b/i.test(path)
+      ? 0.2
+      : 0;
+  const confidence = normalizeRatio(coverage * 0.55 + keyHint + registrationBoost - registrationPathPenalty);
   return { path, confidence, evidence: [`parseable=${parsed}/${values.length}`] };
 }
 

@@ -53,6 +53,8 @@ export type ListingEvidence = {
   categoryTexts?: string[];
   shortDescription?: string;
   sourceRecordId?: string;
+  /** Registration/open-state badge text when distinct from the title. */
+  statusText?: string;
 };
 
 export type ListingCard = {
@@ -61,6 +63,8 @@ export type ListingCard = {
   url?: string;
   startDate?: string;
   endDate?: string;
+  /** Application/registration close when distinct from event start. */
+  deadline?: string;
   modeHint?: "remote" | "in_person" | "hybrid" | "unknown";
   evidence?: ListingEvidence;
 };

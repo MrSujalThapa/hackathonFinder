@@ -85,7 +85,14 @@ export function normalizeGenericRecords(
 
   for (const record of recordSet.records) {
     const title = cleanText(valueAtPath(record, schema.title.path));
-    if (!title || title.length < 3 || /^(open|past|upcoming|organize|menu|home)$/i.test(title)) continue;
+    if (
+      !title ||
+      title.length < 3 ||
+      /^(open|past|upcoming|organize|menu|home)$/i.test(title) ||
+      /^(registration\s+(start|end|opens?|closes?)|starts?|ends?|deadline)\s*:/i.test(title)
+    ) {
+      continue;
+    }
     const url = schema.url ? resolveUrl(valueAtPath(record, schema.url.path), experiment) : undefined;
     const sourceRecordId = cleanText(valueAtPath(record, schema.sourceRecordId?.path));
     const startDate = parseDateish(valueAtPath(record, schema.startDate?.path));

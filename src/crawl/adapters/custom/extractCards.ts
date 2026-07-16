@@ -125,12 +125,16 @@ function leadToCard(lead: GenericShadowLead): ListingCard {
     ...(lead.canonicalUrl ? { url: lead.canonicalUrl } : {}),
     ...(lead.startDate ? { startDate: lead.startDate } : {}),
     ...(lead.endDate ? { endDate: lead.endDate } : {}),
+    ...(lead.deadline ? { deadline: lead.deadline } : {}),
     modeHint,
     evidence: {
       ...(lead.deadline ? { displayedDateText: lead.deadline.slice(0, 80) } : {}),
       ...(lead.location ? { locationText: lead.location.slice(0, 120) } : {}),
       ...(lead.description ? { shortDescription: lead.description.slice(0, 280) } : {}),
       ...(lead.sourceRecordId ? { sourceRecordId: lead.sourceRecordId } : {}),
+      ...(lead.normalizedStatus && lead.normalizedStatus !== "unknown"
+        ? { statusText: lead.normalizedStatus }
+        : {}),
     },
   };
 }

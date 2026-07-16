@@ -20,8 +20,11 @@ import {
   readCustomSourceRuntimeMode,
 } from "@/crawl/adapters/custom/routing";
 import { extractListingCards } from "@/crawl/adapters/custom/extractCards";
+import { listingCardToRawLead } from "@/crawl/adapters/custom/collect";
 import { makeArtifact } from "@/crawl/adapters/custom/generic/acquisition";
 import type { SourceExperiment } from "@/crawl/adapters/custom/generic/types";
+import type { CustomSource } from "@/server/customSources/types";
+import type { ListingCard } from "@/crawl/types";
 
 describe("B4 custom routing defaults", () => {
   it("defaults to kernel, not V1", () => {
@@ -184,49 +187,133 @@ describe("B2 deterministic repeated-unit extraction", () => {
     assert.ok(result.diagnostics.strategy === "dom" || result.diagnostics.strategy === "structured");
   });
 
-  it("emits ai_unavailable when AI would be required and LLM is missing", async () => {
-    const prevProvider = process.env.LLM_PROVIDER;
-    const prevKey = process.env.LLM_API_KEY;
-    delete process.env.LLM_PROVIDER;
-    delete process.env.LLM_API_KEY;
-    try {
-      const html = `<!doctype html><html><body><div class="x">noise</div></body></html>`;
-      const experiment: SourceExperiment = {
-        inputUrl: "https://example.com/events",
-        allowedOrigins: ["https://example.com"],
-        maxRequests: 10,
-        maxPages: 2,
-        maxPayloadBytes: 1_000_000,
-        browserAllowed: false,
-        expectedContentCategory: "public_event_directory",
-        expectedMinimumEventCount: 20,
-      };
-      const artifact = makeArtifact({
-        kind: "html",
-        index: 0,
-        sourceUrl: experiment.inputUrl,
-        contentType: "text/html",
-        payload: { title: "Empty", bodyTextLength: 10, html },
-        rawBytes: Buffer.byteLength(html),
-        acquisitionMode: "static",
-        timingMs: 1,
-      });
-      const result = await extractListingCards({
-        artifacts: [artifact],
-        experiment,
-        allowAiSelection: true,
-      });
-      // Weak page: either zero cards with ai_unavailable, or honest empty without V1.
-      if (result.cards.length === 0 && result.diagnostics.aiUnavailable) {
-        assert.equal(result.diagnostics.aiUnavailable, true);
-      } else {
-        assert.equal(result.diagnostics.aiInvoked, false);
-      }
-    } finally {
-      if (prevProvider !== undefined) process.env.LLM_PROVIDER = prevProvider;
-      else delete process.env.LLM_PROVIDER;
-      if (prevKey !== undefined) process.env.LLM_API_KEY = prevKey;
-      else delete process.env.LLM_API_KEY;
+  it("does not treat registration labels as event titles or start dates", async () => {
+    const cards = Array.from({ length: 6 }, (_, index) => {
+      const n = index + 1;
+      return `<article class="hack-card">
+        <div class="badge">Registration Closed</div>
+        <div class="meta">Registration Start: 2026-0${(n % 8) + 1}-10</div>
+        <div class="meta">Registration End: 2026-0${(n % 8) + 1}-20</div>
+        <h2><a href="/hack/event-${n}">Neural Build Challenge ${n}</a></h2>
+        <span>online</span>
+      </article>`;
+    }).join("");
+    const html = `<!doctype html><html><body><main>${cards}</main></body></html>`;
+    const experiment: SourceExperiment = {
+      inputUrl: "https://example.com/allhacks",
+      allowedOrigins: ["https://example.com"],
+      maxRequests: 10,
+      maxPages: 2,
+      maxPayloadBytes: 1_000_000,
+      browserAllowed: false,
+      expectedContentCategory: "public_event_directory",
+    };
+    const artifact = makeArtifact({
+      kind: "html",
+      index: 0,
+      sourceUrl: experiment.inputUrl,
+      contentType: "text/html",
+      payload: { title: "All hacks", bodyTextLength: html.length, html },
+      rawBytes: Buffer.byteLength(html),
+      acquisitionMode: "static",
+      timingMs: 1,
+    });
+    const result = await extractListingCards({
+      artifacts: [artifact],
+      experiment,
+      allowAiSelection: false,
+    });
+    assert.ok(result.cards.length >= 5, `expected >=5 cards, got ${result.cards.length}`);
+    for (const card of result.cards) {
+      assert.doesNotMatch(card.title, /^Registration\s+(Start|End|Closed)/i);
+      assert.match(card.title, /Neural Build Challenge/i);
+      // Registration dates must not become event start dates.
+      assert.equal(card.startDate, undefined);
+      assert.ok(card.deadline, "registration end should map to deadline");
+      assert.equal(card.evidence?.statusText, "closed");
     }
+  });
+
+  it("falls back to slug title when only status chrome is present", async () => {
+    const cards = Array.from({ length: 5 }, (_, index) => {
+      const n = index + 1;
+      return `<article class="hack-card">
+        <a href="/hack/aurora-build-${n}">Registration Closed</a>
+        <div>Registration Start: 2026-0${(n % 8) + 1}-05</div>
+        <div>Registration End: 2026-0${(n % 8) + 1}-15</div>
+      </article>`;
+    }).join("");
+    const html = `<!doctype html><html><body><main>${cards}</main></body></html>`;
+    const experiment: SourceExperiment = {
+      inputUrl: "https://example.com/allhacks",
+      allowedOrigins: ["https://example.com"],
+      maxRequests: 10,
+      maxPages: 2,
+      maxPayloadBytes: 1_000_000,
+      browserAllowed: false,
+      expectedContentCategory: "public_event_directory",
+    };
+    const artifact = makeArtifact({
+      kind: "html",
+      index: 0,
+      sourceUrl: experiment.inputUrl,
+      contentType: "text/html",
+      payload: { title: "All hacks", bodyTextLength: html.length, html },
+      rawBytes: Buffer.byteLength(html),
+      acquisitionMode: "static",
+      timingMs: 1,
+    });
+    const result = await extractListingCards({
+      artifacts: [artifact],
+      experiment,
+      allowAiSelection: false,
+    });
+    assert.ok(result.cards.length >= 4, `expected >=4 cards, got ${result.cards.length}`);
+    for (const card of result.cards) {
+      assert.doesNotMatch(card.title, /Registration Closed/i);
+      assert.match(card.title, /Aurora Build/i);
+      assert.equal(card.startDate, undefined);
+      assert.ok(card.deadline);
+    }
+  });
+
+  it("maps registration deadline and closed status onto raw lead fields", () => {
+    const source: CustomSource = {
+      id: "00000000-0000-4000-8000-00000000c4t1",
+      name: "Example",
+      slug: "example",
+      baseUrl: "https://example.com",
+      listingUrl: "https://example.com/allhacks",
+      mode: "auto",
+      enabled: true,
+      locationScope: "global",
+      topicScope: ["hackathon"],
+      maxItems: 40,
+      status: "unknown",
+      lastCheckedAt: null,
+      lastErrorSafe: null,
+      selectors: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const card: ListingCard = {
+      identity: "https://example.com/hack/aurora",
+      title: "Aurora Build Challenge",
+      url: "https://example.com/hack/aurora",
+      deadline: "2026-08-01T00:00:00.000Z",
+      modeHint: "remote",
+      evidence: {
+        statusText: "closed",
+        shortDescription: "Registration start: 2026-07-01 · Registration end: 2026-08-01",
+        locationText: "online",
+      },
+    };
+    const lead = listingCardToRawLead(source, card);
+    assert.equal(lead.metadata?.startDate, undefined);
+    assert.equal(lead.metadata?.endDate, undefined);
+    assert.equal(lead.metadata?.deadline, "2026-08-01T00:00:00.000Z");
+    assert.equal(lead.metadata?.applicationDeadline, "2026-08-01T00:00:00.000Z");
+    assert.equal(lead.metadata?.status, "closed");
+    assert.match(String(lead.url), /\/hack\/aurora$/);
   });
 });

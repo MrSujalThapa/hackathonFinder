@@ -37,6 +37,7 @@ import {
   listCustomSources,
 } from "@/server/customSources/repository";
 import type { CustomSource } from "@/server/customSources/types";
+import { matchCustomSourcesInNaturalLanguage } from "@/discovery/customSourceNaturalLanguage";
 import { createDiscoveryPerformanceTracker } from "@/discovery/performance";
 import { stageBudgetForProfile } from "@/discovery/stageBudgets";
 import type { IncomingCandidateWrite } from "@/discovery/persistence/persistencePlan";
@@ -232,7 +233,7 @@ async function selectCustomSourcesForRun(
 }> {
   const fromFlag = flags.sourceNames;
   const warnings: string[] = [];
-  const explicitSourceFlag = fromFlag !== undefined;
+  let explicitSourceFlag = fromFlag !== undefined;
   const builtInFromFlag = fromFlag?.filter((source): source is SourceName =>
     BUILTIN_SOURCE_NAMES.has(source as SourceName),
   );
@@ -266,9 +267,32 @@ async function selectCustomSourcesForRun(
     }
   }
 
+  // Natural-language "from <custom name/slug>" — same exclusivity as "from Devpost".
+  let nlCustomMatched = false;
+  if (!fromFlag) {
+    const all = await listCustomSources({ enabledOnly: true }).catch((error) => {
+      warnings.push(error instanceof Error ? error.message : "Failed to list custom sources");
+      return [];
+    });
+    const mentioned = matchCustomSourcesInNaturalLanguage(
+      flags.query,
+      all.map((source) => ({ id: source.id, slug: source.slug, name: source.name })),
+    );
+    for (const mention of mentioned) {
+      if (customSources.some((existing) => existing.id === mention.id)) continue;
+      const custom = all.find((source) => source.id === mention.id);
+      if (!custom) continue;
+      customSources.push(custom);
+      nlCustomMatched = true;
+    }
+    if (nlCustomMatched) {
+      explicitSourceFlag = true;
+    }
+  }
+
   return {
     customSources,
-    builtInFromFlag,
+    builtInFromFlag: nlCustomMatched && !fromFlag ? [] : builtInFromFlag,
     explicitSourceFlag,
     warnings,
   };
