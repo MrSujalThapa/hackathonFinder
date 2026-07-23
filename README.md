@@ -1,294 +1,339 @@
-# Hackathon Approval Agent
+# Hackathon Finder
 
-A responsive Tinder-style approval queue for hackathons. A local CLI agent discovers events from HackList, Hakku, Devpost (and later MLH, Luma, web search, X/Twitter). Candidates land in Supabase for review; approved hackathons sync idempotently to Google Sheets.
+An agent-powered discovery and approval workflow for finding worthwhile hackathons without manually searching dozens of event platforms.
 
-## Prerequisites
+Hackathon Finder collects events from multiple sources, normalizes and scores them, removes duplicates, and sends the strongest candidates into a swipe-style review queue. Approved events can then be synced to Google Sheets for planning and collaboration.
+
+## What it does
+
+1. Accepts a natural-language search request.
+2. Searches configured hackathon sources.
+3. Extracts and normalizes event information.
+4. Deduplicates overlapping listings.
+5. Scores candidates for relevance and confidence.
+6. Stores accepted candidates in Supabase.
+7. Presents them in a responsive review interface.
+8. Syncs approved events to Google Sheets.
+
+```text
+Natural-language request
+          ↓
+   Source collectors
+          ↓
+Extract → verify → normalize
+          ↓
+ Deduplicate and score
+          ↓
+     Supabase queue
+          ↓
+ Approve / reject / save
+          ↓
+     Google Sheets
+```
+
+## Core features
+
+- **Multi-source discovery** across HackList, MLH, Luma, web search, Devpost, and Hakku
+- **Natural-language commands** for location, date range, theme, and event preferences
+- **Agentic extraction pipeline** that collects, enriches, verifies, scores, and filters candidates
+- **Cross-run deduplication** to prevent repeated events from flooding the queue
+- **Responsive review deck** with swipe gestures and keyboard controls
+- **Approval history** for approved, rejected, and saved candidates
+- **Restoration workflow** for returning rejected or saved events to the queue
+- **Idempotent Google Sheets sync** with retry and partial-failure recovery
+- **Owner authentication** for deployed instances
+- **Source and integration diagnostics** for Supabase, Google Sheets, search, and LLM configuration
+- **Mock and dry-run modes** for deterministic local development
+
+## Review controls
+
+| Input | Action |
+| --- | --- |
+| Swipe right, click Approve, or press `→` | Approve and attempt Google Sheets sync |
+| Swipe left, click Reject, or press `←` | Reject |
+| Swipe up, click Save, or press `S` | Save for later |
+| `Enter` or `Space` | Expand or collapse details |
+| `Escape` | Close expanded details |
+
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Web application | Next.js 15, React 19, TypeScript |
+| Styling and motion | Tailwind CSS, GSAP |
+| Database | Supabase / PostgreSQL |
+| Browser collection | Playwright |
+| HTML extraction | Cheerio |
+| Validation | Zod |
+| Export | Google Sheets API |
+| Testing | Node test runner, Testing Library, Happy DOM, JSDOM |
+
+## Project structure
+
+```text
+src/
+├── agent/          # Command parsing, orchestration, and run summaries
+├── app/            # Next.js pages and API routes
+├── cli/            # Discovery and Sheets synchronization commands
+├── collectors/     # Platform-specific source collectors
+├── components/     # Queue, cards, history, and status UI
+├── config/         # Typed environment configuration
+├── core/           # Extraction, verification, scoring, merge, and dedupe logic
+├── crawl/          # Crawling and browser-assisted collection primitives
+├── discovery/      # Discovery workflows and source coordination
+├── hooks/          # Queue state and interaction hooks
+├── jobs/           # Background job logic
+├── lib/            # Shared clients and infrastructure helpers
+└── server/         # Persistence, API helpers, and Sheets synchronization
+
+worker/             # Discovery worker entrypoint
+scripts/            # Diagnostics, probes, smoke tests, and maintenance tools
+supabase/           # Database migrations and Supabase configuration
+docs/               # Architecture, product, deployment, and release documentation
+```
+
+## Getting started
+
+### Prerequisites
 
 - Node.js 20+
 - npm 10+
-- Playwright Chromium (for Hakku/Devpost fallback and optional UI smoke): `npx playwright install chromium`
+- A Supabase project for live persistence
+- Playwright Chromium for browser-assisted collectors
+- Optional Google Cloud service account for Sheets sync
+- Optional search-provider and LLM credentials
 
-## Setup
-
-1. Clone the repository and install dependencies:
+### 1. Install the project
 
 ```bash
+git clone https://github.com/MrSujalThapa/hackathonFinder.git
+cd hackathonFinder
 npm install
 npx playwright install chromium
 ```
 
-2. Copy the environment template:
+### 2. Configure the environment
 
 ```bash
 cp .env.example .env.local
 ```
 
-3. Configure environment variables.
-
-Public browser-safe values:
+Configure the values required by the features you intend to run.
 
 ```bash
+# Browser-safe Supabase configuration
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-NEXT_PUBLIC_GOOGLE_SHEET_URL=...
-```
 
-Server-only values:
-
-```bash
+# Server-side Supabase access
 SUPABASE_SERVICE_ROLE_KEY=...
+
+# Google Sheets integration
 GOOGLE_SHEET_ID=...
 GOOGLE_SHEET_TAB=Hackathons
 GOOGLE_SERVICE_ACCOUNT_JSON=...
+NEXT_PUBLIC_GOOGLE_SHEET_URL=...
+
+# Search integration
 SEARCH_PROVIDER=...
 SEARCH_API_KEY=...
+
+# Optional LLM integration
 LLM_PROVIDER=openai
 LLM_API_KEY=...
-LLM_MODEL=gpt-4o-mini
+LLM_MODEL=...
 ```
 
-Owner-only web access:
+Never commit `.env.local`, service-account files, access tokens, or private keys.
+
+### 3. Configure owner access
+
+Generate a password hash:
 
 ```bash
 npm run hash:password -- "your-long-password"
-# paste the printed APP_OWNER_PASSWORD_HASH_B64=... line into .env.local
+```
+
+Add the generated `APP_OWNER_PASSWORD_HASH_B64` value and a random session secret to `.env.local`:
+
+```bash
+APP_OWNER_PASSWORD_HASH_B64=...
+APP_SESSION_SECRET=... # At least 32 random characters
+```
+
+Verify the password before deployment:
+
+```bash
 npm run verify:password -- "your-long-password"
-APP_SESSION_SECRET=... # 32+ random chars
 ```
 
-Optional local UI fallback when Supabase is unreachable:
+### 4. Apply the database migrations
 
-```bash
-USE_MOCK_CANDIDATES=true
-```
+Run the migrations in `supabase/migrations/` against your Supabase project.
 
-`USE_MOCK_CANDIDATES` is never enabled silently, and it is forbidden in production. For live queue + Sheets testing use `USE_MOCK_CANDIDATES=false`.
+The application persists candidates, evidence, answers, actions, agent runs, and manual leads in PostgreSQL.
 
-`USE_MOCK_CANDIDATES=false` never uses the in-memory mock store, but the UI may still show database rows with `source='mock'` left over from earlier agent runs. Those are live Supabase rows, not mock-mode fixtures. Do **not** auto-delete them — identify and clean up intentionally:
-
-```sql
-SELECT id, name, status, source, official_url
-FROM candidates
-WHERE source = 'mock';
-```
-
-Read-only audit (counts by source + lists mock rows):
-
-```bash
-npm run candidates:audit-sources
-```
-
-The agent refuses to upsert mock-sourced candidates into Supabase while `USE_MOCK_CANDIDATES=false` unless you pass `--allow-mock-writes` (or use `--dry-run`).
-
-4. Configure Google Sheets (required for approval → Sheet sync):
-
-```bash
-GOOGLE_SHEET_ID=
-GOOGLE_SHEET_TAB=Hackathons
-GOOGLE_SERVICE_ACCOUNT_JSON=
-NEXT_PUBLIC_GOOGLE_SHEET_URL=
-```
-
-5. Start the web app:
+### 5. Start the application
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000/queue](http://localhost:3000/queue).
+Open `http://localhost:3000/queue`.
 
-## Google Sheets setup (manual)
+## Run the discovery agent
 
-1. Create or select a Google Cloud project.
-2. Enable the **Google Sheets API**.
-3. Create a **service account**.
-4. Create a JSON key and copy the **complete JSON** into `GOOGLE_SERVICE_ACCOUNT_JSON` in `.env.local` (as a single-line string is fine; escaped `\n` in `private_key` is handled).
-5. Create a Google Spreadsheet.
-6. Create a tab named `Hackathons` (or set `GOOGLE_SHEET_TAB`).
-7. Share the Sheet with the service-account email as **Editor**.
-8. Copy the spreadsheet ID into `GOOGLE_SHEET_ID`.
-9. Copy the full browser URL into `NEXT_PUBLIC_GOOGLE_SHEET_URL` (used by the Open Sheet link).
+The CLI accepts natural-language discovery requests.
 
-Never commit `.env.local`, service-account JSON files, or private keys.
+```bash
+npm run agent -- "find upcoming hackathons" -- --dry-run
+```
 
-Verify read-only connectivity:
+A more targeted search:
+
+```bash
+npm run agent -- \
+  "find AI and agent hackathons in Toronto, Waterloo, Canada, or remote from 2026-07-01 to 2026-12-31" \
+  -- --sources=hacklist,mlh,luma,web
+```
+
+Use selected sources only:
+
+```bash
+npm run agent -- "find AI hackathons in Toronto" \
+  -- --sources=mlh,luma,web --dry-run
+```
+
+Inspect the web-search plan without collecting:
+
+```bash
+npm run agent -- "find AI hackathons in Toronto" \
+  -- --sources=web --show-search-plan --dry-run-plan
+```
+
+Run deterministic fixtures without database writes:
+
+```bash
+npm run agent -- "find upcoming hackathons" \
+  -- --sources=mock --dry-run
+```
+
+### Dry-run and write behavior
+
+| Mode | Supabase required | Behavior |
+| --- | --- | --- |
+| `--dry-run` | No | Runs collection, extraction, scoring, and filtering without persistence |
+| Default write mode | Yes | Upserts accepted candidates and supporting evidence |
+| Mock source in write mode | Yes | Blocked unless mock writes are explicitly enabled |
+
+The CLI loads `.env.local` automatically.
+
+## Google Sheets integration
+
+Approved candidates can be appended to a configured Google Sheet.
+
+To configure it:
+
+1. Enable the Google Sheets API in a Google Cloud project.
+2. Create a service account and JSON key.
+3. Create a spreadsheet and a tab such as `Hackathons`.
+4. Share the spreadsheet with the service-account email as an editor.
+5. Add the spreadsheet, tab, credential, and public URL values to `.env.local`.
+
+Verify connectivity without writing:
 
 ```bash
 npm run check:sheets
 ```
 
-Validate deployment-critical configuration without printing secrets:
-
-```bash
-npm run check:prod
-```
-
-Recover approved-but-unsynced candidates (idempotent):
+Recover approved candidates that have not been synchronized:
 
 ```bash
 npm run sync:sheets -- --dry-run
 npm run sync:sheets -- --limit=50
 ```
 
-### Idempotency and partial failure
+Synchronization is idempotent. Candidate IDs are checked before appending, so retries do not create duplicate rows. If a Sheet append succeeds but the Supabase metadata update fails, a later retry can recover the existing row.
 
-- Approving always keeps the candidate `APPROVED`, even if Sheets fails.
-- Sync looks up the **Candidate ID** column before appending, so retries do not create duplicate rows.
-- If append succeeds but Supabase `sheet_row_id` / `sheet_appended_at` update fails, the next retry finds the existing row and recovers metadata (`recovered_existing_row`).
-- Mock mode (`USE_MOCK_CANDIDATES=true`) records a labeled mock sync and does **not** write to Google Sheets.
-
-## Supabase diagnostics
-
-If writes fail with `TypeError: fetch failed`, diagnose connectivity first:
-
-```bash
-npm run check:supabase
-```
-
-The script loads `.env.local` from the repo root, prints whether each required variable is set (never prints keys), probes the REST endpoint, and attempts a read-only `candidates` select. Common categories: malformed URL, DNS/network, TLS, invalid API key, paused project, missing table.
-
-## Candidate review controls
-
-| Input | Action |
-| --- | --- |
-| Approve button / swipe right / → | Approve (+ attempt Sheet sync) |
-| Reject button / swipe left / ← | Reject |
-| Save button / swipe up / `S` | Save for later |
-| More details / Enter / Space | Expand or collapse details |
-| Escape | Close expanded details |
-
-History routes:
-
-- `/approved` — sync badges + Retry Sync when needed
-- `/rejected` (restore supported)
-- `/saved` (restore supported)
-- `/candidate/[id]` — sheet row/range, sync timestamp, retry
-- `/settings` — Sheets config status + Open Sheet link
-
-X/Twitter MCP arrives in a later project step.
-
-## Scripts
-
-| Command | Description |
-| --- | --- |
-| `npm run dev` | Start Next.js dev server |
-| `npm run build` | Production build |
-| `npm run start` | Run production server |
-| `npm run lint` | ESLint |
-| `npm run typecheck` | TypeScript check |
-| `npm run check` | Lint + typecheck + build |
-| `npm run check:all` | Full non-X production gate |
-| `npm run check:supabase` | Read-only Supabase connectivity diagnostics |
-| `npm run check:llm` | Live/mock LLM connectivity diagnostics |
-| `npm run check:sheets` | Read-only Google Sheets diagnostics (no writes) |
-| `npm run check:prod` | Production environment validation (no live writes) |
-| `npm run candidates:audit-sources` | Read-only audit of candidate `source` values (lists `source='mock'`) |
-| `npm run sync:sheets` | Idempotent recovery for approved unsynced candidates |
-| `npm run test` | Unit / component tests |
-| `npm run smoke:queue` | Browser smoke (requires `npm run dev` + mock/live data) |
-| `npm run smoke:prod` | Owner-login smoke for a running local/preview deployment |
-| `npm run agent -- "<command>"` | Run local discovery agent CLI |
-
-Opt-in live Sheets integration tests (not part of default CI):
-
-```bash
-RUN_GOOGLE_SHEETS_INTEGRATION=true npm test -- src/server/sheets/sheets.integration.test.ts
-```
-
-## CLI discovery
-
-Default sources: `hacklist`, `mlh`, `luma`, `web`. Devpost and Hakku remain available when requested; `mock` only when explicit.
-
-```bash
-# Real collectors, dry-run (no Supabase required)
-npm run agent -- "find upcoming hackathons" -- --dry-run
-
-# Broader discovery dry-run
-npm run agent -- "find upcoming hackathons" -- --sources=mlh,luma,web --dry-run
-
-# Write mode with broader sources (requires reachable Supabase)
-npm run agent -- "find AI and agent hackathons in Toronto, Waterloo, Canada, or remote from 2026-07-01 to 2026-12-31" -- --sources=hacklist,mlh,luma,web
-
-# Show planned web-search queries without collecting
-npm run agent -- "find AI hackathons in Toronto" -- --sources=web --show-search-plan --dry-run-plan
-
-# Deterministic fixture collector (dry-run; no DB writes)
-npm run agent -- "find upcoming hackathons" -- --sources=mock --dry-run
-
-# Explicit override only (writes source=mock into live Supabase)
-npm run agent -- "find upcoming hackathons" -- --sources=mock --allow-mock-writes
-```
-
-Web search requires `SEARCH_PROVIDER` and `SEARCH_API_KEY` in `.env.local` (provider `mock` needs no key). If unset, the web collector warns and other sources continue.
-### Dry-run vs write mode
-
-| Mode | Supabase required? | Behavior |
-| --- | --- | --- |
-| `--dry-run` | No | Parses, collects, scores, and prints what would be stored |
-| default (write) | Yes | Upserts accepted candidates + evidence into Supabase |
-| write + `source=mock` | Yes | Refused unless `USE_MOCK_CANDIDATES=true` or `--allow-mock-writes` |
-
-The CLI loads `.env.local` automatically before running.
-
-## Routes
+## Application routes
 
 | Route | Purpose |
 | --- | --- |
 | `/queue` | One-at-a-time review deck |
-| `/approved` | Approved history |
-| `/rejected` | Rejected history (restorable) |
-| `/saved` | Saved-for-later history |
-| `/candidate/[id]` | Full candidate detail |
-| `/settings` | Connection / integration status |
+| `/approved` | Approved candidates and Sheets sync state |
+| `/rejected` | Rejected candidates with restoration controls |
+| `/saved` | Saved-for-later candidates |
+| `/candidate/[id]` | Full candidate details and evidence |
+| `/settings` | Integration and configuration status |
 
-## API notes (Sheets)
+## Useful commands
 
-| Endpoint | Behavior |
+| Command | Purpose |
 | --- | --- |
-| `POST /api/candidates/[id]/approve` | Marks APPROVED, then best-effort Sheet sync; returns `sheetSync` |
-| `POST /api/candidates/[id]/sync-sheet` | Idempotent retry for APPROVED candidates |
-| `POST /api/sheets/sync-approved` | Batch recovery (`limit` required/ capped) |
+| `npm run dev` | Start the development server |
+| `npm run build` | Create a production build |
+| `npm run start` | Start the production server |
+| `npm run lint` | Run ESLint |
+| `npm run typecheck` | Run TypeScript checks |
+| `npm run test` | Run the fast test suite |
+| `npm run test:integration` | Run integration tests |
+| `npm run test:deterministic` | Run all deterministic tests |
+| `npm run check` | Run lint, typecheck, and build |
+| `npm run check:all` | Run the complete non-X production gate |
+| `npm run check:supabase` | Diagnose Supabase connectivity |
+| `npm run check:sheets` | Diagnose Google Sheets connectivity |
+| `npm run check:llm` | Diagnose the configured LLM provider |
+| `npm run check:sources` | Check collector configuration and availability |
+| `npm run check:prod` | Validate production-critical configuration |
+| `npm run smoke:queue` | Run the queue browser smoke test |
+| `npm run smoke:prod` | Run the deployed owner-auth smoke test |
+| `npm run worker:discovery` | Start the discovery worker |
+| `npm run worker:discovery:once` | Run one worker iteration |
 
-## Project structure
+## Mock data safety
 
-```text
-src/
-  agent/         # Command parser, controller, run summary
-  app/           # Next.js App Router pages + API routes
-  cli/           # Local agent + sync:sheets entrypoints
-  collectors/    # Source collectors (mock, hacklist, hakku, devpost, mlh, luma, web)
-  components/    # Approval UI shell, card, queue, history, sheet badges
-  config/        # Typed environment validation
-  core/          # Dedupe, merge, enrich, scoring, extract/verify, discovery types
-  hooks/         # Queue + motion hooks
-  lib/           # HTTP helpers, Playwright, search providers, Google Sheets client
-  server/        # Candidate repository, sheets sync, API helpers
+Set mock mode explicitly when Supabase is unavailable:
+
+```bash
+USE_MOCK_CANDIDATES=true
 ```
 
-## Development workflow
+Mock mode is never enabled silently and must not be used in production.
 
-This repo follows `docs/hackathon_approval_agent_docs/05_PROJECT_PLAN.md`:
+With `USE_MOCK_CANDIDATES=false`, database rows whose `source` value is `mock` are still real Supabase records left by an earlier run. Audit those records before deleting anything:
 
-1. Foundation
-2. Supabase database
-3. Agent core
-4. Source collectors
-5. Approval web UI
-6. Google Sheets (current)
-7. Enrichment
-8. X/Twitter MCP
-9. Polish
+```bash
+npm run candidates:audit-sources
+```
 
-Run `npm run check` before merging each step branch.
+The agent refuses to persist mock-sourced candidates into a live database unless mock writes are explicitly allowed.
 
-## Docs
+## Diagnostics
 
-Planning docs live in `docs/hackathon_approval_agent_docs/`:
+When a dependency is not working, use the repository's read-only checks before changing code:
 
-- `docs/DEPLOYMENT.md` — free/near-free production deployment guide
-- `01_PRD.md` — product requirements
-- `02_SYSTEM_ARCHITECTURE.md` — system design
-- `03_API_SPEC.md` — API and CLI contracts
-- `04_DATABASE_SCHEMA.md` — Supabase schema
-- `05_PROJECT_PLAN.md` — implementation plan
-- `07_DESIGN_UX_SPEC.md` — approval UI spec
+```bash
+npm run check:supabase
+npm run check:sheets
+npm run check:llm
+npm run check:sources
+npm run check:prod
+```
+
+These commands validate configuration and connectivity without printing secrets.
+
+## Documentation
+
+Additional technical documentation lives in `docs/`, including:
+
+- Product requirements
+- System architecture
+- API and CLI contracts
+- Database schema
+- UX specifications
+- Deployment guidance
+- Release and validation procedures
+
+## License
+
+No license has been added yet. Until one is provided, the repository remains fully copyrighted by its owner.
