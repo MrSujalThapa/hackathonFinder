@@ -64,4 +64,28 @@ describe("TinyFish via Monid", () => {
       globalThis.fetch = original;
     }
   });
+
+  it("polls an asynchronous Monid run until TinyFish completes", async () => {
+    const original = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async (url) => {
+      calls += 1;
+      if (String(url).endsWith("/run")) {
+        return new Response(JSON.stringify({ status: "RUNNING", runId: "run_async" }), { status: 202 });
+      }
+      return new Response(JSON.stringify({
+        status: "COMPLETED",
+        runId: "run_async",
+        providerResponse: { httpStatus: 200 },
+        output: [{ title: "Async result", url: "https://example.com/async" }],
+      }));
+    }) as typeof fetch;
+    try {
+      const results = await createTinyFishSearchProvider("secret").search({ query: "AI", maxResults: 1, timeoutMs: 1_000 });
+      assert.equal(results[0]?.url, "https://example.com/async");
+      assert.equal(calls, 2);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 });

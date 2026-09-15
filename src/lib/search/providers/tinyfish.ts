@@ -22,6 +22,50 @@ function hostnameOf(url: string): string {
   }
 }
 
+async function parseMonidResponse(response: Response): Promise<UnknownRecord> {
+  try {
+    return record(await response.json()) ?? {};
+  } catch (error) {
+    throw new SearchProviderError("Monid returned malformed JSON", "tinyfish", error);
+  }
+}
+
+async function waitForMonidRun(
+  initial: UnknownRecord,
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<UnknownRecord> {
+  let run = initial;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const status = stringValue(run.status);
+    if (!status || status === "COMPLETED") return run;
+    if (status === "FAILED" || status === "CANCELLED") {
+      throw new SearchProviderError(`Monid run ${status.toLowerCase()}`, "tinyfish");
+    }
+    const runId = stringValue(run.runId);
+    if (!runId) throw new SearchProviderError("Monid async run omitted runId", "tinyfish");
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, 100);
+      signal.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      }, { once: true });
+    });
+    const response = await fetch(`https://api.monid.ai/v1/runs/${encodeURIComponent(runId)}`, {
+      signal,
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!response.ok) {
+      throw new SearchProviderError(
+        `Monid run HTTP ${response.status}${response.status === 429 ? " (rate limited)" : ""}`,
+        "tinyfish",
+      );
+    }
+    run = await parseMonidResponse(response);
+  }
+  throw new SearchProviderError("Monid run did not complete before timeout", "tinyfish");
+}
+
 /**
  * TinyFish is accessed through Monid's run API. The endpoint is intentionally
  * normalized here so the rest of discovery only sees the SearchProvider contract.
@@ -68,12 +112,8 @@ export function createTinyFishSearchProvider(apiKey: string): SearchProvider {
             );
           }
 
-          let data: UnknownRecord;
-          try {
-            data = record(await response.json()) ?? {};
-          } catch (error) {
-            throw new SearchProviderError("Monid returned malformed JSON", "tinyfish", error);
-          }
+          let data = await parseMonidResponse(response);
+          if (response.status === 202) data = await waitForMonidRun(data, apiKey, signal);
           const status = stringValue(data.status);
           if (status && status !== "COMPLETED") {
             throw new SearchProviderError(`Monid run ${status.toLowerCase()}`, "tinyfish");
