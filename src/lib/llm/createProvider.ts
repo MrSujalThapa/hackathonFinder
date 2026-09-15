@@ -31,7 +31,7 @@ function buildFromConfig(
     case "spur":
       return createOpenAiCompatibleProvider({
         apiKey: config.apiKey!,
-        model: config.model ?? "hari",
+        model: config.model ?? "spur-auto",
         baseUrl: "https://ai.spuric.com/v1",
         name: "spur",
       });

@@ -16,6 +16,12 @@ export async function listNotifications(limit = 50): Promise<InAppNotification[]
 /** Persists the in-app inbox event first. An email adapter can be injected by deployment wiring. */
 export async function notify(input: NotifyInput, email?: EmailNotifier): Promise<{ delivered: boolean; deduped: boolean }> {
   const db = createServiceSupabaseClient();
+  let existing = db.from("notifications").select("id").eq("type", input.type);
+  existing = input.opportunityId ? existing.eq("candidate_id", input.opportunityId) : existing.is("candidate_id", null);
+  existing = input.applicationId ? existing.eq("application_id", input.applicationId) : existing.is("application_id", null);
+  const { data: prior, error: lookupError } = await existing.limit(1);
+  if (lookupError) throw new Error(`Could not check notification delivery: ${lookupError.message}`);
+  if (prior?.length) return { delivered: false, deduped: true };
   const { error } = await db.from("notifications").insert({ user_id: input.userId ?? null, type: input.type, candidate_id: input.opportunityId ?? null, application_id: input.applicationId ?? null, title: input.title, body: input.body, action_url: input.actionUrl ?? null });
   if (error) {
     if (/duplicate|unique/i.test(error.message)) return { delivered: false, deduped: true };

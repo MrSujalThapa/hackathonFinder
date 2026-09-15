@@ -18,10 +18,10 @@ const searchProviderSchema = z
   .optional()
   .or(emptyToUndefined);
 
-const llmProviderSchema = z
-  .enum(["openai", "spur", "mock"])
-  .optional()
-  .or(emptyToUndefined);
+const llmProviderSchema = z.preprocess(
+  (value) => (typeof value === "string" ? value.toLowerCase() : value),
+  z.enum(["openai", "spur", "mock"]).optional().or(emptyToUndefined),
+);
 
 const booleanFlag = z
   .enum(["true", "false", "1", "0"])

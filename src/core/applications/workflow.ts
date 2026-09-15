@@ -31,7 +31,9 @@ export async function draftApplication(draft: ApplicationDraft, profile: Profile
 }
 
 export function editAnswer(draft: ApplicationDraft, questionId: string, answer: string): ApplicationDraft {
-  return { ...draft, status: draft.status === "approved" ? "ready_for_review" : draft.status, approvedAt: null, approvedDraftVersion: null, draftVersion: draft.draftVersion + 1, questions: draft.questions.map((question) => question.id === questionId ? { ...question, answer, answerSource: "user", needsUserInput: false } : question) };
+  const questions = draft.questions.map((question) => question.id === questionId ? { ...question, answer, answerSource: "user" as const, needsUserInput: false } : question);
+  const complete = !questions.some((question) => question.required && !question.answer);
+  return { ...draft, status: draft.status === "approved" || (draft.status === "needs_input" && complete) ? "ready_for_review" : draft.status, approvedAt: null, approvedDraftVersion: null, draftVersion: draft.draftVersion + 1, questions };
 }
 
 export function approveDraft(draft: ApplicationDraft, approvedAt = new Date().toISOString()): ApplicationDraft {

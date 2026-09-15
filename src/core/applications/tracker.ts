@@ -5,6 +5,7 @@ export function trackOpportunities(opportunities: TrackerOpportunity[], now: Dat
   return opportunities.flatMap((opportunity) => {
     const events: TrackerEvent[] = []; const open = opportunity.applicationOpensAt && new Date(opportunity.applicationOpensAt); const deadline = opportunity.applicationDeadline && new Date(opportunity.applicationDeadline);
     if (open && open <= now && !opportunity.application && !alreadySent.has(`${opportunity.id}:APPLICATION_OPEN`)) events.push({ type: "APPLICATION_OPEN", opportunityId: opportunity.id });
+    if (opportunity.application?.status === "needs_input" && !alreadySent.has(`${opportunity.id}:APPLICATION_NEEDS_INPUT`)) events.push({ type: "APPLICATION_NEEDS_INPUT", opportunityId: opportunity.id });
     if (deadline && deadline > now && deadline.getTime() - now.getTime() <= 86400000 && !alreadySent.has(`${opportunity.id}:DEADLINE_SOON`)) events.push({ type: "DEADLINE_SOON", opportunityId: opportunity.id });
     return events;
   });
