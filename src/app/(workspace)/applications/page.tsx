@@ -1,2 +1,3 @@
 import { ApplicationsList } from "@/components/applications/ApplicationsList";
-export default function ApplicationsPage() { return <section className="mx-auto max-w-3xl space-y-5"><header><p className="font-mono text-xs text-muted">OPPORTUNITY AGENT</p><h1 className="hf-doc-title text-3xl">Applications</h1><p className="mt-2 text-muted">Drafts wait for your explicit approval before any submission path can run.</p></header><ApplicationsList /></section>; }
+import { PrepareApplicationForm } from "@/components/applications/PrepareApplicationForm";
+export default function ApplicationsPage() { return <section className="mx-auto max-w-3xl space-y-5"><header><p className="font-mono text-xs text-muted">OPPORTUNITY AGENT</p><h1 className="hf-doc-title text-3xl">Applications</h1><p className="mt-2 text-muted">Drafts wait for your explicit approval before any submission path can run.</p></header><PrepareApplicationForm /><ApplicationsList /></section>; }
