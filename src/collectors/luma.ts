@@ -1364,8 +1364,27 @@ export const lumaCollector: Collector = {
     );
 
     const feedBudgets = allocateLumaFeedBudgets(budget, feeds.length);
+    const perFeedTimeout = Math.max(
+      6_000,
+      Math.floor(budgetMs / Math.max(1, feeds.length)),
+    );
 
     try {
+      // Render the location AI/Tech routes and the global AI/Tech routes in
+      // the first wave.  A city page is allowed to be slow or unverified, but
+      // it must never prevent the independent global recall feeds from running.
+      const firstWave = feeds.slice(0, Math.min(4, feeds.length));
+      const precollected = new Map(await mapLimit(firstWave, firstWave.length, async (feed, feedIndex) => {
+        const originalIndex = feeds.indexOf(feed);
+        const remaining = Math.min(
+          perFeedTimeout,
+          Math.max(1_000, budgetMs - (Date.now() - startedAt)),
+        );
+        return [
+          feed.url,
+          await collectRenderedLumaFeed(feed, remaining, feedBudgets[originalIndex]!, input.logger),
+        ] as const;
+      }));
       // Phase 1: collect event cards from every primary route before classification.
       for (let feedIndex = 0; feedIndex < feeds.length; feedIndex += 1) {
         const feed = feeds[feedIndex]!;
@@ -1374,11 +1393,6 @@ export const lumaCollector: Collector = {
           stopReasons.push(`${feed.mode}:timeout_before_start`);
           break;
         }
-        // Independent reserved timeout slice — Tech cannot consume the whole deadline.
-        const perFeedTimeout = Math.max(
-          6_000,
-          Math.floor(budgetMs / Math.max(1, feeds.length)),
-        );
         const remaining = Math.min(
           perFeedTimeout,
           Math.max(1_000, budgetMs - (Date.now() - startedAt)),
@@ -1387,7 +1401,7 @@ export const lumaCollector: Collector = {
         input.logger?.(
           `[${feed.label}] reserved budget ${feedBudget.maxScrolls} scrolls / ${feedBudget.maxEvents} events (${remaining}ms)`,
         );
-        const feedResult = await collectRenderedLumaFeed(feed, remaining, feedBudget, input.logger);
+        const feedResult = precollected.get(feed.url) ?? await collectRenderedLumaFeed(feed, remaining, feedBudget, input.logger);
         pagesFetched += 1;
         result.warnings.push(...feedResult.warnings);
         scrollAttempts += feedResult.scrollAttempts;
