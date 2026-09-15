@@ -43,7 +43,7 @@ export async function createApplication(candidateId: string, applicationUrl: str
 export async function saveDraft(draft: ApplicationDraft): Promise<ApplicationDraft> {
   const db = createServiceSupabaseClient();
   if (!statuses.has(draft.status)) throw new Error("Invalid application status.");
-  const { error } = await db.from("applications").update({ status: draft.status, draft_version: draft.draftVersion, approved_at: draft.approvedAt, approved_draft_version: draft.approvedDraftVersion }).eq("id", draft.id);
+  const { error } = await db.from("applications").update({ status: draft.status, draft_version: draft.draftVersion, approved_at: draft.approvedAt, approved_draft_version: draft.approvedDraftVersion, approved_by: draft.status === "approved" ? OWNER_ID : null }).eq("id", draft.id);
   if (error) throw new Error(`Could not save application: ${error.message}`);
   for (const question of draft.questions) {
     const { error: questionError } = await db.from("application_questions").update({ answer: question.answer, answer_source: question.answerSource, needs_user_input: question.needsUserInput }).eq("id", question.id).eq("application_id", draft.id);
