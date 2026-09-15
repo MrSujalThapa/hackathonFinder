@@ -47,6 +47,11 @@ const SLASH_COMMANDS = [
   "site",
   "sites",
   "confirm",
+  "check",
+  "enable",
+  "disable",
+  "connect",
+  "disconnect",
 ] as const;
 
 const ALLOWED_SLASH = new Set<string>(SLASH_COMMANDS);
@@ -536,6 +541,15 @@ function parseSlash(
     case "source": {
       const parts = rest.trim().split(/\s+/).filter(Boolean);
       return parseSourceCommand(parts[0], parts[1], raw);
+    }
+    case "check":
+    case "enable":
+    case "disable":
+    case "connect":
+    case "disconnect": {
+      const source = resolveSource(rest.trim(), raw, `Usage: /${name} <source>`);
+      if (typeof source !== "string") return source;
+      return { kind: "source", action: name, source, raw };
     }
     case "sites":
       return { kind: "site", action: "list", raw };

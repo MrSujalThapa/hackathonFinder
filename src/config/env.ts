@@ -14,7 +14,7 @@ const optionalString = z
 const emptyToUndefined = z.literal("").transform(() => undefined);
 
 const searchProviderSchema = z
-  .enum(["tavily", "brave", "exa", "serpapi", "mock"])
+  .enum(["tinyfish", "tavily", "brave", "exa", "serpapi", "mock"])
   .optional()
   .or(emptyToUndefined);
 

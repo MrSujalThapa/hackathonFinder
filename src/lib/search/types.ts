@@ -3,6 +3,8 @@ export type SearchRequest = {
   maxResults: number;
   dateFrom?: string;
   dateTo?: string;
+  /** Optional geographic target understood by providers that support it. */
+  location?: string;
   timeoutMs?: number;
 };
 
@@ -21,7 +23,7 @@ export interface SearchProvider {
   search(input: SearchRequest): Promise<SearchResult[]>;
 }
 
-export type SearchProviderName = "tavily" | "brave" | "exa" | "serpapi" | "mock";
+export type SearchProviderName = "tinyfish" | "tavily" | "brave" | "exa" | "serpapi" | "mock";
 
 export class MissingSearchConfigError extends Error {
   constructor(message = "SEARCH_PROVIDER and SEARCH_API_KEY are required for web search") {

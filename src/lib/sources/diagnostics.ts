@@ -209,11 +209,10 @@ function snapshotWithoutLive(
     return {
       source,
       displayName,
-      status: "degraded",
+      status: "healthy",
       enabled: true,
       lastCheckedAt: now,
-      safeMessage:
-        "Luma public mode available. Connected mode unavailable / not connected. Run a live check for current status.",
+      safeMessage: "Public discovery",
       capabilities,
       connectionStatus: "n/a",
       mode: "public",
@@ -371,8 +370,9 @@ export async function checkSourceHealth(
   let safeMessage = classified.safeMessage;
 
   if (source === "luma") {
-    const lumaNote = "Public mode. Connected mode unavailable / not connected.";
-    safeMessage = safeMessage ? `${safeMessage} ${lumaNote}` : lumaNote;
+    // Public collection is a complete supported capability. Absence of an
+    // optional authenticated connector is informational, not degradation.
+    if (status === "healthy") safeMessage = "Public discovery";
   }
 
   if (source === "hakku" && hakkuMeta) {

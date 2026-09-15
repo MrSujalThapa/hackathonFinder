@@ -23,7 +23,7 @@ export function requireSearchConfig(env: ServerEnv = getServerEnv()): SearchConf
   const config = readSearchConfig(env);
   if (!config) {
     throw new MissingSearchConfigError(
-      "Web search is not configured. Set SEARCH_PROVIDER (tavily|brave|exa|serpapi|mock) and SEARCH_API_KEY (not required for mock).",
+      "Web search is not configured. Set SEARCH_PROVIDER (tinyfish|tavily|brave|exa|serpapi|mock) and SEARCH_API_KEY (not required for mock). TinyFish uses a Monid API key.",
     );
   }
   return config;

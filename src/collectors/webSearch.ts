@@ -136,6 +136,7 @@ export function createWebSearchCollector(deps: WebSearchCollectorDeps = {}): Col
               maxResults: Math.min(10, input.maxResults),
               dateFrom: input.preferences.dateFrom,
               dateTo: input.preferences.dateTo,
+              location: input.preferences.locationConstraint === "event_location" ? input.preferences.locations[0] : undefined,
               timeoutMs: perQueryBudget,
             });
             for (const item of page) {

@@ -209,6 +209,14 @@ describe("parseTerminalCommand", () => {
     }
   });
 
+  it("parses short slash source-management aliases", () => {
+    for (const action of ["check", "enable", "disable", "connect", "disconnect"] as const) {
+      const parsed = parseTerminalCommand(`/${action} luma`);
+      assert.equal(parsed.kind, "source");
+      if (parsed.kind === "source") assert.equal(parsed.action, action);
+    }
+  });
+
   it("parses custom site commands", () => {
     const saved = parseTerminalCommand(
       "/site save hacker-calendar --url=https://example.com/hackathons --mode=playwright --location=waterloo --topics=hackathon,ai --max-items=75",
