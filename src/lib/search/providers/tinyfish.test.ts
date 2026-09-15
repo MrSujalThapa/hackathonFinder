@@ -38,6 +38,9 @@ describe("TinyFish via Monid", () => {
     await withFetch({ status: 429 }, async () => {
       await assert.rejects(() => createTinyFishSearchProvider("secret").search({ query: "x", maxResults: 1, timeoutMs: 1 }), /Monid HTTP 429/);
     });
+    await withFetch({ body: { status: "COMPLETED" } }, async () => {
+      await assert.rejects(() => createTinyFishSearchProvider("secret").search({ query: "x", maxResults: 1 }), /omitted output/);
+    });
   });
 
   it("uses bounded pages when the requested result count exceeds one page", async () => {

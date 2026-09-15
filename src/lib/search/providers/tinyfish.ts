@@ -115,6 +115,9 @@ export function createTinyFishSearchProvider(apiKey: string): SearchProvider {
           let data = await parseMonidResponse(response);
           if (response.status === 202) data = await waitForMonidRun(data, apiKey, signal);
           const status = stringValue(data.status);
+          if (!status) {
+            throw new SearchProviderError("Monid response omitted run status", "tinyfish");
+          }
           if (status && status !== "COMPLETED") {
             throw new SearchProviderError(`Monid run ${status.toLowerCase()}`, "tinyfish");
           }
@@ -127,6 +130,9 @@ export function createTinyFishSearchProvider(apiKey: string): SearchProvider {
               `TinyFish provider HTTP ${providerStatus}${providerStatus === 429 ? " (rate limited)" : ""}`,
               "tinyfish",
             );
+          }
+          if (!("output" in data)) {
+            throw new SearchProviderError("Monid completed run omitted output", "tinyfish");
           }
           const output = data.output;
           const rows = Array.isArray(output)
