@@ -187,11 +187,12 @@ export function mergeCandidateRows(
 ): Database["public"]["Tables"]["candidates"]["Update"] {
   return {
     name: incoming.name || existing.name,
-    opportunity_type: incoming.opportunityType ?? existing.opportunity_type ?? "hackathon",
-    organizer: coalesceField(existing.organizer, incoming.organizer),
-    application_opens_at: coalesceField(existing.application_opens_at, incoming.applicationOpensAt),
-    cost: coalesceField(existing.cost, incoming.cost),
-    travel_support: coalesceField(existing.travel_support, incoming.travelSupport),
+    // Keep legacy rows unchanged until migration 011 has populated these columns.
+    opportunity_type: existing.opportunity_type === undefined && incoming.opportunityType === undefined ? undefined : incoming.opportunityType ?? existing.opportunity_type ?? "hackathon",
+    organizer: existing.organizer === undefined && incoming.organizer === undefined ? undefined : coalesceField(existing.organizer, incoming.organizer),
+    application_opens_at: existing.application_opens_at === undefined && incoming.applicationOpensAt === undefined ? undefined : coalesceField(existing.application_opens_at, incoming.applicationOpensAt),
+    cost: existing.cost === undefined && incoming.cost === undefined ? undefined : coalesceField(existing.cost, incoming.cost),
+    travel_support: existing.travel_support === undefined && incoming.travelSupport === undefined ? undefined : coalesceField(existing.travel_support, incoming.travelSupport),
     source: mergeSourceField(existing.source, incoming.source),
     score: incoming.score ?? existing.score,
     official_url: coalesceField(existing.official_url, incoming.officialUrl),

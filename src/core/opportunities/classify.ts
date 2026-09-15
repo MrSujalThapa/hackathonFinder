@@ -11,5 +11,7 @@ export function classifyOpportunityType(...values: Array<string | undefined>): O
   if (/conference|summit/.test(text)) return "conference";
   if (/competition|challenge|contest/.test(text)) return "competition";
   if (/event|meetup|workshop|webinar|talk|panel/.test(text)) return "tech_event";
-  return "other";
+  // Preserve the established discovery contract for ambiguous legacy collector
+  // records; explicit non-hackathon wording is still classified above.
+  return "hackathon";
 }

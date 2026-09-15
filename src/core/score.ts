@@ -128,6 +128,23 @@ function hasHackathonIntent(event: HackathonEvent): boolean {
   return false;
 }
 
+function requestAllowsOpportunityType(event: HackathonEvent, preferences: DiscoveryPreferences): boolean {
+  const type = event.opportunityType ?? "hackathon";
+  if (type === "hackathon") return true;
+  const request = normalizeText(preferences.rawCommand);
+  const terms: Record<string, RegExp> = {
+    tech_event: /\b(?:event|meetup|workshop|webinar|talk|panel)\b/,
+    conference: /\b(?:conference|summit)\b/,
+    fellowship: /\bfellowship\b/,
+    pitch_competition: /\bpitch\b/,
+    accelerator: /\b(?:accelerator|incubator)\b/,
+    startup_program: /\b(?:startup program|founder program)\b/,
+    competition: /\b(?:competition|challenge|contest)\b/,
+    other: /\b(?:opportunity|opportunities|event)\b/,
+  };
+  return terms[type]?.test(request) ?? false;
+}
+
 function isObviousNonHackathon(event: HackathonEvent): boolean {
   const title = normalizeText(event.name);
   if (/^(?:facebook|instagram|linkedin|x|twitter|reddit|\d{4}[\s-]\d{2}[\s-]\d{2})$/.test(title)) {
@@ -277,6 +294,9 @@ export function evaluateEligibility(
 
   if ((event.opportunityType ?? "hackathon") === "hackathon" && (isObviousNonHackathon(event) || !hasHackathonIntent(event))) {
     return reject("Candidate is not a hackathon or hackathon-like competition");
+  }
+  if (!requestAllowsOpportunityType(event, preferences)) {
+    return reject("Opportunity type does not match the requested search");
   }
 
   if (!satisfiesTheme(event, preferences)) {
