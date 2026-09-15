@@ -1,0 +1,9 @@
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { fail, ok, validationError } from "@/server/api/envelope";
+import { protectApiRequest } from "@/server/api/protection";
+import { deleteQuestionBank, listQuestionBank, upsertQuestionBank } from "@/server/applications/repository";
+const schema = z.object({ id: z.string().uuid().optional(), canonicalQuestion: z.string().min(1).max(1000), answer: z.string().min(1).max(20_000), aliases: z.array(z.string().max(1000)).max(30).default([]), tags: z.array(z.string().max(80)).max(30).default([]) });
+export async function GET() { try { return ok({ entries: await listQuestionBank() }); } catch { return fail("INTERNAL_ERROR", "Could not load Question Bank.", 500); } }
+export async function POST(request: Request) { const denied = protectApiRequest(request, { requireSameOrigin: true, maxBodyBytes: 50_000, rateLimit: { key: "question-bank", limit: 30, windowMs: 60_000 } }); if (denied) return denied; const parsed = schema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return validationError(parsed.error); try { return ok({ entry: await upsertQuestionBank({ ...parsed.data, id: parsed.data.id ?? randomUUID() }) }); } catch { return fail("INTERNAL_ERROR", "Could not save Question Bank entry.", 500); } }
+export async function DELETE(request: Request) { const id = new URL(request.url).searchParams.get("id"); if (!id || !z.string().uuid().safeParse(id).success) return fail("VALIDATION_ERROR", "Invalid Question Bank id.", 400); const denied = protectApiRequest(request, { requireSameOrigin: true, rateLimit: { key: "question-bank", limit: 30, windowMs: 60_000 } }); if (denied) return denied; try { await deleteQuestionBank(id); return ok({ deleted: true }); } catch { return fail("INTERNAL_ERROR", "Could not delete Question Bank entry.", 500); } }

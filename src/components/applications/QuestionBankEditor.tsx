@@ -1,0 +1,10 @@
+"use client";
+import { useEffect, useState } from "react";
+import type { QuestionBankEntry } from "@/core/applications/types";
+export function QuestionBankEditor() {
+  const [entries, setEntries] = useState<QuestionBankEntry[]>([]); const [question, setQuestion] = useState(""); const [answer, setAnswer] = useState(""); const [message, setMessage] = useState("");
+  async function load() { const response = await fetch("/api/question-bank"); const body = await response.json() as { data?: { entries?: QuestionBankEntry[] } }; setEntries(body.data?.entries ?? []); }
+  useEffect(() => { void load(); }, []);
+  async function add() { const response = await fetch("/api/question-bank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ canonicalQuestion: question, answer, aliases: [], tags: [] }) }); if (!response.ok) { setMessage("Could not save entry."); return; } setQuestion(""); setAnswer(""); setMessage("Saved."); await load(); }
+  return <div className="space-y-5"><form className="hf-sheet-frame space-y-3 p-5" onSubmit={(event) => { event.preventDefault(); void add(); }}><label className="block text-sm">Canonical question<input className="hf-focus mt-1 w-full border border-border bg-inset px-3 py-2" required value={question} onChange={(event) => setQuestion(event.target.value)} /></label><label className="block text-sm">Reusable answer<textarea className="hf-focus mt-1 min-h-28 w-full border border-border bg-inset px-3 py-2" required value={answer} onChange={(event) => setAnswer(event.target.value)} /></label><button className="hf-focus border border-accent-save px-4 py-2 text-sm">Save answer</button><p role="status" className="text-sm text-muted">{message}</p></form><ul className="space-y-3">{entries.map((entry) => <li key={entry.id} className="hf-sheet-frame p-4"><p className="font-medium">{entry.canonicalQuestion}</p><p className="mt-1 whitespace-pre-wrap text-sm text-muted">{entry.answer}</p><p className="mt-2 text-xs text-muted">Updated {new Date(entry.updatedAt).toLocaleDateString()}</p></li>)}</ul></div>;
+}

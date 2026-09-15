@@ -11,6 +11,9 @@ import { getCounts, subscribe } from "@/lib/candidates/clientStore";
 const NAV_ITEMS = [
   { href: "/queue", label: "Queue", icon: "◈" },
   { href: "/terminal", label: "Terminal", icon: "$" },
+  { href: "/applications", label: "Applications", icon: "▣" },
+  { href: "/profile", label: "Profile", icon: "◉" },
+  { href: "/questions", label: "Questions", icon: "?" },
   { href: "/approved", label: "Approved", icon: "✓" },
   { href: "/saved", label: "Saved", icon: "◇" },
   { href: "/rejected", label: "Rejected", icon: "✕" },

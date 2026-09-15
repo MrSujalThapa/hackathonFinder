@@ -78,6 +78,12 @@ export type Database = {
           approved_at: string | null;
           rejected_at: string | null;
           saved_at: string | null;
+          /** Optional while existing deployments have not applied migration 011. */
+          opportunity_type?: string;
+          organizer?: string | null;
+          application_opens_at?: string | null;
+          cost?: string | null;
+          travel_support?: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -113,6 +119,11 @@ export type Database = {
           approved_at?: string | null;
           rejected_at?: string | null;
           saved_at?: string | null;
+          opportunity_type?: string;
+          organizer?: string | null;
+          application_opens_at?: string | null;
+          cost?: string | null;
+          travel_support?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -299,6 +310,36 @@ export type Database = {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["manual_leads"]["Insert"]>;
+        Relationships: [];
+      };
+      user_profiles: {
+        Row: { user_id: string; fields: Json; updated_at: string };
+        Insert: { user_id: string; fields?: Json; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["user_profiles"]["Insert"]>;
+        Relationships: [];
+      };
+      question_bank: {
+        Row: { id: string; user_id: string; canonical_question: string; answer: string; aliases: string[]; tags: string[]; updated_at: string };
+        Insert: { id?: string; user_id: string; canonical_question: string; answer: string; aliases?: string[]; tags?: string[]; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["question_bank"]["Insert"]>;
+        Relationships: [];
+      };
+      applications: {
+        Row: { id: string; candidate_id: string; application_url: string; status: string; draft_version: number; approved_draft_version: number | null; approved_at: string | null; approved_by: string | null; submitted_at: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; candidate_id: string; application_url: string; status?: string; draft_version?: number; approved_draft_version?: number | null; approved_at?: string | null; approved_by?: string | null; submitted_at?: string | null; created_at?: string; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["applications"]["Insert"]>;
+        Relationships: [];
+      };
+      application_questions: {
+        Row: { id: string; application_id: string; question: string; field_type: string; required: boolean; answer: string | null; answer_source: string; needs_user_input: boolean; form_selector: string | null; options: Json; max_length: number | null; position: number; created_at: string; updated_at: string };
+        Insert: { id?: string; application_id: string; question: string; field_type: string; required?: boolean; answer?: string | null; answer_source?: string; needs_user_input?: boolean; form_selector?: string | null; options?: Json; max_length?: number | null; position?: number; created_at?: string; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["application_questions"]["Insert"]>;
+        Relationships: [];
+      };
+      notifications: {
+        Row: { id: string; user_id: string | null; type: string; candidate_id: string | null; application_id: string | null; title: string; body: string; action_url: string | null; sent_at: string };
+        Insert: { id?: string; user_id?: string | null; type: string; candidate_id?: string | null; application_id?: string | null; title: string; body: string; action_url?: string | null; sent_at?: string };
+        Update: Partial<Database["public"]["Tables"]["notifications"]["Insert"]>;
         Relationships: [];
       };
     };

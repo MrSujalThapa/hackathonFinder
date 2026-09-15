@@ -1,0 +1,2 @@
+import { ApplicationEditor } from "@/components/applications/ApplicationEditor";
+export default async function ApplicationPage({ params }: { params: Promise<{ id: string }> }) { return <section className="mx-auto max-w-3xl space-y-5"><header><p className="font-mono text-xs text-muted">APPLICATION REVIEW</p><h1 className="hf-doc-title text-3xl">Review draft</h1><p className="mt-2 text-muted">Every answer is editable. Approval records this exact draft version.</p></header><ApplicationEditor id={(await params).id} /></section>; }

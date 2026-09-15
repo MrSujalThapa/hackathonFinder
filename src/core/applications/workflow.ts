@@ -1,5 +1,5 @@
 import { generateJson } from "@/lib/llm/structured";
-import type { LlmProvider, LlmUsage } from "@/lib/llm/types";
+import type { LlmProvider } from "@/lib/llm/types";
 import { matchQuestionBank } from "@/core/applications/questionBank";
 import type { ApplicationDraft, ApplicationQuestion, Profile, QuestionBankEntry } from "@/core/applications/types";
 
