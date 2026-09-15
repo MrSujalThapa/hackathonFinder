@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: "/applications", label: "Applications", icon: "▣" },
   { href: "/profile", label: "Profile", icon: "◉" },
   { href: "/questions", label: "Questions", icon: "?" },
+  { href: "/notifications", label: "Notifications", icon: "•" },
   { href: "/approved", label: "Approved", icon: "✓" },
   { href: "/saved", label: "Saved", icon: "◇" },
   { href: "/rejected", label: "Rejected", icon: "✕" },

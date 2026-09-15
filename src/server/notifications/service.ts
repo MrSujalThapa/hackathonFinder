@@ -4,6 +4,15 @@ import type { NotificationType } from "@/core/applications/types";
 export type NotifyInput = { userId?: string; type: NotificationType; title: string; body: string; opportunityId?: string; applicationId?: string; actionUrl?: string };
 export interface EmailNotifier { send(input: NotifyInput): Promise<void>; }
 
+export type InAppNotification = { id: string; type: string; title: string; body: string; actionUrl: string | null; sentAt: string };
+
+export async function listNotifications(limit = 50): Promise<InAppNotification[]> {
+  const db = createServiceSupabaseClient();
+  const { data, error } = await db.from("notifications").select("id,type,title,body,action_url,sent_at").order("sent_at", { ascending: false }).limit(Math.min(Math.max(limit, 1), 100));
+  if (error) throw new Error(`Could not load notifications: ${error.message}`);
+  return (data ?? []).map((row) => ({ id: row.id, type: row.type, title: row.title, body: row.body, actionUrl: row.action_url, sentAt: row.sent_at }));
+}
+
 /** Persists the in-app inbox event first. An email adapter can be injected by deployment wiring. */
 export async function notify(input: NotifyInput, email?: EmailNotifier): Promise<{ delivered: boolean; deduped: boolean }> {
   const db = createServiceSupabaseClient();
