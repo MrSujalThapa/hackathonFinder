@@ -2,7 +2,7 @@ import type { DiscoveryPreferences, RawLead } from "@/core/discovery/types";
 import type { Collector, CollectorInput, CollectorResult } from "@/collectors/types";
 import { emptyCollectorResult } from "@/collectors/types";
 
-const MOCK_POSTED_AT = "2026-07-01T12:00:00Z";
+const MOCK_POSTED_AT = "2027-07-01T12:00:00Z";
 
 const MOCK_LEADS: RawLead[] = [
   {
@@ -21,9 +21,9 @@ const MOCK_LEADS: RawLead[] = [
       country: "Canada",
       mode: "in-person",
       themes: ["AI", "agents", "cloud"],
-      deadline: "2026-08-15",
-      startDate: "2026-09-13",
-      endDate: "2026-09-15",
+      deadline: "2027-08-15",
+      startDate: "2027-09-13",
+      endDate: "2027-09-15",
       prize: "$10,000 in prizes",
       eligibility: "Open to students and professionals in Canada",
       officialUrl: "https://hackto.example.com/ai-challenge",
@@ -47,9 +47,9 @@ const MOCK_LEADS: RawLead[] = [
       country: "Canada",
       mode: "in-person",
       themes: ["developer tools", "cloud"],
-      deadline: "2026-09-01",
-      startDate: "2026-09-20",
-      endDate: "2026-09-22",
+      deadline: "2027-09-01",
+      startDate: "2027-09-20",
+      endDate: "2027-09-22",
       prize: "Sponsor prizes",
       eligibility: "Students only",
       officialUrl: "https://uwaterloo.example.com/builders-hack",
@@ -73,9 +73,9 @@ const MOCK_LEADS: RawLead[] = [
       country: "Online",
       mode: "online",
       themes: ["agents", "cloud", "AI"],
-      deadline: "2026-07-30",
-      startDate: "2026-08-05",
-      endDate: "2026-08-07",
+      deadline: "2027-07-30",
+      startDate: "2027-08-05",
+      endDate: "2027-08-07",
       prize: "$7,500",
       eligibility: "Open worldwide",
       officialUrl: "https://remoteagents.example.com/hack",
@@ -132,9 +132,9 @@ const MOCK_LEADS: RawLead[] = [
       country: "Canada",
       mode: "in-person",
       themes: ["AI", "agents"],
-      deadline: "2026-08-15",
-      startDate: "2026-09-13",
-      endDate: "2026-09-15",
+      deadline: "2027-08-15",
+      startDate: "2027-09-13",
+      endDate: "2027-09-15",
       prize: "$10,000 in prizes",
       eligibility: "Open to students",
       officialUrl: "https://www.hackto.example.com/ai-challenge/?utm_source=mock",
@@ -159,9 +159,9 @@ const MOCK_LEADS: RawLead[] = [
       country: "Japan",
       mode: "in-person",
       themes: ["robotics"],
-      deadline: "2026-10-01",
-      startDate: "2026-10-15",
-      endDate: "2026-10-17",
+      deadline: "2027-10-01",
+      startDate: "2027-10-15",
+      endDate: "2027-10-17",
       officialUrl: "https://tokyo-robotics.example.com/fair",
       applyUrl: "https://tokyo-robotics.example.com/fair/register",
     },
