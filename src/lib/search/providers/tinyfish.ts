@@ -35,6 +35,10 @@ export function createTinyFishSearchProvider(apiKey: string): SearchProvider {
       return withSearchRetry(
         "tinyfish",
         async (signal) => {
+          const perPage = Math.min(20, Math.max(1, input.maxResults));
+          const seen = new Set<string>();
+          const results: SearchResult[] = [];
+          for (let page = 1; results.length < input.maxResults; page += 1) {
           const response = await fetch("https://api.monid.ai/v1/run", {
             method: "POST",
             signal,
@@ -47,7 +51,8 @@ export function createTinyFishSearchProvider(apiKey: string): SearchProvider {
               endpoint: "/search",
               input: {
                 query: input.query,
-                maxResults: input.maxResults,
+                maxResults: perPage,
+                page,
                 ...(input.dateFrom ? { afterDate: input.dateFrom } : {}),
                 ...(input.dateTo ? { beforeDate: input.dateTo } : {}),
                 ...(input.location ? { location: input.location } : {}),
@@ -89,8 +94,7 @@ export function createTinyFishSearchProvider(apiKey: string): SearchProvider {
             : Array.isArray(record(output)?.results)
               ? (record(output)!.results as unknown[])
               : [];
-          const seen = new Set<string>();
-          const results: SearchResult[] = [];
+          let pageUnique = 0;
           for (const row of rows) {
             const item = record(row);
             if (!item) continue;
@@ -98,6 +102,7 @@ export function createTinyFishSearchProvider(apiKey: string): SearchProvider {
             const title = stringValue(item.title) ?? stringValue(item.name);
             if (!url || !title || seen.has(url)) continue;
             seen.add(url);
+            pageUnique += 1;
             results.push({
               title,
               url,
@@ -107,6 +112,10 @@ export function createTinyFishSearchProvider(apiKey: string): SearchProvider {
               metadata: { provider: "tinyfish", monidRunId: stringValue(data.runId) },
             });
             if (results.length >= input.maxResults) break;
+          }
+          // A short page or all duplicates means there is no useful next page;
+          // prevents repeated provider pages from consuming the query budget.
+          if (rows.length < perPage || pageUnique === 0) break;
           }
           return results;
         },

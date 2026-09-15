@@ -39,4 +39,29 @@ describe("TinyFish via Monid", () => {
       await assert.rejects(() => createTinyFishSearchProvider("secret").search({ query: "x", maxResults: 1, timeoutMs: 1 }), /Monid HTTP 429/);
     });
   });
+
+  it("uses bounded pages when the requested result count exceeds one page", async () => {
+    const original = globalThis.fetch;
+    const bodies: Array<Record<string, unknown>> = [];
+    globalThis.fetch = (async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { input: { page: number } };
+      bodies.push(body as unknown as Record<string, unknown>);
+      return new Response(JSON.stringify({
+        status: "COMPLETED",
+        providerResponse: { httpStatus: 200 },
+        output: Array.from({ length: 20 }, (_, index) => ({
+          title: `Result ${body.input.page}-${index}`,
+          url: `https://example.com/${body.input.page}-${index}`,
+        })),
+      }));
+    }) as typeof fetch;
+    try {
+      const results = await createTinyFishSearchProvider("secret").search({ query: "AI", maxResults: 25 });
+      assert.equal(results.length, 25);
+      assert.deepEqual(bodies.map((body) => (body.input as { page: number }).page), [1, 2]);
+      assert.equal((bodies[0]!.input as { maxResults: number }).maxResults, 20);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 });
