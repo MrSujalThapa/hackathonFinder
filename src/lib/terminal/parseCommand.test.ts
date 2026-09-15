@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  ALLOWED_SLASH,
   parseTerminalCommand,
   REJECTION_MESSAGE,
   suggestSlashCommand,
@@ -391,5 +392,12 @@ describe("formatHelpText", () => {
     assert.match(formatHelpText("find"), /\/find <request>/);
     assert.match(formatHelpText("source"), /\/source status/);
     assert.match(formatHelpText("terminals"), /\/switch/);
+  });
+
+  it("enumerates every parser-supported slash command in bare help", () => {
+    const text = formatHelpText();
+    for (const command of ALLOWED_SLASH) {
+      assert.match(text, new RegExp(`/${command}(?:[,\\s]|$)`));
+    }
   });
 });

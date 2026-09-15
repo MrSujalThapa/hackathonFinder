@@ -124,16 +124,29 @@ export function interpretDiscoveryQuery(input: {
 export function formatQueryInterpretationLines(
   interpretation: QueryInterpretation,
 ): string[] {
-  return [
-    `[query] Theme: ${interpretation.theme}`,
-    `[query] Location: ${interpretation.eventLocation}`,
-    `[query] Eligibility: ${interpretation.participantEligibility}`,
-    `[query] Remote: ${interpretation.remotePolicy}`,
-    `[query] Dates: ${interpretation.dateRange}`,
-    `[query] Sources: ${interpretation.sourceRestriction}`,
-    `[query] Profile: ${interpretation.crawlProfile}`,
-    `[query] Dry-run: ${interpretation.dryRun ? "yes" : "no"}`,
-    `[query] Devpost budget: ${interpretation.budgets.devpost}`,
-    `[query] Luma budget: ${interpretation.budgets.luma}`,
+  const format = interpretation.remotePolicy === "remote only"
+    ? "remote"
+    : interpretation.remotePolicy === "excluded"
+      ? "in-person"
+      : interpretation.eventLocation !== "none"
+        ? "in-person + remote"
+        : "remote + in-person + hybrid";
+  const lines = [
+    "Searching for:",
+    `  Theme: ${interpretation.theme}`,
+    `  Location: ${interpretation.eventLocation}`,
+    `  Format: ${format}`,
+    `  Dates: ${interpretation.dateRange}`,
+    `  Sources: ${interpretation.sourceRestriction}`,
+    `  Depth: ${interpretation.crawlProfile}`,
   ];
+  if (interpretation.verbose) {
+    lines.push(
+      `  Eligibility: ${interpretation.participantEligibility}`,
+      `  Dry-run: ${interpretation.dryRun ? "yes" : "no"}`,
+      `  Devpost budget: ${interpretation.budgets.devpost}`,
+      `  Luma budget: ${interpretation.budgets.luma}`,
+    );
+  }
+  return lines;
 }

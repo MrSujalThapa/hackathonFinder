@@ -23,11 +23,12 @@ const nextDataPath = path.join(
   "src/collectors/__fixtures__/luma.next-data.html",
 );
 const eventPath = path.join(process.cwd(), "src/collectors/__fixtures__/luma.event.html");
+const FIXTURE_NOW = new Date(Date.UTC(2026, 6, 1));
 
 describe("parseLumaHtml", () => {
   it("accepts likely hackathons", () => {
     const html = fs.readFileSync(fixturePath, "utf8");
-    const leads = parseLumaHtml(html, 20);
+    const leads = parseLumaHtml(html, 20, undefined, undefined, FIXTURE_NOW);
     assert.ok(leads.some((lead) => (lead.title ?? "").includes("Toronto AI Hackathon")));
     assert.ok(leads.some((lead) => (lead.title ?? "").includes("Remote Agent Buildathon")));
     assert.ok(leads.some((lead) => (lead.title ?? "").includes("Waterloo Student Codefest")));
@@ -35,19 +36,19 @@ describe("parseLumaHtml", () => {
 
   it("keeps ordinary meetups for broad human review", () => {
     const html = fs.readFileSync(fixturePath, "utf8");
-    const leads = parseLumaHtml(html, 20);
+    const leads = parseLumaHtml(html, 20, undefined, undefined, FIXTURE_NOW);
     assert.ok(leads.some((lead) => /coffee meetup/i.test(lead.title ?? "")));
   });
 
   it("excludes old events", () => {
     const html = fs.readFileSync(fixturePath, "utf8");
-    const leads = parseLumaHtml(html, 20);
+    const leads = parseLumaHtml(html, 20, undefined, undefined, FIXTURE_NOW);
     assert.ok(!leads.some((lead) => /Old Toronto Hackathon 2024/i.test(lead.title ?? "")));
   });
 
   it("parses online events", () => {
     const html = fs.readFileSync(fixturePath, "utf8");
-    const leads = parseLumaHtml(html, 20);
+    const leads = parseLumaHtml(html, 20, undefined, undefined, FIXTURE_NOW);
     const remote = leads.find((lead) => (lead.title ?? "").includes("Remote Agent"));
     assert.ok(remote);
     assert.equal(remote!.metadata?.mode, "online");
@@ -56,7 +57,7 @@ describe("parseLumaHtml", () => {
 
   it("parses location and date", () => {
     const html = fs.readFileSync(fixturePath, "utf8");
-    const leads = parseLumaHtml(html, 20);
+    const leads = parseLumaHtml(html, 20, undefined, undefined, FIXTURE_NOW);
     const toronto = leads.find((lead) => (lead.title ?? "").includes("Toronto AI Hackathon"));
     assert.ok(toronto);
     assert.match(String(toronto!.metadata?.location ?? ""), /Toronto/i);
@@ -65,7 +66,7 @@ describe("parseLumaHtml", () => {
 
   it("preserves external official / apply links", () => {
     const html = fs.readFileSync(fixturePath, "utf8");
-    const leads = parseLumaHtml(html, 20);
+    const leads = parseLumaHtml(html, 20, undefined, undefined, FIXTURE_NOW);
     const toronto = leads.find((lead) => (lead.title ?? "").includes("Toronto AI Hackathon"));
     assert.ok(toronto);
     assert.match(String(toronto!.metadata?.applyUrl ?? ""), /hackto\.example\.com/i);
@@ -74,7 +75,7 @@ describe("parseLumaHtml", () => {
 
   it("removes duplicate event URLs", () => {
     const html = fs.readFileSync(fixturePath, "utf8");
-    const leads = parseLumaHtml(html, 20);
+    const leads = parseLumaHtml(html, 20, undefined, undefined, FIXTURE_NOW);
     const toronto = leads.filter((lead) => /toronto-ai-hackathon-2026/i.test(lead.url ?? ""));
     assert.equal(toronto.length, 1);
   });
@@ -86,14 +87,14 @@ describe("parseLumaHtml", () => {
       </article>
       <article class="event-card"><p>No title</p></article>
     </body></html>`;
-    const leads = parseLumaHtml(html, 5);
+    const leads = parseLumaHtml(html, 5, undefined, undefined, FIXTURE_NOW);
     assert.equal(leads.length, 1);
     assert.equal(leads[0]?.title, "Minimal Hackathon");
   });
 
   it("parses __NEXT_DATA__ event embeds and rejects place directories", () => {
     const html = fs.readFileSync(nextDataPath, "utf8");
-    const leads = parseLumaHtml(html, 20, "https://luma.com/discover?q=hackathon");
+    const leads = parseLumaHtml(html, 20, "https://luma.com/discover?q=hackathon", "luma_public", FIXTURE_NOW);
     assert.ok(leads.some((lead) => /Toronto AI Hackathon/i.test(lead.title ?? "")));
     assert.ok(!leads.some((lead) => lead.title === "Toronto"));
     assert.ok(leads.every((lead) => lead.metadata?.provenance === "luma_public"));
@@ -101,7 +102,7 @@ describe("parseLumaHtml", () => {
 
   it("parses individual event pages from __NEXT_DATA__", () => {
     const html = fs.readFileSync(eventPath, "utf8");
-    const leads = parseLumaHtml(html, 5, "https://luma.com/6xx74n4b");
+    const leads = parseLumaHtml(html, 5, "https://luma.com/6xx74n4b", "luma_public", FIXTURE_NOW);
     assert.equal(leads.length, 1);
     assert.match(leads[0]?.title ?? "", /Code the Cup Hackathon/i);
     assert.equal(leads[0]?.metadata?.organizer, "GDG Toronto");
@@ -111,7 +112,7 @@ describe("parseLumaHtml", () => {
 
   it("preserves Luma discovery feed provenance", () => {
     const html = fs.readFileSync(eventPath, "utf8");
-    const leads = parseLumaHtml(html, 5, "https://luma.com/6xx74n4b", "luma_ai");
+    const leads = parseLumaHtml(html, 5, "https://luma.com/6xx74n4b", "luma_ai", FIXTURE_NOW);
     assert.equal(leads[0]?.metadata?.discoveryMode, "luma_ai");
     assert.deepEqual(leads[0]?.metadata?.discoveredFrom, ["luma_ai"]);
   });
@@ -164,7 +165,7 @@ describe("luma helpers", () => {
     assert.ok(resolution.feeds.some((feed) => /discover\?q=hackathon/i.test(feed.url)));
   });
 
-  it("uses multiple AI/hackathon searches before Tech for AI queries", () => {
+  it("keeps global AI and Tech as first-class AI discovery feeds", () => {
     const resolution = resolveLumaFeeds({
       requestedTopics: ["AI"],
       rawCommand: "find AI hackathons from Luma",
@@ -173,9 +174,7 @@ describe("luma helpers", () => {
     assert.ok(topicUrls.some((url) => /discover\?q=hackathon/i.test(url)));
     assert.ok(topicUrls.some((url) => /AI%20hackathon|AI\+hackathon/i.test(url)));
     assert.ok(topicUrls.some((url) => /artificial/i.test(url)));
-    assert.ok(topicUrls.indexOf("https://luma.com/tech") === topicUrls.length - 1 ||
-      topicUrls.indexOf("https://luma.com/tech") > topicUrls.indexOf("https://luma.com/ai"));
-    assert.ok(topicUrls.indexOf("https://luma.com/tech") > 0);
+    assert.ok(topicUrls.indexOf("https://luma.com/tech") > topicUrls.indexOf("https://luma.com/ai"));
   });
 
   it("reserves independent per-route budgets without starving later feeds", () => {
@@ -190,10 +189,13 @@ describe("luma helpers", () => {
     );
   });
 
-  it("uses explicit fallback when no verified city feed exists", () => {
+  it("derives and marks city-category routes for an arbitrary city", () => {
     const resolution = resolveLumaFeeds({ requestedLocation: "London" });
     assert.match(resolution.fallbackReason ?? "", /No verified London city feed/i);
-    assert.ok(resolution.feeds.every((feed) => feed.type === "topic"));
+    assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/discover/london/ai"));
+    assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/discover/london/tech"));
+    assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/ai"));
+    assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/tech"));
   });
 
   it("allocates per-feed scroll budgets instead of one shared pool", () => {

@@ -1,5 +1,6 @@
 import type { TerminalHelpTopic } from "@/lib/terminal/types";
 import { TERMINAL_SOURCE_NAMES } from "@/lib/terminal/types";
+import { SLASH_COMMANDS } from "@/lib/terminal/parseCommand";
 
 export const TERMINAL_HELP_LINES = [
   "Hackathon Finder discovery terminal",
@@ -29,6 +30,8 @@ export const TERMINAL_HELP_LINES = [
   "",
   "Console",
   "  /clear | /help [find|source|terminals]",
+  "",
+  `All slash commands: ${SLASH_COMMANDS.map((command) => `/${command}`).join(", ")}`,
   "",
   "Examples",
   "  /source status hakku",
