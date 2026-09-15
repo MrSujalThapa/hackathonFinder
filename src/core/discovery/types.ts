@@ -1,5 +1,6 @@
 import type { DiscoveryPerformanceSummary } from "@/discovery/performance";
 import type { PersistenceShadowSummary } from "@/discovery/persistence/comparePersistenceResults";
+import type { OpportunityType } from "@/core/applications/types";
 
 export type DiscoveryMode = "online" | "in-person" | "hybrid" | "unknown";
 export type ReviewPolicy = "broad" | "balanced" | "strict";
@@ -76,6 +77,11 @@ export type HackathonEvidence = {
 
 export type HackathonEvent = {
   name: string;
+  /** Legacy name retained while discovery becomes opportunity-aware. */
+  opportunityType?: OpportunityType;
+  organizer?: string;
+  cost?: string;
+  travelSupport?: string;
   source: DiscoverySourceId;
   officialUrl?: string;
   applyUrl?: string;

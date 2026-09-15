@@ -275,7 +275,7 @@ export function evaluateEligibility(
     return reject("No useful official or apply URL");
   }
 
-  if (isObviousNonHackathon(event) || !hasHackathonIntent(event)) {
+  if ((event.opportunityType ?? "hackathon") === "hackathon" && (isObviousNonHackathon(event) || !hasHackathonIntent(event))) {
     return reject("Candidate is not a hackathon or hackathon-like competition");
   }
 
