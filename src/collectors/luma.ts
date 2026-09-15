@@ -538,6 +538,30 @@ export function leadContentMatchesTheme(lead: RawLead, themes: string[]): boolea
   });
 }
 
+/**
+ * Apply the user's event-location/mode constraints after broad public feeds and
+ * detail enrichment. This deliberately uses event metadata, never eligibility
+ * text, so "open to Canadian students" cannot become a Canada event filter.
+ */
+export function leadMatchesLumaLocation(
+  lead: RawLead,
+  requestedLocation: string | undefined,
+  remotePolicy: string | undefined,
+): boolean {
+  const metadata = lead.metadata ?? {};
+  const mode = String(metadata.mode ?? "").toLowerCase();
+  const location = [metadata.location, metadata.city, metadata.region, metadata.country]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+  const remote = mode === "online" || mode === "remote" || /\b(online|remote|virtual)\b/i.test(location);
+  if (remotePolicy === "only") return remote;
+  if (!requestedLocation) return remotePolicy !== "exclude" || !remote;
+  if (remote && remotePolicy === "include") return true;
+  if (remote) return false;
+  return location.includes(requestedLocation.toLowerCase());
+}
+
 export function resolveLumaFeeds(input: {
   requestedLocation?: string;
   requestedTopics?: string[];
@@ -1539,6 +1563,26 @@ export const lumaCollector: Collector = {
         detailFailures = enriched.failures;
       } else {
         result.leads = provisionalLeads.slice(0, budget.maxEvents);
+      }
+
+      const requestedEventLocation =
+        input.preferences.locationConstraint === "event_location"
+          ? input.preferences.locations[0]
+          : undefined;
+      if (requestedEventLocation || input.preferences.remotePolicy === "only") {
+        const beforeLocationFilter = result.leads.length;
+        result.leads = result.leads.filter((lead) =>
+          leadMatchesLumaLocation(
+            lead,
+            requestedEventLocation,
+            input.preferences.remotePolicy,
+          ),
+        );
+        const droppedForLocation = beforeLocationFilter - result.leads.length;
+        result.warnings.push(`location_filtered=${droppedForLocation}`);
+        input.logger?.(
+          `Location filter retained ${result.leads.length}/${beforeLocationFilter} public Luma events`,
+        );
       }
 
       for (const lead of result.leads) {

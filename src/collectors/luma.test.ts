@@ -8,6 +8,7 @@ import {
   extractLumaTimelineCards,
   isLumaFeedThemeCandidate,
   isRejectedLumaLeadUrl,
+  leadMatchesLumaLocation,
   leadContentMatchesTheme,
   lumaBudgetForProfile,
   parseLumaHtml,
@@ -196,6 +197,28 @@ describe("luma helpers", () => {
     assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/discover/london/tech"));
     assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/ai"));
     assert.ok(resolution.feeds.some((feed) => feed.url === "https://luma.com/tech"));
+  });
+
+  it("filters broad feed leads by event location and remote policy", () => {
+    const sanFrancisco = {
+      id: "sf",
+      source: "luma" as const,
+      links: [],
+      postedAt: "2027-01-01T00:00:00Z",
+      metadata: { location: "San Francisco, California", mode: "in-person" },
+    };
+    const remote = {
+      id: "remote",
+      source: "luma" as const,
+      links: [],
+      postedAt: "2027-01-01T00:00:00Z",
+      metadata: { location: "Online", mode: "online" },
+    };
+    assert.equal(leadMatchesLumaLocation(sanFrancisco, "San Francisco", "exclude"), true);
+    assert.equal(leadMatchesLumaLocation(remote, "San Francisco", "exclude"), false);
+    assert.equal(leadMatchesLumaLocation(remote, "San Francisco", "include"), true);
+    assert.equal(leadMatchesLumaLocation(sanFrancisco, undefined, "only"), false);
+    assert.equal(leadMatchesLumaLocation(remote, undefined, "only"), true);
   });
 
   it("allocates per-feed scroll budgets instead of one shared pool", () => {
