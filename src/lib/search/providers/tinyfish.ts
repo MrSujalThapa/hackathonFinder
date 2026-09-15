@@ -22,6 +22,36 @@ function hostnameOf(url: string): string {
   }
 }
 
+// TinyFish's `location` query parameter is an ISO 3166-1 alpha-2 country
+// code, rather than a free-form city or region. City and region intent stays
+// in the query itself; only pass a location value when it is valid for the
+// provider so an arbitrary request such as "Ottawa" cannot make the call fail.
+function tinyFishCountryCode(location: string | undefined): string | undefined {
+  if (!location) return undefined;
+  const normalized = location.trim().toLowerCase();
+  if (/^[a-z]{2}$/i.test(normalized)) return normalized.toUpperCase();
+  const codes: Record<string, string> = {
+    australia: "AU",
+    brazil: "BR",
+    canada: "CA",
+    france: "FR",
+    germany: "DE",
+    india: "IN",
+    ireland: "IE",
+    italy: "IT",
+    japan: "JP",
+    mexico: "MX",
+    netherlands: "NL",
+    spain: "ES",
+    "united kingdom": "GB",
+    uk: "GB",
+    "united states": "US",
+    usa: "US",
+    us: "US",
+  };
+  return codes[normalized];
+}
+
 async function parseMonidResponse(response: Response): Promise<UnknownRecord> {
   try {
     return record(await response.json()) ?? {};
@@ -79,10 +109,11 @@ export function createTinyFishSearchProvider(apiKey: string): SearchProvider {
       return withSearchRetry(
         "tinyfish",
         async (signal) => {
-          const perPage = Math.min(20, Math.max(1, input.maxResults));
           const seen = new Set<string>();
           const results: SearchResult[] = [];
-          for (let page = 1; results.length < input.maxResults; page += 1) {
+          const countryCode = tinyFishCountryCode(input.location);
+          // The TinyFish endpoint has zero-indexed pages from 0 through 10.
+          for (let page = 0; results.length < input.maxResults && page <= 10; page += 1) {
           const response = await fetch("https://api.monid.ai/v1/run", {
             method: "POST",
             signal,
@@ -94,14 +125,15 @@ export function createTinyFishSearchProvider(apiKey: string): SearchProvider {
               provider: "tinyfish",
               endpoint: "/search",
               input: {
-                query: input.query,
-                maxResults: perPage,
-                page,
-                ...(input.dateFrom ? { afterDate: input.dateFrom } : {}),
-                ...(input.dateTo ? { beforeDate: input.dateTo } : {}),
-                ...(input.location ? { location: input.location } : {}),
-                language: "en",
-                domainType: "web",
+                queryParams: {
+                  query: input.query,
+                  page,
+                  ...(input.dateFrom ? { after_date: input.dateFrom } : {}),
+                  ...(input.dateTo ? { before_date: input.dateTo } : {}),
+                  ...(countryCode ? { location: countryCode } : {}),
+                  language: "en",
+                  domain_type: "web",
+                },
               },
             }),
           });
@@ -159,9 +191,9 @@ export function createTinyFishSearchProvider(apiKey: string): SearchProvider {
             });
             if (results.length >= input.maxResults) break;
           }
-          // A short page or all duplicates means there is no useful next page;
-          // prevents repeated provider pages from consuming the query budget.
-          if (rows.length < perPage || pageUnique === 0) break;
+          // An all-duplicate page means there is no useful next page; prevents
+          // repeated provider pages from consuming the query budget.
+          if (pageUnique === 0) break;
           }
           return results;
         },

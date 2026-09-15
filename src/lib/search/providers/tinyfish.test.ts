@@ -15,7 +15,7 @@ async function withFetch(
 }
 
 describe("TinyFish via Monid", () => {
-  it("normalizes results, maps dates/location, and dedupes URLs", async () => {
+  it("normalizes results, maps dates, and dedupes URLs", async () => {
     await withFetch({ body: { status: "COMPLETED", runId: "run_1", providerResponse: { httpStatus: 200 }, output: { results: [
       { title: "One", url: "https://example.com/a", snippet: "first", published_date: "2026-01-01" },
       { title: "Duplicate", url: "https://example.com/a" },
@@ -45,20 +45,21 @@ describe("TinyFish via Monid", () => {
         maxResults: 5,
         dateFrom: "2027-01-01",
         dateTo: "2027-02-01",
-        location: "Ottawa",
+        location: "Canada",
       });
       assert.deepEqual(sent, {
         provider: "tinyfish",
         endpoint: "/search",
         input: {
-          query: "AI hackathons",
-          maxResults: 5,
-          page: 1,
-          afterDate: "2027-01-01",
-          beforeDate: "2027-02-01",
-          location: "Ottawa",
-          language: "en",
-          domainType: "web",
+          queryParams: {
+            query: "AI hackathons",
+            page: 0,
+            after_date: "2027-01-01",
+            before_date: "2027-02-01",
+            location: "CA",
+            language: "en",
+            domain_type: "web",
+          },
         },
       });
     } finally {
@@ -85,22 +86,21 @@ describe("TinyFish via Monid", () => {
     const original = globalThis.fetch;
     const bodies: Array<Record<string, unknown>> = [];
     globalThis.fetch = (async (_url, init) => {
-      const body = JSON.parse(String(init?.body)) as { input: { page: number } };
+      const body = JSON.parse(String(init?.body)) as { input: { queryParams: { page: number } } };
       bodies.push(body as unknown as Record<string, unknown>);
       return new Response(JSON.stringify({
         status: "COMPLETED",
         providerResponse: { httpStatus: 200 },
         output: Array.from({ length: 20 }, (_, index) => ({
-          title: `Result ${body.input.page}-${index}`,
-          url: `https://example.com/${body.input.page}-${index}`,
+          title: `Result ${body.input.queryParams.page}-${index}`,
+          url: `https://example.com/${body.input.queryParams.page}-${index}`,
         })),
       }));
     }) as typeof fetch;
     try {
       const results = await createTinyFishSearchProvider("secret").search({ query: "AI", maxResults: 25 });
       assert.equal(results.length, 25);
-      assert.deepEqual(bodies.map((body) => (body.input as { page: number }).page), [1, 2]);
-      assert.equal((bodies[0]!.input as { maxResults: number }).maxResults, 20);
+      assert.deepEqual(bodies.map((body) => (body.input as { queryParams: { page: number } }).queryParams.page), [0, 1]);
     } finally {
       globalThis.fetch = original;
     }
