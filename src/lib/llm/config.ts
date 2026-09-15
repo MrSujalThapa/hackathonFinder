@@ -25,7 +25,7 @@ export function requireLlmConfig(env: ServerEnv = getServerEnv()): LlmConfig {
   const config = readLlmConfig(env);
   if (!config) {
     throw new MissingLlmConfigError(
-      "LLM is not configured. Set LLM_PROVIDER (openai|anthropic|mock), LLM_API_KEY (not required for mock), and optionally LLM_MODEL.",
+      "LLM is not configured. Set LLM_PROVIDER (openai|spur|mock), LLM_API_KEY (not required for mock), and optionally LLM_MODEL.",
     );
   }
   return config;

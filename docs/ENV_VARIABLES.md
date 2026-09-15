@@ -14,7 +14,7 @@ Placeholders only. Real values belong in gitignored `.env.local`.
 | `NEXT_PUBLIC_SUPABASE_URL` | full mode | client+server | — | Supabase | URL | `src/lib/supabase/*` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | full mode | client+server | — | Supabase | non-empty | `src/lib/supabase/*` |
 | `SUPABASE_SERVICE_ROLE_KEY` | full mode | server | — | Supabase writes | non-empty | service client |
-| `LLM_PROVIDER` | no | server | unset | enrichment | `openai`\|`mock` | `src/lib/llm/*` |
+| `LLM_PROVIDER` | no | server | unset | enrichment | `openai`\|`spur`\|`mock` | `src/lib/llm/*` |
 | `LLM_API_KEY` | if openai | server | — | enrichment | non-empty with provider | `src/lib/llm/*` |
 | `LLM_MODEL` | no | server | provider default | enrichment | string | `src/lib/llm/*` |
 | `LLM_REQUEST_TIMEOUT_MS` | no | server | provider default | enrichment | positive int | llm config |

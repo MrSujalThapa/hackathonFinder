@@ -1,4 +1,4 @@
-export type LlmProviderName = "openai" | "anthropic" | "mock";
+export type LlmProviderName = "openai" | "anthropic" | "spur" | "mock";
 
 export type LlmMessageRole = "system" | "developer" | "user" | "assistant";
 

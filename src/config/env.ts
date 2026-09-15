@@ -19,7 +19,7 @@ const searchProviderSchema = z
   .or(emptyToUndefined);
 
 const llmProviderSchema = z
-  .enum(["openai", "mock"])
+  .enum(["openai", "spur", "mock"])
   .optional()
   .or(emptyToUndefined);
 
