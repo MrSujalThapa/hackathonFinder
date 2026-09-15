@@ -28,6 +28,44 @@ describe("TinyFish via Monid", () => {
     });
   });
 
+  it("maps SearchRequest filters into the TinyFish Monid input", async () => {
+    const original = globalThis.fetch;
+    let sent: { provider: string; endpoint: string; input: Record<string, unknown> } | undefined;
+    globalThis.fetch = (async (_url, init) => {
+      sent = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        status: "COMPLETED",
+        providerResponse: { httpStatus: 200 },
+        output: [],
+      }));
+    }) as typeof fetch;
+    try {
+      await createTinyFishSearchProvider("secret").search({
+        query: "AI hackathons",
+        maxResults: 5,
+        dateFrom: "2027-01-01",
+        dateTo: "2027-02-01",
+        location: "Ottawa",
+      });
+      assert.deepEqual(sent, {
+        provider: "tinyfish",
+        endpoint: "/search",
+        input: {
+          query: "AI hackathons",
+          maxResults: 5,
+          page: 1,
+          afterDate: "2027-01-01",
+          beforeDate: "2027-02-01",
+          location: "Ottawa",
+          language: "en",
+          domainType: "web",
+        },
+      });
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it("handles zero results, provider errors, and Monid rate limits", async () => {
     await withFetch({ body: { status: "COMPLETED", providerResponse: { httpStatus: 200 }, output: [] } }, async () => {
       assert.deepEqual(await createTinyFishSearchProvider("secret").search({ query: "none", maxResults: 2 }), []);
