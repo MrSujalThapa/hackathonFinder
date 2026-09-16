@@ -6,6 +6,7 @@ import { classifyFormAction } from "@/core/applications/navigationSafety";
 import { reconcileExternalForm, type ExternalFormControl, type ReconciliationResult } from "@/core/applications/formReconciliation";
 import { withPersistentPlaywright } from "@/lib/browser/persistent";
 import { resolveSourceProfileDir } from "@/lib/browser/profilePaths";
+import { assertSafeCustomSourceUrl } from "@/server/customSources/urlSafety";
 
 const fixturePath = "/fixtures/controlled-application";
 export const isControlledApplicationFixture = (url: string) => { const parsed = new URL(url); return (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") && parsed.pathname === fixturePath; };
@@ -37,13 +38,14 @@ export type RealFormRun = { applicationUrl: string; page: number; reconciliation
 
 /** Reconstructs a persistent application browser profile and only uses verified safe navigation. */
 export async function fillAndPreviewRealForm(draft: ApplicationDraft): Promise<RealFormRun> {
-  if (!isControlledApplicationFixture(draft.applicationUrl)) throw new Error("Real-form automation is disabled for non-fixture targets until a user explicitly configures external submission.");
+  const controlled = isControlledApplicationFixture(draft.applicationUrl);
+  if (!controlled) await assertSafeCustomSourceUrl(draft.applicationUrl);
   return withPersistentPlaywright(resolveSourceProfileDir(`application-${draft.id}`), async ({ page }) => {
     await page.goto(draft.applicationUrl, { waitUntil: "domcontentloaded" });
-    const totalPages = Number((await page.getByTestId("fixture-page").innerText()).match(/of\s+(\d+)/)?.[1] ?? 1);
+    const totalPages = controlled ? Number((await page.getByTestId("fixture-page").innerText()).match(/of\s+(\d+)/)?.[1] ?? 1) : 1;
     for (let current = 1; current <= totalPages; current += 1) {
       for (const question of draft.questions) if (await page.locator(question.selector).first().isVisible().catch(() => false)) await fillQuestion(page, question);
-      if (current < totalPages) {
+      if (controlled && current < totalPages) {
         const button = page.locator("[data-fixture-next]"); const safety = classifyFormAction({ tagName: "button", type: await button.getAttribute("type") ?? undefined, text: await button.innerText(), currentPage: current, totalPages });
         if (safety !== "SAFE_NAVIGATION") throw new Error("Form navigation is not deterministically safe.");
         await button.click(); await page.locator(`[data-fixture-page="${current + 1}"]`).waitFor({ state: "visible" });
@@ -51,11 +53,12 @@ export async function fillAndPreviewRealForm(draft: ApplicationDraft): Promise<R
     }
     const controls = await controlsFor(page, draft.questions);
     return { applicationUrl: draft.applicationUrl, page: totalPages, reconciliation: reconcileExternalForm(draft.questions, controls) };
-  });
+  }, { timeoutMs: 30_000 });
 }
 
 /** Executes only the controlled fixture's final action after the caller has checked authorization and reconciliation. */
 export async function submitControlledRealForm(draft: ApplicationDraft): Promise<RealFormRun> {
+  if (!isControlledApplicationFixture(draft.applicationUrl)) throw new Error("External submission is disabled unless the user explicitly provides and authorizes a safe target.");
   const preview = await fillAndPreviewRealForm(draft); if (!preview.reconciliation.ok) return preview;
   return withPersistentPlaywright(resolveSourceProfileDir(`application-${draft.id}`), async ({ page }) => {
     await page.goto(draft.applicationUrl, { waitUntil: "domcontentloaded" });
@@ -65,5 +68,5 @@ export async function submitControlledRealForm(draft: ApplicationDraft): Promise
     if (safety === "SAFE_NAVIGATION") throw new Error("Final action was incorrectly classified as safe navigation.");
     await final.click(); const confirmation = await page.getByTestId("fixture-confirmation").innerText();
     return { ...preview, confirmation };
-  });
+  }, { timeoutMs: 30_000 });
 }
