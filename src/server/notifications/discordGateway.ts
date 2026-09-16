@@ -10,6 +10,13 @@ async function discordFetch(path: string, init: RequestInit = {}): Promise<Respo
 async function replyToInteraction(id: string, token: string, reply: { content: string; components?: unknown[] }): Promise<void> {
   await discordFetch(`/interactions/${id}/${token}/callback`, { method: "POST", body: JSON.stringify({ type: 4, data: { content: reply.content, components: reply.components, flags: 64, allowed_mentions: { parse: [] } } }) });
 }
+async function deferInteraction(id: string, token: string): Promise<void> {
+  await discordFetch(`/interactions/${id}/${token}/callback`, { method: "POST", body: JSON.stringify({ type: 5, data: { flags: 64 } }) });
+}
+async function completeDeferredInteraction(applicationId: string, token: string, content: string): Promise<void> {
+  const response = await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${token}/messages/@original`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, allowed_mentions: { parse: [] } }) });
+  if (!response.ok) throw new Error(`Discord deferred interaction update failed (${response.status}).`);
+}
 async function replyToMessage(channelId: string, content: string): Promise<void> {
   await discordFetch(`/channels/${channelId}/messages`, { method: "POST", body: JSON.stringify({ content, allowed_mentions: { parse: [] } }) });
 }
@@ -25,7 +32,7 @@ export async function runDiscordGatewayWorker(options: GatewayOptions = {}): Pro
     if (payload.op === 10) { const interval = Number(payload.d?.heartbeat_interval ?? 45_000); socket.send(JSON.stringify({ op: 2, d: { token: env.DISCORD_BOT_TOKEN, intents: 33281, properties: { os: process.platform, browser: "hackfinder", device: "hackfinder" } } })); heartbeat = setInterval(() => socket.send(JSON.stringify({ op: 1, d: sequence })), interval); return; }
     if (payload.t === "READY") { options.onReady?.(); return; }
     if (payload.t === "MESSAGE_CREATE") { const d = payload.d ?? {}; if (d.channel_id !== channelId || d.author && typeof d.author === "object" && (d.author as { bot?: boolean }).bot) return; options.onEvent?.("MESSAGE_CREATE"); const authorId = (d.author as { id?: string } | undefined)?.id ?? ""; const content = typeof d.content === "string" ? d.content : ""; const reply = await handleDiscordTextCommand(authorId, content); await replyToMessage(channelId, reply); return; }
-    if (payload.t === "INTERACTION_CREATE") { const d = payload.d ?? {}; const customId = (d.data as { custom_id?: string } | undefined)?.custom_id; if (!customId) return; options.onEvent?.("INTERACTION_CREATE"); const userId = ((d.member as { user?: { id?: string } } | undefined)?.user?.id) ?? (d.user as { id?: string } | undefined)?.id ?? ""; const reply = await handleDiscordComponent(userId, customId); await replyToInteraction(String(d.id), String(d.token), reply); }
+    if (payload.t === "INTERACTION_CREATE") { const d = payload.d ?? {}; const customId = (d.data as { custom_id?: string } | undefined)?.custom_id; if (!customId) return; options.onEvent?.("INTERACTION_CREATE"); const userId = ((d.member as { user?: { id?: string } } | undefined)?.user?.id) ?? (d.user as { id?: string } | undefined)?.id ?? ""; const interactionId = String(d.id); const token = String(d.token); if (/^hf:submit_now:/i.test(customId)) { await deferInteraction(interactionId, token); void handleDiscordComponent(userId, customId).then((reply) => completeDeferredInteraction(String(d.application_id), token, reply.content)).catch((error) => completeDeferredInteraction(String(d.application_id), token, `Submission failed safely: ${error instanceof Error ? error.message : "unknown error"}`)); return; } const reply = await handleDiscordComponent(userId, customId); await replyToInteraction(interactionId, token, reply); }
   })().catch((error) => options.onError?.(error)); });
   await new Promise<void>((resolve, reject) => { socket.addEventListener("open", () => resolve(), { once: true }); socket.addEventListener("error", () => reject(new Error("Discord Gateway connection failed.")), { once: true }); });
   await new Promise<void>((resolve) => socket.addEventListener("close", () => { if (heartbeat) clearInterval(heartbeat); resolve(); }, { once: true }));

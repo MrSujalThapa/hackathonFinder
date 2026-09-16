@@ -42,6 +42,7 @@ export async function fillAndPreviewRealForm(draft: ApplicationDraft): Promise<R
   if (!controlled) await assertSafeCustomSourceUrl(draft.applicationUrl);
   return withPersistentPlaywright(resolveSourceProfileDir(`application-${draft.id}`), async ({ page }) => {
     await page.goto(draft.applicationUrl, { waitUntil: "domcontentloaded" });
+    if (controlled) await page.getByTestId("fixture-ready").waitFor({ state: "attached" });
     const totalPages = controlled ? Number((await page.getByTestId("fixture-page").innerText()).match(/of\s+(\d+)/)?.[1] ?? 1) : 1;
     for (let current = 1; current <= totalPages; current += 1) {
       for (const question of draft.questions) if (await page.locator(question.selector).first().isVisible().catch(() => false)) await fillQuestion(page, question);
@@ -62,6 +63,7 @@ export async function submitControlledRealForm(draft: ApplicationDraft): Promise
   const preview = await fillAndPreviewRealForm(draft); if (!preview.reconciliation.ok) return preview;
   return withPersistentPlaywright(resolveSourceProfileDir(`application-${draft.id}`), async ({ page }) => {
     await page.goto(draft.applicationUrl, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("fixture-ready").waitFor({ state: "attached" });
     const totalPages = Number((await page.getByTestId("fixture-page").innerText()).match(/of\s+(\d+)/)?.[1] ?? 1);
     for (let current = 1; current <= totalPages; current += 1) { for (const question of draft.questions) if (await page.locator(question.selector).first().isVisible().catch(() => false)) await fillQuestion(page, question); if (current < totalPages) { await page.locator("[data-fixture-next]").click(); await page.locator(`[data-fixture-page="${current + 1}"]`).waitFor({ state: "visible" }); } }
     const final = page.locator("[data-fixture-final]"); const safety = classifyFormAction({ tagName: "button", type: await final.getAttribute("type") ?? undefined, text: await final.innerText(), currentPage: totalPages, totalPages });
