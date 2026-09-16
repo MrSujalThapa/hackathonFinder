@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/queue", label: "Queue", icon: "◈" },
   { href: "/terminal", label: "Terminal", icon: "$" },
   { href: "/drafts", label: "Drafts", icon: "▣" },
+  { href: "/submitted", label: "Submitted", icon: "✓" },
   { href: "/profile", label: "Profile", icon: "◉" },
   { href: "/questions", label: "Questions", icon: "?" },
   { href: "/assets", label: "Assets", icon: "↗" },
