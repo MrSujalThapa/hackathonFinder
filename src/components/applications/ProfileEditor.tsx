@@ -3,7 +3,7 @@ import { useState } from "react";
 const defaultFields = ["name", "email", "phone", "school", "program", "graduationYear", "cityCountry", "github", "linkedin", "portfolio", "bio"];
 export function ProfileEditor({ initialFields }: { initialFields: Record<string, string> }) {
   const [fields, setFields] = useState(initialFields); const [message, setMessage] = useState(""); const [editing, setEditing] = useState(false);
-  const names = [...new Set([...defaultFields, ...Object.keys(fields)])];
+  const names = [...new Set([...defaultFields, ...Object.keys(fields).filter((name) => !name.startsWith("_hackfinder"))])];
   async function save() { setMessage("Saving…"); const response = await fetch("/api/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) }); setMessage(response.ok ? "Profile saved." : "Could not save profile."); }
   const groups = [["Personal", ["name", "email", "phone", "cityCountry"]], ["Education", ["school", "program", "graduationYear"]], ["Links", ["github", "linkedin", "portfolio"]]] as const;
   const label = (name: string) => name.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());

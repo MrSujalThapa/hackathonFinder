@@ -1,18 +1,24 @@
 import { createServiceSupabaseClient } from "@/lib/supabase/createServiceClient";
 import type { NotificationType } from "@/core/applications/types";
 import { getServerEnv } from "@/config/env";
+import { getProfile, saveProfile } from "@/server/applications/repository";
 
 export type NotifyInput = { userId?: string; type: NotificationType; title: string; body: string; priority?: 1 | 2; opportunityId?: string; applicationId?: string; actionUrl?: string; dedupeKey?: string };
 export interface EmailNotifier { send(input: NotifyInput): Promise<void>; }
 
-export type InAppNotification = { id: string; type: string; title: string; body: string; actionUrl: string | null; sentAt: string };
+export type InAppNotification = { id: string; type: string; title: string; body: string; actionUrl: string | null; sentAt: string; isRead: boolean };
 export type DiscordMessageResult = { id: string; actionUrl?: string; componentCount: number };
+
+const READ_STATE_KEY = "_hackfinderNotificationReadIds";
+async function readIds(): Promise<Set<string>> { const profile = await getProfile(); try { const values = JSON.parse(profile[READ_STATE_KEY] ?? "[]"); return new Set(Array.isArray(values) ? values.filter((value): value is string => typeof value === "string") : []); } catch { return new Set(); } }
+export async function setNotificationRead(id: string, isRead: boolean): Promise<void> { const profile = await getProfile(); const ids = await readIds(); if (isRead) ids.add(id); else ids.delete(id); profile[READ_STATE_KEY] = JSON.stringify([...ids].slice(-500)); await saveProfile(profile); }
 
 export async function listNotifications(limit = 50): Promise<InAppNotification[]> {
   const db = createServiceSupabaseClient();
+  const read = await readIds();
   const { data, error } = await db.from("notifications").select("id,type,title,body,action_url,sent_at").order("sent_at", { ascending: false }).limit(Math.min(Math.max(limit, 1), 100));
   if (error) throw new Error(`Could not load notifications: ${error.message}`);
-  return (data ?? []).map((row) => ({ id: row.id, type: row.type, title: row.title, body: row.body, actionUrl: row.action_url, sentAt: row.sent_at }));
+  return (data ?? []).map((row) => ({ id: row.id, type: row.type, title: row.title, body: row.body, actionUrl: row.action_url, sentAt: row.sent_at, isRead: read.has(row.id) }));
 }
 
 /** Persists the in-app inbox event first. An email adapter can be injected by deployment wiring. */
