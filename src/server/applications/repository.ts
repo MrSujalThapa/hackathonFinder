@@ -81,7 +81,8 @@ export async function deleteApplication(id: string): Promise<void> { const db = 
 export async function findApplicationByOpportunityName(query: string): Promise<ApplicationDraft | null> {
   const db = createServiceSupabaseClient(); const { data: candidates, error } = await db.from("candidates").select("id,name").ilike("name", `%${query.trim()}%`).limit(2); if (error) throw new Error(`Could not find opportunity: ${error.message}`);
   if (!candidates?.length) return null;
-  if (candidates.length > 1) throw new Error("More than one opportunity matches that name.");
-  const { data: application, error: appError } = await db.from("applications").select("id").eq("candidate_id", candidates[0]!.id).maybeSingle(); if (appError) throw new Error(`Could not load application: ${appError.message}`);
-  return application ? getDraft(application.id) : null;
+  const { data: applications, error: appError } = await db.from("applications").select("id,candidate_id").in("candidate_id", candidates.map((candidate) => candidate.id)); if (appError) throw new Error(`Could not load application: ${appError.message}`);
+  if (!applications?.length) return null;
+  if (applications.length > 1) throw new Error("More than one active application draft matches that name.");
+  return getDraft(applications[0]!.id);
 }

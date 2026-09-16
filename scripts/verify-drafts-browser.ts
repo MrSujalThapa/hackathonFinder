@@ -9,7 +9,8 @@ async function main(): Promise<void> {
     await page.context().addCookies([{ name: SESSION_COOKIE_NAME, value: token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
     const apiFailures: string[] = []; page.on("response", (response) => { if (response.url().includes("/api/applications") && response.status() >= 400) apiFailures.push(`${response.url()}:${response.status()}`); });
     console.log("open drafts"); await page.goto("http://localhost:3100/drafts", { waitUntil: "domcontentloaded" });
-    await page.locator('a[href="/drafts/442dc973-a764-4b73-9409-afee896f76fd"]').click(); await page.waitForURL("**/drafts/442dc973-a764-4b73-9409-afee896f76fd"); await page.waitForLoadState("domcontentloaded"); console.log("open detail");
+    const applicationId = process.env.APPLICATION_FIXTURE_ID; if (!applicationId) throw new Error("APPLICATION_FIXTURE_ID is required.");
+    await page.locator(`a[href="/drafts/${applicationId}"]`).click(); await page.waitForURL(`**/drafts/${applicationId}`); await page.waitForLoadState("domcontentloaded"); console.log("open detail");
     await page.getByText("GitHub profile"); await page.getByText("asset bank"); await page.getByText("1 blocker"); console.log(`fields=${await page.locator("textarea").count()}`);
     const answer = page.locator("textarea").last(); await answer.fill("I want to collaborate with other builders."); await answer.blur(); console.log("edit");
     await page.getByRole("button", { name: "Save", exact: true }).click(); await page.getByText("Saved. External form inspection has not resumed."); console.log("save");
