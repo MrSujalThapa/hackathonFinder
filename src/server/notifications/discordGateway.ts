@@ -7,8 +7,8 @@ type GatewayOptions = { onReady?: () => void; onEvent?: (name: string) => void; 
 async function discordFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const env = getServerEnv(); return fetch(`https://discord.com/api/v10${path}`, { ...init, headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, "Content-Type": "application/json", ...(init.headers ?? {}) } });
 }
-async function replyToInteraction(id: string, token: string, content: string): Promise<void> {
-  await discordFetch(`/interactions/${id}/${token}/callback`, { method: "POST", body: JSON.stringify({ type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } }) });
+async function replyToInteraction(id: string, token: string, reply: { content: string; components?: unknown[] }): Promise<void> {
+  await discordFetch(`/interactions/${id}/${token}/callback`, { method: "POST", body: JSON.stringify({ type: 4, data: { content: reply.content, components: reply.components, flags: 64, allowed_mentions: { parse: [] } } }) });
 }
 async function replyToMessage(channelId: string, content: string): Promise<void> {
   await discordFetch(`/channels/${channelId}/messages`, { method: "POST", body: JSON.stringify({ content, allowed_mentions: { parse: [] } }) });
