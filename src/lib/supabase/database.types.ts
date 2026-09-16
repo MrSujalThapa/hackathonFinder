@@ -325,8 +325,8 @@ export type Database = {
         Relationships: [];
       };
       applications: {
-        Row: { id: string; candidate_id: string; application_url: string; status: string; draft_version: number; approved_draft_version: number | null; approved_at: string | null; approved_by: string | null; submitted_at: string | null; created_at: string; updated_at: string };
-        Insert: { id?: string; candidate_id: string; application_url: string; status?: string; draft_version?: number; approved_draft_version?: number | null; approved_at?: string | null; approved_by?: string | null; submitted_at?: string | null; created_at?: string; updated_at?: string };
+        Row: { id: string; candidate_id: string; application_url: string; status: string; draft_version: number; approved_draft_version: number | null; approved_at: string | null; approved_by: string | null; submitted_at: string | null; current_page: number | null; total_pages: number | null; checkpoint: Json; created_at: string; updated_at: string };
+        Insert: { id?: string; candidate_id: string; application_url: string; status?: string; draft_version?: number; approved_draft_version?: number | null; approved_at?: string | null; approved_by?: string | null; submitted_at?: string | null; current_page?: number | null; total_pages?: number | null; checkpoint?: Json; created_at?: string; updated_at?: string };
         Update: Partial<Database["public"]["Tables"]["applications"]["Insert"]>;
         Relationships: [];
       };
@@ -337,9 +337,15 @@ export type Database = {
         Relationships: [];
       };
       notifications: {
-        Row: { id: string; user_id: string | null; type: string; candidate_id: string | null; application_id: string | null; title: string; body: string; action_url: string | null; sent_at: string };
-        Insert: { id?: string; user_id?: string | null; type: string; candidate_id?: string | null; application_id?: string | null; title: string; body: string; action_url?: string | null; sent_at?: string };
+        Row: { id: string; user_id: string | null; type: string; candidate_id: string | null; application_id: string | null; title: string; body: string; action_url: string | null; dedupe_key: string; sent_at: string };
+        Insert: { id?: string; user_id?: string | null; type: string; candidate_id?: string | null; application_id?: string | null; title: string; body: string; action_url?: string | null; dedupe_key?: string; sent_at?: string };
         Update: Partial<Database["public"]["Tables"]["notifications"]["Insert"]>;
+        Relationships: [];
+      };
+      asset_bank: {
+        Row: { id: string; user_id: string; label: string; kind: string; asset_type: string; value: string; filename: string | null; notes: string | null; is_default: boolean; updated_at: string };
+        Insert: { id?: string; user_id: string; label: string; kind: string; asset_type: string; value: string; filename?: string | null; notes?: string | null; is_default?: boolean; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["asset_bank"]["Insert"]>;
         Relationships: [];
       };
     };

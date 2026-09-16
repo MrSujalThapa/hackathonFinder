@@ -4,9 +4,10 @@ export type OpportunityType =
 
 export type ApplicationStatus =
   | "not_started" | "scheduled" | "drafting" | "needs_input"
-  | "ready_for_review" | "approved" | "submitting" | "submitted" | "failed";
+  | "needs_file" | "auth_required" | "paused" | "ready_to_submit"
+  | "user_managed" | "ready_for_review" | "approved" | "submitting" | "submitted" | "failed";
 
-export type AnswerSource = "profile" | "question_bank" | "ai" | "user" | "unresolved";
+export type AnswerSource = "profile" | "question_bank" | "asset_bank" | "ai" | "user" | "unresolved";
 
 export type ApplicationQuestion = {
   id: string;
@@ -30,9 +31,15 @@ export type ApplicationDraft = {
   draftVersion: number;
   approvedDraftVersion: number | null;
   approvedAt: string | null;
+  currentPage: number | null;
+  totalPages: number | null;
+  checkpoint: Record<string, unknown>;
+  updatedAt?: string;
   questions: ApplicationQuestion[];
 };
 
 export type Profile = Record<string, string>;
 export type QuestionBankEntry = { id: string; canonicalQuestion: string; answer: string; aliases: string[]; tags: string[]; updatedAt: string };
-export type NotificationType = "APPLICATION_OPEN" | "APPLICATION_NEEDS_INPUT" | "APPLICATION_READY_FOR_REVIEW" | "DEADLINE_SOON" | "SUBMISSION_FAILED";
+export type AssetKind = "file" | "link";
+export type AssetBankEntry = { id: string; label: string; kind: AssetKind; assetType: string; value: string; filename: string | null; notes: string | null; isDefault: boolean; updatedAt: string };
+export type NotificationType = "APPLICATION_OPEN" | "APPLICATION_NEEDS_INPUT" | "APPLICATION_NEEDS_FILE" | "APPLICATION_AUTH_REQUIRED" | "APPLICATION_READY_TO_SUBMIT" | "APPLICATION_READY_FOR_REVIEW" | "DEADLINE_SOON" | "SUBMISSION_FAILED";

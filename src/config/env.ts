@@ -63,6 +63,12 @@ export const serverEnvSchema = z
       .optional()
       .or(emptyToUndefined),
     APP_URL: optionalUrl,
+    APP_BASE_URL: optionalUrl,
+    NEXT_PUBLIC_APP_URL: optionalUrl,
+    DISCORD_BOT_TOKEN: optionalString,
+    DISCORD_GUILD_ID: optionalString,
+    DISCORD_CHANNEL_ID: optionalString,
+    DISCORD_USER_ID: optionalString,
 
     NEXT_PUBLIC_SUPABASE_URL: optionalUrl,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: optionalString,
