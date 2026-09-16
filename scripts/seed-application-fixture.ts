@@ -4,11 +4,11 @@ loadLocalEnv();
 async function main(): Promise<void> {
   const { createServiceSupabaseClient } = await import("@/lib/supabase/createServiceClient");
   const { createApplication, getApplication, saveDraft, upsertAssetBank } = await import("@/server/applications/repository");
-  const kind = process.env.APPLICATION_FIXTURE_KIND === "browser" || process.env.APPLICATION_FIXTURE_KIND === "gateway_acceptance" ? process.env.APPLICATION_FIXTURE_KIND : "gateway";
+  const kind = ["browser", "gateway_acceptance", "resume"].includes(process.env.APPLICATION_FIXTURE_KIND ?? "") ? process.env.APPLICATION_FIXTURE_KIND! : "gateway";
   const db = createServiceSupabaseClient(); const fingerprint = `pass1-${kind}-fixture-hackmit`;
   const { data: existing, error: findError } = await db.from("candidates").select("id").eq("fingerprint", fingerprint).maybeSingle(); if (findError) throw findError;
   let candidateId = existing?.id;
-  if (!candidateId) { const name = kind === "browser" ? "HackMIT Browser Delete Fixture" : kind === "gateway_acceptance" ? "HackMIT Gateway Acceptance Fixture" : "HackMIT Gateway Fixture"; const { data, error } = await db.from("candidates").insert({ name, source: "pass1_fixture", fingerprint, score: 0, apply_url: "https://fixture.invalid/hackmit", themes: [], why_match: [], red_flags: [] }).select("id").single(); if (error) throw error; candidateId = data.id; }
+  if (!candidateId) { const name = kind === "browser" ? "HackMIT Browser Delete Fixture" : kind === "gateway_acceptance" ? "HackMIT Gateway Acceptance Fixture" : kind === "resume" ? "HackMIT Browser Resume Fixture" : "HackMIT Gateway Fixture"; const { data, error } = await db.from("candidates").insert({ name, source: "pass1_fixture", fingerprint, score: 0, apply_url: "https://fixture.invalid/hackmit", themes: [], why_match: [], red_flags: [] }).select("id").single(); if (error) throw error; candidateId = data.id; }
   const { data: existingApp, error: appFindError } = await db.from("applications").select("id").eq("candidate_id", candidateId).maybeSingle(); if (appFindError) throw appFindError;
   const questions = [
     { id: randomUUID(), label: "GitHub profile", fieldType: "text", required: true, options: [], selector: "#github", answer: "https://github.com/fixture", answerSource: "asset_bank" as const, needsUserInput: false },
