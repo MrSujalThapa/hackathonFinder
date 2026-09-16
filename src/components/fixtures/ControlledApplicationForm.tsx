@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 const pages = [
-  <><label htmlFor="name">Name</label><input id="name" name="name" required /><fieldset><legend>Can you attend all days?</legend><label><input type="radio" name="attendance" value="Yes" aria-label="Can you attend all days?" />Yes</label><label><input type="radio" name="attendance" value="No" aria-label="Can you attend all days?" />No</label></fieldset><label><input id="consent" name="consent" type="checkbox" value="Yes" required />I consent to the code of conduct</label></>,
+  <><label htmlFor="name">Name</label><input id="name" name="name" required /><fieldset><legend>Can you attend all days?</legend><label><input type="radio" name="attendance" value="Yes" aria-label="Can you attend all days?" required />Yes</label><label><input type="radio" name="attendance" value="No" aria-label="Can you attend all days?" />No</label></fieldset><label><input id="consent" name="consent" type="checkbox" value="Yes" required />I consent to the code of conduct</label></>,
   <><label htmlFor="bio">Short bio</label><textarea id="bio" name="bio" required /></>,
   <><label htmlFor="github">GitHub profile</label><input id="github" name="github" type="url" required /><label htmlFor="resume">Upload your resume</label><input id="resume" name="resume" type="file" required /></>,
   <><label htmlFor="travel">Can you arrange travel?</label><select id="travel" name="travel" required defaultValue=""><option value="">Choose one</option><option>Yes</option><option>No</option></select></>,
