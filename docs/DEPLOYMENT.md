@@ -1,18 +1,14 @@
 # Production Deployment
 
-This guide deploys the review web app. Discovery can run in-process (`DISCOVERY_EXECUTION_MODE=local`)
-on a long-lived Node host, or via the worker on serverless hosts.
+HackFinder deploys as three independent processes: the web app, a persistent Discord
+gateway, and scheduled one-shot discovery/application workers. A serverless web host
+alone is not sufficient for the long-lived Discord gateway. This guide is hosting-vendor neutral.
 
-## 1. Create the Vercel Project
+## 1. Web app
 
-1. Create a Vercel Hobby project.
-2. Import the GitHub repository.
-3. Use the default Next.js framework preset.
-4. Build command: `npm run build`.
-5. Install command: `npm ci`.
-6. Node.js: 20 or newer.
-
-No `vercel.json` is required for the current app.
+Install with `npm ci`, build with `npm run build`, and serve with `npm run start` on Node 20+
+behind HTTPS. Set `APP_BASE_URL` to the public, canonical HTTPS URL; do not use localhost
+outside local development. Any Next.js-compatible host is suitable for this process.
 
 ## 2. Configure Production Environment
 
@@ -22,6 +18,7 @@ Public browser-safe:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `NEXT_PUBLIC_GOOGLE_SHEET_URL`
 - `NEXT_PUBLIC_SENTRY_DSN` optional
+- `APP_BASE_URL` (the public HTTPS URL used in notification links and Discord callbacks)
 
 Server-only:
 
@@ -35,6 +32,7 @@ Server-only:
 - `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_MODEL` optional
 - X variables only if explicitly used
 - `SENTRY_DSN` optional
+- `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY` when Discord is enabled
 
 Keep `USE_MOCK_CANDIDATES=false` and `DEMO_MODE=false` in real production.
 Use `DEMO_MODE=true` only on a dedicated demo deployment.
@@ -54,11 +52,16 @@ npm run check:prod
 
 ## 3. Supabase
 
-1. Create a Supabase Free project.
-2. Apply migrations in order under `supabase/migrations/` (`001` … `010`).
+1. Create a Supabase project.
+2. Apply migrations in order under `supabase/migrations/` (`001` … `014`).
 3. Confirm the service-role key can read/write candidates from server code.
 4. Review and apply `004_production_rls.sql` after confirming API routes use
    service-role access.
+5. Create a private Storage bucket named `hackfinder-assets` with a 12 MB file limit.
+   Allow the server/service role to read and write it. The application will create the
+   bucket on first upload when the service role has Storage administration access, but
+   provisioning it explicitly is recommended. Never expose storage keys or local paths
+   to the browser; file access is mediated by `/api/asset-bank/file`.
 
 The production RLS migration enables RLS and creates no anon/authenticated
 policies for private tables. Direct browser table access is denied; service-role
@@ -77,14 +80,32 @@ are normalized at parse time.
 
 ## 5. Deploy
 
-1. Push `main`.
-2. Let Vercel build the project.
-3. Open `/api/health`.
+1. Deploy the web process with the build/start commands above.
+2. Open `/api/health`.
 4. Expected public response contains only `status`, `version`, `timestamp`, and
    redacted check states.
 5. Open `/login`, sign in, and review `/settings`.
 
-## 6. Local CLI to Production Supabase
+## 6. Workers and schedules
+
+Run the Discord gateway as one long-lived, supervised process:
+
+```bash
+npm run worker:discord
+```
+
+Run these as one-shot scheduled jobs (separate from the web process):
+
+```bash
+npm run worker:discovery:once
+npm run worker:applications:once
+```
+
+Recommended initial cadence is discovery every 6 hours and the application tracker every
+15 minutes. Use a managed scheduler, container scheduler, or host cron; ensure only one
+instance of a given worker runs at a time. The gateway is not a cron job.
+
+## 7. Local CLI to Production Supabase
 
 Use the same production Supabase URL and service-role key in local `.env.local`.
 Discovery remains local:
@@ -96,7 +117,7 @@ npm run agent -- "find upcoming AI hackathons in Canada or remote" -- --agent --
 
 Do not run `--sources=x` unless explicitly requested and funded.
 
-## 7. Production Checks
+## 8. Production Checks
 
 Run locally before deployment:
 
@@ -119,7 +140,7 @@ For a protected browser smoke against a running local or preview deployment, set
 npm run smoke:prod
 ```
 
-## 8. Rollback
+## 9. Rollback
 
 1. Use Vercel's previous deployment rollback.
 2. If a database migration caused issues, pause and inspect before reverting.

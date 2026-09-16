@@ -319,9 +319,15 @@ export type Database = {
         Relationships: [];
       };
       question_bank: {
-        Row: { id: string; user_id: string; canonical_question: string; answer: string; aliases: string[]; tags: string[]; updated_at: string };
-        Insert: { id?: string; user_id: string; canonical_question: string; answer: string; aliases?: string[]; tags?: string[]; updated_at?: string };
+        Row: { id: string; user_id: string; folder_id: string | null; canonical_question: string; answer: string; aliases: string[]; tags: string[]; updated_at: string };
+        Insert: { id?: string; user_id: string; folder_id?: string | null; canonical_question: string; answer: string; aliases?: string[]; tags?: string[]; updated_at?: string };
         Update: Partial<Database["public"]["Tables"]["question_bank"]["Insert"]>;
+        Relationships: [];
+      };
+      question_bank_folders: {
+        Row: { id: string; user_id: string; name: string; color: string; created_at: string };
+        Insert: { id?: string; user_id: string; name: string; color?: string; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["question_bank_folders"]["Insert"]>;
         Relationships: [];
       };
       applications: {

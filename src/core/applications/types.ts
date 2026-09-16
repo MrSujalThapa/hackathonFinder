@@ -40,7 +40,8 @@ export type ApplicationDraft = {
 };
 
 export type Profile = Record<string, string>;
-export type QuestionBankEntry = { id: string; canonicalQuestion: string; answer: string; aliases: string[]; tags: string[]; updatedAt: string };
+export type QuestionBankFolder = { id: string; name: string; color: string; createdAt: string };
+export type QuestionBankEntry = { id: string; folderId?: string | null; canonicalQuestion: string; answer: string; aliases: string[]; tags: string[]; updatedAt: string };
 export type AssetKind = "file" | "link";
 export type AssetBankEntry = { id: string; label: string; kind: AssetKind; assetType: string; value: string; filename: string | null; notes: string | null; isDefault: boolean; updatedAt: string };
 export type NotificationType = "APPLICATION_OPEN" | "APPLICATION_NEEDS_INPUT" | "APPLICATION_NEEDS_FILE" | "APPLICATION_AUTH_REQUIRED" | "APPLICATION_READY_TO_SUBMIT" | "APPLICATION_READY_FOR_REVIEW" | "DEADLINE_SOON" | "SUBMISSION_FAILED";
