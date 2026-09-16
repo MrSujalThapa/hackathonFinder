@@ -1550,11 +1550,23 @@ export const lumaCollector: Collector = {
         );
       }
 
+      // A broad AI/Tech feed can have a superficially complete card while still
+      // omitting the venue. For an explicit event-location request, that is not
+      // enough evidence to discard the card: inspect a bounded set of promising
+      // detail pages before applying the location filter.
+      const needsLocationVerification = (lead: RawLead): boolean => Boolean(
+        input.preferences.locationConstraint === "event_location" &&
+        input.preferences.locations[0] &&
+        !leadMatchesLumaLocation(lead, input.preferences.locations[0], input.preferences.remotePolicy),
+      );
+      const shouldEnrich = (lead: RawLead): boolean =>
+        !lumaListingDataIsSufficient(lead) || needsLocationVerification(lead);
+
       let detailPagesOpened = 0;
       let detailFailures = 0;
       if (enrichable.length > 0) {
         const detailTargetCount = enrichable
-          .filter((lead) => !lumaListingDataIsSufficient(lead))
+          .filter(shouldEnrich)
           .slice(0, budget.detailLimit).length;
         input.logger?.(
           detailTargetCount > 0
@@ -1566,7 +1578,7 @@ export const lumaCollector: Collector = {
           budgetMs,
           startedAt,
           budget.detailLimit,
-          (lead) => !lumaListingDataIsSufficient(lead),
+          shouldEnrich,
         );
         const byId = new Map(enriched.leads.map((lead) => [lead.id, lead]));
         result.leads = provisionalLeads
