@@ -8,7 +8,7 @@ import { prepareApplication } from "@/server/applications/prepare";
 export async function runApplicationTracker(now = new Date()): Promise<{ notifications: number }> {
   const db = createServiceSupabaseClient();
   const [{ data: candidates, error }, applications] = await Promise.all([
-    db.from("candidates").select("id,name,apply_url,application_opens_at,deadline"),
+    db.from("candidates").select("id,name,apply_url,application_opens_at,deadline,status").eq("status", "APPROVED"),
     listApplications(),
   ]);
   if (error) throw new Error(`Could not load application schedules: ${error.message}`);
