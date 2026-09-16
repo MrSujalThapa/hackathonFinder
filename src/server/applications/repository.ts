@@ -78,3 +78,10 @@ export async function upsertAssetBank(entry: Omit<AssetBankEntry, "updatedAt">):
 }
 export async function deleteAssetBank(id: string): Promise<void> { const db = createServiceSupabaseClient(); const { error } = await db.from("asset_bank").delete().eq("id", id).eq("user_id", OWNER_ID); if (error) throw new Error(`Could not delete Asset Bank entry: ${error.message}`); }
 export async function deleteApplication(id: string): Promise<void> { const db = createServiceSupabaseClient(); const { error } = await db.from("applications").delete().eq("id", id); if (error) throw new Error(`Could not delete application: ${error.message}`); }
+export async function findApplicationByOpportunityName(query: string): Promise<ApplicationDraft | null> {
+  const db = createServiceSupabaseClient(); const { data: candidates, error } = await db.from("candidates").select("id,name").ilike("name", `%${query.trim()}%`).limit(2); if (error) throw new Error(`Could not find opportunity: ${error.message}`);
+  if (!candidates?.length) return null;
+  if (candidates.length > 1) throw new Error("More than one opportunity matches that name.");
+  const { data: application, error: appError } = await db.from("applications").select("id").eq("candidate_id", candidates[0]!.id).maybeSingle(); if (appError) throw new Error(`Could not load application: ${appError.message}`);
+  return application ? getDraft(application.id) : null;
+}

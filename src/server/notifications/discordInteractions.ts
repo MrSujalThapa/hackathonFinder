@@ -1,8 +1,9 @@
 import { createPublicKey, verify } from "node:crypto";
 import { getServerEnv } from "@/config/env";
 import { pauseDraft, resumeDraft, userManageDraft } from "@/core/applications/workflow";
-import { getApplication, listApplications, saveDraft } from "@/server/applications/repository";
+import { findApplicationByOpportunityName, getApplication, listApplications, saveDraft } from "@/server/applications/repository";
 import { resumeApplication } from "@/server/applications/resume";
+import { parseDiscordCommand } from "@/server/notifications/discordCommands";
 
 const SPKI_ED25519_PREFIX = "302a300506032b6570032100";
 export function verifyDiscordRequest(signature: string | null, timestamp: string | null, body: string, publicKey: string | undefined): boolean {
@@ -28,9 +29,11 @@ export async function handleDiscordComponent(userId: string, customId: string): 
   if (match[1] === "do_myself") { await saveDraft(userManageDraft(draft)); return "Automation stopped; this draft is user managed."; }
   return (await resumeApplication(await saveDraft(resumeDraft(draft)))).status === "needs_input" ? "Draft resumed and is waiting for answers." : "Draft resumed safely; final submission remains disabled.";
 }
+async function runDraftAction(action: "pause" | "continue" | "do_myself", draftId: string): Promise<string> { return handleDiscordComponent(getServerEnv().DISCORD_USER_ID ?? "", `hf:${action}:${draftId}`); }
 export async function handleDiscordTextCommand(userId: string, content: string): Promise<string> {
-  const env = getServerEnv(); if (!env.DISCORD_USER_ID || userId !== env.DISCORD_USER_ID) return "This command is only available to the configured HackFinder owner.";
-  if (content.trim().toLowerCase() === "status") return `${(await listApplications()).length} application draft(s) tracked.`;
-  if (content.trim().toLowerCase() === "show drafts") return "Open HackFinder drafts from the configured application URL.";
-  return "Use status, show drafts, or a draft control button.";
+  const env = getServerEnv(); const command = parseDiscordCommand(userId, content, env.DISCORD_USER_ID); if (!command) return "This command is only available to the configured HackFinder owner.";
+  if (command.action === "status") return `${(await listApplications()).length} application draft(s) tracked.`;
+  if (command.action === "show_drafts") return "Open the Drafts page in HackFinder.";
+  const draft = await findApplicationByOpportunityName(command.target ?? ""); if (!draft) return "No matching application draft was found.";
+  return runDraftAction(command.action, draft.id);
 }
