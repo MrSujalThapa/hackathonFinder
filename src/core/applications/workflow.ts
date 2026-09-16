@@ -44,7 +44,8 @@ export async function draftApplication(draft: ApplicationDraft, profile: Profile
 export function editAnswer(draft: ApplicationDraft, questionId: string, answer: string): ApplicationDraft {
   const questions = draft.questions.map((question) => question.id === questionId ? { ...question, answer, answerSource: "user" as const, needsUserInput: false } : question);
   const complete = !questions.some((question) => question.required && !question.answer);
-  return { ...draft, status: draft.status === "approved" || ((draft.status === "needs_input" || draft.status === "needs_file") && complete) ? "drafting" : draft.status, approvedAt: null, approvedDraftVersion: null, draftVersion: draft.draftVersion + 1, questions };
+  const checkpoint = { ...draft.checkpoint }; delete checkpoint.submissionAuthorization;
+  return { ...draft, status: draft.status === "approved" || draft.status === "submitting" || ((draft.status === "needs_input" || draft.status === "needs_file") && complete) ? "drafting" : draft.status, approvedAt: null, approvedDraftVersion: null, draftVersion: draft.draftVersion + 1, checkpoint, questions };
 }
 
 export function pauseDraft(draft: ApplicationDraft): ApplicationDraft { return { ...draft, status: "paused", draftVersion: draft.draftVersion + 1 }; }
@@ -60,6 +61,20 @@ export function approveDraft(draft: ApplicationDraft, approvedAt = new Date().to
 }
 
 export function beginSubmission(draft: ApplicationDraft): ApplicationDraft {
-  if (draft.status !== "approved" || draft.approvedDraftVersion !== draft.draftVersion) throw new Error("Submission requires explicit approval of the current draft.");
+  const authorization = draft.checkpoint.submissionAuthorization;
+  const authorized = authorization && typeof authorization === "object" && !Array.isArray(authorization) && (authorization as { draftVersion?: unknown }).draftVersion === draft.draftVersion;
+  if (!authorized && (draft.status !== "approved" || draft.approvedDraftVersion !== draft.draftVersion)) throw new Error("Submission requires explicit authorization of the current draft.");
   return { ...draft, status: "submitting" };
+}
+
+/** `Submit now` is the single explicit authorization, bound to this exact draft version. */
+export function authorizeSubmission(draft: ApplicationDraft, authorizedAt = new Date().toISOString()): ApplicationDraft {
+  if (draft.status !== "ready_to_submit" || draft.questions.some((question) => question.required && !question.answer)) throw new Error("Only a complete ready-to-submit draft can be submitted.");
+  return { ...draft, status: "submitting", checkpoint: { ...draft.checkpoint, submissionAuthorization: { draftVersion: draft.draftVersion, authorizedAt } } };
+}
+
+export function completeSubmission(draft: ApplicationDraft, confirmation: string, submittedAt = new Date().toISOString()): ApplicationDraft {
+  const submitting = beginSubmission(draft);
+  const snapshot = { draftVersion: draft.draftVersion, submittedAt, questions: draft.questions.map((question) => ({ id: question.id, label: question.label, answer: question.answer, answerSource: question.answerSource, fieldType: question.fieldType, selector: question.selector })), confirmation };
+  return { ...submitting, status: "submitted", submittedAt, checkpoint: { ...submitting.checkpoint, submittedSnapshot: snapshot } };
 }

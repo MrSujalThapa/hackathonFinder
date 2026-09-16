@@ -31,6 +31,7 @@ export type ApplicationDraft = {
   draftVersion: number;
   approvedDraftVersion: number | null;
   approvedAt: string | null;
+  submittedAt?: string | null;
   currentPage: number | null;
   totalPages: number | null;
   checkpoint: Record<string, unknown>;

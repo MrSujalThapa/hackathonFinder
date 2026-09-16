@@ -13,6 +13,12 @@ const PROTECTED_PAGE_PREFIXES = [
   "/candidate",
   "/settings",
   "/terminal",
+  "/drafts",
+  "/applications",
+  "/profile",
+  "/questions",
+  "/assets",
+  "/notifications",
 ];
 
 const PROTECTED_API_PREFIXES = [
@@ -22,6 +28,11 @@ const PROTECTED_API_PREFIXES = [
   "/api/discovery",
   "/api/sources",
   "/api/dev/reset-mock",
+  "/api/applications",
+  "/api/profile",
+  "/api/question-bank",
+  "/api/asset-bank",
+  "/api/notifications",
 ];
 
 function isProtectedPage(pathname: string): boolean {

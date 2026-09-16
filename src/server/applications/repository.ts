@@ -16,7 +16,7 @@ async function getDraft(id: string): Promise<ApplicationDraft | null> {
   if (!application) return null;
   const { data: questions, error: questionError } = await db.from("application_questions").select("*").eq("application_id", id).order("position");
   if (questionError) throw new Error(`Could not load application questions: ${questionError.message}`);
-  return { id: application.id, opportunityId: application.candidate_id, applicationUrl: application.application_url, status: application.status as ApplicationStatus, draftVersion: application.draft_version, approvedDraftVersion: application.approved_draft_version, approvedAt: application.approved_at, currentPage: application.current_page ?? null, totalPages: application.total_pages ?? null, checkpoint: application.checkpoint && typeof application.checkpoint === "object" && !Array.isArray(application.checkpoint) ? application.checkpoint as Record<string, unknown> : {}, updatedAt: application.updated_at, questions: (questions ?? []).map(mapQuestion) };
+  return { id: application.id, opportunityId: application.candidate_id, applicationUrl: application.application_url, status: application.status as ApplicationStatus, draftVersion: application.draft_version, approvedDraftVersion: application.approved_draft_version, approvedAt: application.approved_at, submittedAt: application.submitted_at ?? null, currentPage: application.current_page ?? null, totalPages: application.total_pages ?? null, checkpoint: application.checkpoint && typeof application.checkpoint === "object" && !Array.isArray(application.checkpoint) ? application.checkpoint as Record<string, unknown> : {}, updatedAt: application.updated_at, questions: (questions ?? []).map(mapQuestion) };
 }
 
 export async function listApplications(): Promise<ApplicationDraft[]> {
@@ -43,7 +43,7 @@ export async function createApplication(candidateId: string, applicationUrl: str
 export async function saveDraft(draft: ApplicationDraft): Promise<ApplicationDraft> {
   const db = createServiceSupabaseClient();
   if (!statuses.has(draft.status)) throw new Error("Invalid application status.");
-  const { error } = await db.from("applications").update({ status: draft.status, draft_version: draft.draftVersion, approved_at: draft.approvedAt, approved_draft_version: draft.approvedDraftVersion, approved_by: draft.status === "approved" ? OWNER_ID : null, current_page: draft.currentPage, total_pages: draft.totalPages, checkpoint: draft.checkpoint as never }).eq("id", draft.id);
+  const { error } = await db.from("applications").update({ status: draft.status, draft_version: draft.draftVersion, approved_at: draft.approvedAt, approved_draft_version: draft.approvedDraftVersion, approved_by: draft.status === "approved" ? OWNER_ID : null, submitted_at: draft.submittedAt ?? null, current_page: draft.currentPage, total_pages: draft.totalPages, checkpoint: draft.checkpoint as never }).eq("id", draft.id);
   if (error) throw new Error(`Could not save application: ${error.message}`);
   for (const question of draft.questions) {
     const { error: questionError } = await db.from("application_questions").update({ answer: question.answer, answer_source: question.answerSource, needs_user_input: question.needsUserInput }).eq("id", question.id).eq("application_id", draft.id);
