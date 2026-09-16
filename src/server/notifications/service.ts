@@ -6,6 +6,7 @@ export type NotifyInput = { userId?: string; type: NotificationType; title: stri
 export interface EmailNotifier { send(input: NotifyInput): Promise<void>; }
 
 export type InAppNotification = { id: string; type: string; title: string; body: string; actionUrl: string | null; sentAt: string };
+export type DiscordMessageResult = { id: string; actionUrl?: string; componentCount: number };
 
 export async function listNotifications(limit = 50): Promise<InAppNotification[]> {
   const db = createServiceSupabaseClient();
@@ -41,11 +42,24 @@ function absoluteActionUrl(actionUrl?: string): string | undefined {
 }
 
 /** Outbound bot message. Incoming commands are handled separately and always owner-gated. */
-async function sendDiscord(input: NotifyInput): Promise<void> {
+export async function sendDiscord(input: NotifyInput): Promise<DiscordMessageResult | null> {
   const env = getServerEnv();
-  if (!env.DISCORD_BOT_TOKEN || !env.DISCORD_CHANNEL_ID) return;
+  if (!env.DISCORD_BOT_TOKEN || !env.DISCORD_CHANNEL_ID) return null;
   const actionUrl = absoluteActionUrl(input.actionUrl);
   const content = `**HackFinder Agent — ${input.priority === 1 ? "ACTION REQUIRED" : "IMPORTANT"}**\n${input.title}\n${input.body}${actionUrl ? `\n${actionUrl}` : ""}`;
-  const response = await fetch(`https://discord.com/api/v10/channels/${env.DISCORD_CHANNEL_ID}/messages`, { method: "POST", headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify({ content, allowed_mentions: { parse: [] } }) });
+  const applicationId = input.applicationId;
+  const components = applicationId ? [{ type: 1, components: [
+    ...(actionUrl ? [{ type: 2, style: 5, label: "Answer questions", url: actionUrl }] : []),
+    { type: 2, style: 2, label: "Pause", custom_id: `hf:pause:${applicationId}` },
+    { type: 2, style: 2, label: "Continue", custom_id: `hf:continue:${applicationId}` },
+    { type: 2, style: 4, label: "Do it myself", custom_id: `hf:do_myself:${applicationId}` },
+  ] }] : [];
+  const response = await fetch(`https://discord.com/api/v10/channels/${env.DISCORD_CHANNEL_ID}/messages`, { method: "POST", headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify({ content, components, allowed_mentions: { parse: [] } }) });
   if (!response.ok) throw new Error(`Discord delivery failed (${response.status}).`);
+  const message = await response.json() as { id: string; components?: unknown[] };
+  return { id: message.id, actionUrl, componentCount: message.components?.length ?? 0 };
+}
+
+export async function sendDiscordTestNotification(): Promise<DiscordMessageResult | null> {
+  return sendDiscord({ type: "APPLICATION_OPEN", priority: 2, title: "Pass 1 notification test", body: "Safe test: no application action was taken.", actionUrl: "/drafts" });
 }

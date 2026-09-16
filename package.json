@@ -58,6 +58,7 @@
     "worker:discovery": "tsx worker/index.ts",
     "worker:discovery:once": "tsx worker/index.ts --once",
     "worker:applications:once": "tsx worker/application-tracker.ts",
+    "test:discord": "tsx scripts/test-discord.ts",
     "source:connect": "tsx scripts/source-browser.ts connect",
     "source:status": "tsx scripts/source-browser.ts status",
     "source:disconnect": "tsx scripts/source-browser.ts disconnect",

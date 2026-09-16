@@ -69,6 +69,7 @@ export const serverEnvSchema = z
     DISCORD_GUILD_ID: optionalString,
     DISCORD_CHANNEL_ID: optionalString,
     DISCORD_USER_ID: optionalString,
+    DISCORD_PUBLIC_KEY: optionalString,
 
     NEXT_PUBLIC_SUPABASE_URL: optionalUrl,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: optionalString,
