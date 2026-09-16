@@ -21,6 +21,17 @@ export async function listNotifications(limit = 50): Promise<InAppNotification[]
   return (data ?? []).map((row) => ({ id: row.id, type: row.type, title: row.title, body: row.body, actionUrl: row.action_url, sentAt: row.sent_at, isRead: read.has(row.id) }));
 }
 
+/** Lightweight shell payload; avoids fetching notification bodies just for the bell badge. */
+export async function countUnreadNotifications(): Promise<number> {
+  const db = createServiceSupabaseClient();
+  const [read, response] = await Promise.all([
+    readIds(),
+    db.from("notifications").select("id").order("sent_at", { ascending: false }).limit(500),
+  ]);
+  if (response.error) throw new Error(`Could not count notifications: ${response.error.message}`);
+  return (response.data ?? []).reduce((count, row) => count + (read.has(row.id) ? 0 : 1), 0);
+}
+
 /** Persists the in-app inbox event first. An email adapter can be injected by deployment wiring. */
 export async function notify(input: NotifyInput, email?: EmailNotifier): Promise<{ delivered: boolean; deduped: boolean }> {
   const db = createServiceSupabaseClient();
