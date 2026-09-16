@@ -185,43 +185,41 @@ export function useTerminalSessions(): UseTerminalSessionsResult {
           serverSessions = [created];
         }
 
-        const restored = await Promise.all(
-          serverSessions.map(async (serverSession) => {
-            const local = sessions.find((s) => s.id === serverSession.id);
-            const client = fromPersistedSession(serverSession, local?.draft ?? "");
-            try {
-              const history = await fetchTerminalSessionHistory(serverSession.id);
-              const restoredLines = restoreLinesForJobs(history.jobs, history.events);
-              return {
-                ...client,
-                lines:
-                  restoredLines.lines.length > 0
-                    ? restoredLines.lines
-                    : client.lines,
-                history: history.commandHistory.map((entry) => entry.command),
-                lastSequence: restoredLines.lastSequence,
-                seenEventIds: restoredLines.seenEventIds,
-                activeJob: restoredLines.activeJob,
-                activeJobId: restoredLines.activeJob?.id ?? serverSession.activeJobId,
-                selectedJobId: serverSession.selectedJobId,
-                lastCompletedJob: restoredLines.lastCompletedJob,
-                lastCommand:
-                  restoredLines.activeJob?.command ??
-                  restoredLines.lastCompletedJob?.command ??
-                  null,
-                showRunActions: Boolean(restoredLines.lastCompletedJob),
-              };
-            } catch {
-              return client;
-            }
-          }),
-        );
+        // The session list deliberately contains metadata only. Loading every
+        // history here created an O(number of sessions) request storm.
+        const selectedId =
+          listed.selectedSession?.id ?? serverSessions[0]?.id ?? activeIdRef.current;
+        const restored = serverSessions.map((serverSession) => {
+          const local = sessions.find((s) => s.id === serverSession.id);
+          return fromPersistedSession(serverSession, local?.draft ?? "");
+        });
+        const selectedIndex = restored.findIndex((session) => session.id === selectedId);
+        if (selectedIndex >= 0) {
+          try {
+            const history = await fetchTerminalSessionHistory(selectedId);
+            const restoredLines = restoreLinesForJobs(history.jobs, history.events);
+            const selected = restored[selectedIndex]!;
+            restored[selectedIndex] = {
+              ...selected,
+              lines: restoredLines.lines.length > 0 ? restoredLines.lines : selected.lines,
+              history: history.commandHistory.map((entry) => entry.command),
+              lastSequence: restoredLines.lastSequence,
+              seenEventIds: restoredLines.seenEventIds,
+              activeJob: restoredLines.activeJob,
+              activeJobId: restoredLines.activeJob?.id ?? selected.activeJobId,
+              selectedJobId: history.session.selectedJobId,
+              lastCompletedJob: restoredLines.lastCompletedJob,
+              lastCommand: restoredLines.activeJob?.command ?? restoredLines.lastCompletedJob?.command ?? null,
+              showRunActions: Boolean(restoredLines.lastCompletedJob),
+            };
+          } catch {
+            // Session metadata remains usable if history is temporarily unavailable.
+          }
+        }
         if (cancelled || restored.length === 0) return;
         setSessions(restored);
         setActiveId(
-          listed.selectedSession?.id && restored.some((s) => s.id === listed.selectedSession?.id)
-            ? listed.selectedSession.id
-            : restored[0]!.id,
+          restored.some((s) => s.id === selectedId) ? selectedId : restored[0]!.id,
         );
       } catch {
         try {
@@ -313,6 +311,29 @@ export function useTerminalSessions(): UseTerminalSessionsResult {
       void updateTerminalSession(found.id, { action: "select" }).catch(
         () => undefined,
       );
+      // History is loaded only when a session becomes active. AbortController
+      // is unnecessary here because this result is keyed and merged by id.
+      void fetchTerminalSessionHistory(found.id)
+        .then((history) => {
+          const restoredLines = restoreLinesForJobs(history.jobs, history.events);
+          setSessions((previous) => previous.map((session) => {
+            if (session.id !== found.id) return session;
+            return {
+              ...session,
+              lines: restoredLines.lines.length > 0 ? restoredLines.lines : session.lines,
+              history: history.commandHistory.map((entry) => entry.command),
+              lastSequence: restoredLines.lastSequence,
+              seenEventIds: restoredLines.seenEventIds,
+              activeJob: restoredLines.activeJob,
+              activeJobId: restoredLines.activeJob?.id ?? history.session.activeJobId,
+              selectedJobId: history.session.selectedJobId,
+              lastCompletedJob: restoredLines.lastCompletedJob,
+              lastCommand: restoredLines.activeJob?.command ?? restoredLines.lastCompletedJob?.command ?? null,
+              showRunActions: Boolean(restoredLines.lastCompletedJob),
+            };
+          }));
+        })
+        .catch(() => undefined);
       return found;
     },
     [sessions],

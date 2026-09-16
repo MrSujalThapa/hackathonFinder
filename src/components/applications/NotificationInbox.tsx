@@ -1,11 +1,11 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { InAppNotification } from "@/server/notifications/service";
-export function NotificationInbox() {
-  const [items, setItems] = useState<InAppNotification[] | null>(null);
-  useEffect(() => { fetch("/api/notifications").then((response) => response.json()).then((body: { data?: { notifications?: InAppNotification[] } }) => setItems(body.data?.notifications ?? [])).catch(() => setItems([])); }, []);
-  if (!items) return <p aria-busy="true" className="text-muted">Loading notifications…</p>;
-  if (!items.length) return <div className="hf-sheet-frame p-6"><h2 className="hf-doc-title text-xl">No notifications</h2><p className="mt-2 text-muted">Application openings, deadlines, and review requests will appear here.</p></div>;
-  return <ul className="space-y-3">{items.map((item) => <li key={item.id} className="hf-sheet-frame p-4"><p className="font-mono text-xs text-muted">{item.type.replaceAll("_", " ")} · {new Date(item.sentAt).toLocaleString()}</p><h2 className="mt-2 font-medium">{item.title}</h2><p className="mt-1 text-sm text-muted">{item.body}</p>{item.actionUrl ? <Link className="hf-focus mt-3 inline-block text-sm underline" href={item.actionUrl}>Open</Link> : null}</li>)}</ul>;
+export function NotificationInbox({ initialItems }: { initialItems: InAppNotification[] }) {
+  const [selected, setSelected] = useState<InAppNotification | null>(null);
+  const [read, setRead] = useState<Set<string>>(new Set());
+  if (!initialItems.length) return <div className="hf-sheet-frame p-6"><h2 className="hf-doc-title text-xl">No notifications</h2><p className="mt-2 text-muted">Application openings, deadlines, and review requests will appear here.</p></div>;
+  if (selected) return <article className="hf-sheet-frame max-w-3xl p-5"><button className="hf-btn hf-btn-ghost mb-5" onClick={() => setSelected(null)}>← Inbox</button><p className="hf-technical-label">{selected.type.replaceAll("_", " ")} · {new Date(selected.sentAt).toLocaleString()}</p><h2 className="hf-doc-title mt-2 text-2xl">{selected.title}</h2><p className="mt-5 whitespace-pre-wrap leading-7 text-muted">{selected.body}</p>{selected.actionUrl ? <Link className="hf-btn hf-btn-primary mt-6" href={selected.actionUrl}>Open related application</Link> : null}<button className="hf-btn hf-btn-ghost mt-6 ml-2" onClick={() => setRead((current) => { const next = new Set(current); next.has(selected.id) ? next.delete(selected.id) : next.add(selected.id); return next; })}>{read.has(selected.id) ? "Mark unread" : "Mark read"}</button></article>;
+  return <ul className="divide-y divide-border border-y border-border" aria-label="Notification inbox">{initialItems.map((item) => { const isRead = read.has(item.id); return <li key={item.id}><button className={`hf-focus grid w-full grid-cols-[auto_minmax(5.5rem,0.8fr)_minmax(0,2fr)_auto] items-center gap-3 px-2 py-4 text-left hover:bg-inset ${isRead ? "text-muted" : "font-semibold text-foreground"}`} onClick={() => { setRead((current) => new Set(current).add(item.id)); setSelected(item); }}><span className={`h-2 w-2 rounded-full ${isRead ? "bg-transparent" : "bg-accent-save"}`} aria-label={isRead ? "Read" : "Unread"} /><span className="truncate text-sm">{item.type.startsWith("APPLICATION") ? "Application" : "HackFinder"}</span><span className="min-w-0 truncate"><span>{item.title}</span><span className="ml-2 hidden text-sm font-normal text-muted sm:inline">{item.body}</span></span><time className="text-xs font-normal text-muted">{new Date(item.sentAt).toLocaleDateString()}</time></button></li>; })}</ul>;
 }

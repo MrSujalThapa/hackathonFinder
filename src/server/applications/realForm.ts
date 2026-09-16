@@ -1,5 +1,7 @@
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import type { Page } from "playwright";
 import type { ApplicationDraft, ApplicationQuestion } from "@/core/applications/types";
 import { classifyFormAction } from "@/core/applications/navigationSafety";
@@ -7,6 +9,7 @@ import { reconcileExternalForm, type ExternalFormControl, type ReconciliationRes
 import { withPersistentPlaywright } from "@/lib/browser/persistent";
 import { resolveSourceProfileDir } from "@/lib/browser/profilePaths";
 import { assertSafeCustomSourceUrl } from "@/server/customSources/urlSafety";
+import { downloadAssetFile, isStoredAsset } from "@/server/applications/assetStorage";
 
 const fixturePath = "/fixtures/controlled-application";
 export const isControlledApplicationFixture = (url: string) => { const parsed = new URL(url); return (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") && parsed.pathname === fixturePath; };
@@ -27,7 +30,17 @@ async function controlsFor(page: Page, questions: ApplicationQuestion[]): Promis
 async function fillQuestion(page: Page, question: ApplicationQuestion): Promise<void> {
   if (!question.answer) return;
   const locator = page.locator(question.selector); if (!await locator.count()) throw new Error(`Mapped field is missing: ${question.label}`);
-  if (question.fieldType === "file") { if (!existsSync(question.answer)) throw new Error(`Required asset is not available locally: ${question.label}`); await locator.first().setInputFiles(path.resolve(question.answer)); return; }
+  if (question.fieldType === "file") {
+    let filePath = question.answer;
+    if (isStoredAsset(filePath)) {
+      const stored = await downloadAssetFile(filePath);
+      if (!stored) throw new Error(`Required asset is unavailable: ${question.label}`);
+      filePath = path.join(tmpdir(), `hackfinder-${randomUUID()}-${stored.filename}`);
+      writeFileSync(filePath, Buffer.from(await stored.data.arrayBuffer()), { mode: 0o600 });
+    }
+    if (!existsSync(filePath)) throw new Error(`Required asset is not available locally: ${question.label}`);
+    await locator.first().setInputFiles(path.resolve(filePath)); return;
+  }
   if (question.fieldType === "select") { await locator.first().selectOption({ label: question.answer }); return; }
   if (question.fieldType === "radio") { await page.locator(`${question.selector}[value="${question.answer}"]`).check(); return; }
   if (question.fieldType === "checkbox") { if (["yes", "true", "1", "on"].includes(question.answer.toLowerCase())) await locator.first().check(); else await locator.first().uncheck(); return; }
