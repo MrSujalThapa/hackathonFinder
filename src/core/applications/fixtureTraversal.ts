@@ -3,6 +3,7 @@ import { classifyFormAction } from "@/core/applications/navigationSafety";
 
 export type ControlledPage = { page: number; questions: ApplicationQuestion[]; action: { type: string; text: string } };
 export type FixtureWorkerEvent = { type: "blocker"; page: number; questionIds: string[] } | { type: "stopped"; page: number; reason: "needs_input" | "possible_submit" };
+export type FixtureWorkerDependencies = { save(draft: ApplicationDraft): Promise<void>; notify(input: { page: number; questionIds: string[]; dedupeKey: string }): Promise<void> };
 const sources: Record<string, { value: string; source: AnswerSource }> = {
   name: { value: "Ada Lovelace", source: "profile" },
   bio: { value: "Student builder.", source: "question_bank" },
@@ -47,4 +48,12 @@ export function runControlledFixtureWorker(previous: ApplicationDraft, pages = f
     }
   }
   return { draft, events, pagesVisited };
+}
+
+/** Durable fixture harness: every worker turn saves once, then emits only its blocker batch. */
+export async function runDurableFixtureWorker(previous: ApplicationDraft, dependencies: FixtureWorkerDependencies, pages = fourPageApplicationFixture): Promise<{ draft: ApplicationDraft; events: FixtureWorkerEvent[]; pagesVisited: number }> {
+  const result = runControlledFixtureWorker(previous, pages);
+  await dependencies.save(result.draft);
+  for (const event of result.events) if (event.type === "blocker") await dependencies.notify({ page: event.page, questionIds: event.questionIds, dedupeKey: `page:${event.page}:${event.questionIds.join(",")}` });
+  return result;
 }
