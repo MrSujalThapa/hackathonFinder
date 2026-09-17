@@ -124,7 +124,7 @@ function extractLocations(command: string): string[] {
   // "hackathons Ottawa" form) while stripping mode/date tails. Comma-separated
   // "City, Region" phrases are split so both parts stay usable; event tails
   // such as "happening ..." terminate the capture instead of polluting it.
-  const tail = "or\\s+remote|remote|online|virtual|in[- ]?person|hybrid|from|between|next|upcoming|happening|taking|held|starting|running|scheduled|--\\w+";
+  const tail = "or\\s+remote|remote|online|virtual|in[- ]?person|hybrid|from|between|next|this|month|months|upcoming|happening|taking|held|starting|running|scheduled|--\\w+";
   const dynamic = command.match(new RegExp(`\\b(?:in|near|around|at)\\s+(?:the\\s+)?([A-Za-z][A-Za-z .,'-]{1,60}?)(?=\\s+(?:${tail})|$)`, "i"))
     ?? command.match(new RegExp(`\\bhackathons?\\s+([A-Za-z][A-Za-z .,'-]{1,60}?)(?=\\s+(?:${tail})|$)`, "i"));
   const candidate = dynamic?.[1]?.replace(/\s+/g, " ").trim() ?? "";

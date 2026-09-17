@@ -47,6 +47,13 @@ describe("parseCommand", () => {
     assert.equal(toronto.locationConstraint, "event_location");
   });
 
+  it("does not leak month tails into locations", () => {
+    const toronto = parseCommand("find hackathons in Toronto this month");
+    assert.deepEqual(toronto.locations, ["Toronto"]);
+    const vancouver = parseCommand("find upcoming hackathons in Vancouver next month");
+    assert.deepEqual(vancouver.locations, ["Vancouver"]);
+  });
+
   it("parses SF aliases and San Francisco or remote inclusion", () => {
     const sf = parseCommand("find upcoming hackathons in SF");
     assert.ok(sf.locations.includes("San Francisco"));

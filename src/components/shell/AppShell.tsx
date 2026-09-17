@@ -15,7 +15,7 @@ export function AppShell({ children, queueCount }: AppShellProps) {
       <DesktopSidebar queueCount={queueCount} />
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="hf-shell-main relative mx-auto flex w-full min-w-0 flex-1 flex-col overflow-x-hidden pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pb-[calc(var(--nav-mobile-height)+env(safe-area-inset-bottom,0px))] pt-[max(1rem,env(safe-area-inset-top,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] lg:pb-8 lg:pt-6">
-          <div className="absolute right-[max(1rem,env(safe-area-inset-right,0px))] top-[max(1rem,env(safe-area-inset-top,0px))] sm:right-[max(1.5rem,env(safe-area-inset-right,0px))] lg:top-6"><NotificationBell /></div>
+          <div className="mb-4 flex justify-end lg:absolute lg:right-[max(1.5rem,env(safe-area-inset-right,0px))] lg:top-6 lg:mb-0"><NotificationBell /></div>
           {children}
         </div>
         <MobileNavigation queueCount={queueCount} />
