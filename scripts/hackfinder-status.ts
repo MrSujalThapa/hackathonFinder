@@ -6,8 +6,9 @@ import { loadLocalEnv } from "@/cli/loadEnv";
 import { getServerEnv, hasSupabaseConfig, resetServerEnvCacheForTests } from "@/config/env";
 
 function running(pid: number): boolean { try { process.kill(pid, 0); return true; } catch { return false; } }
-function web(port: number): Promise<boolean> { return new Promise((resolve) => { const req = request({ host: "127.0.0.1", port, path: "/api/health", timeout: 1_000 }, (res) => { res.resume(); resolve(res.statusCode === 200); }); req.on("error", () => resolve(false)); req.on("timeout", () => { req.destroy(); resolve(false); }); req.end(); }); }
-function portInUse(port: number): Promise<boolean> { return new Promise((resolve) => { const socket = createConnection({ host: "127.0.0.1", port }); socket.once("connect", () => { socket.destroy(); resolve(true); }); socket.once("error", () => resolve(false)); socket.setTimeout(1_000, () => { socket.destroy(); resolve(false); }); }); }
+const HEALTH_TIMEOUT_MS = 10_000;
+function web(port: number): Promise<boolean> { return new Promise((resolve) => { const req = request({ host: "127.0.0.1", port, path: "/api/health", timeout: HEALTH_TIMEOUT_MS }, (res) => { res.resume(); resolve(res.statusCode === 200); }); req.on("error", () => resolve(false)); req.on("timeout", () => { req.destroy(); resolve(false); }); req.end(); }); }
+function portInUse(port: number): Promise<boolean> { return new Promise((resolve) => { const socket = createConnection({ host: "127.0.0.1", port }); socket.once("connect", () => { socket.destroy(); resolve(true); }); socket.once("error", () => resolve(false)); socket.setTimeout(HEALTH_TIMEOUT_MS, () => { socket.destroy(); resolve(false); }); }); }
 
 async function main(): Promise<void> {
   loadLocalEnv(); resetServerEnvCacheForTests(); const env = getServerEnv();

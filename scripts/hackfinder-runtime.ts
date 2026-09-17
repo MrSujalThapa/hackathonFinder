@@ -16,7 +16,9 @@ let webPort = 3000;
 let discoveryEveryMs = 6 * 60 * 60 * 1000;
 let trackerEveryMs = 60 * 60 * 1000;
 const children = new Set<ChildProcess>();
+const restartTimers = new Set<NodeJS.Timeout>();
 let stopping = false;
+const HEALTH_TIMEOUT_MS = 10_000;
 
 type RuntimeLock = { pid: number; startedAt: string };
 
@@ -49,7 +51,7 @@ function releaseLock(): void {
 
 function isWebRunning(): Promise<boolean> {
   return new Promise((resolve) => {
-    const req = request({ host: "127.0.0.1", port: webPort, path: "/api/health", timeout: 1_000 }, (response) => {
+    const req = request({ host: "127.0.0.1", port: webPort, path: "/api/health", timeout: HEALTH_TIMEOUT_MS }, (response) => {
       response.resume(); resolve(response.statusCode === 200);
     });
     req.on("error", () => resolve(false));
@@ -64,7 +66,7 @@ function isPortInUse(): Promise<boolean> {
     const socket = createConnection({ host: "127.0.0.1", port: webPort });
     socket.once("connect", () => { socket.destroy(); resolve(true); });
     socket.once("error", () => resolve(false));
-    socket.setTimeout(1_000, () => { socket.destroy(); resolve(false); });
+    socket.setTimeout(HEALTH_TIMEOUT_MS, () => { socket.destroy(); resolve(false); });
   });
 }
 
@@ -85,6 +87,24 @@ function start(name: string, args: string[]): ChildProcess {
     if (!stopping) console.log(`[runtime] ${name} exited (${signal ?? code ?? "unknown"})`);
   });
   return child;
+}
+
+/** Keep the gateway available after a transient Discord/Tailscale outage. */
+function startPersistent(name: string, script: string): void {
+  const launch = () => {
+    if (stopping) return;
+    const child = start(name, ["run", script]);
+    child.once("exit", () => {
+      if (stopping) return;
+      console.warn(`[runtime] ${name} will retry in 10 seconds`);
+      const retry = setTimeout(() => {
+        restartTimers.delete(retry);
+        launch();
+      }, 10_000);
+      restartTimers.add(retry);
+    });
+  };
+  launch();
 }
 
 async function runOnce(name: string, script: string): Promise<void> {
@@ -118,7 +138,7 @@ async function main(): Promise<void> {
   console.log(`${env.APP_BASE_URL ? "✓" : "!"} Tailscale URL/config ${env.APP_BASE_URL ?? "APP_BASE_URL not configured"}\n`);
 
   if (!portInUse) start("web", ["run", "dev"]);
-  if (env.DISCORD_BOT_TOKEN && env.DISCORD_GUILD_ID && env.DISCORD_CHANNEL_ID && env.DISCORD_USER_ID) start("discord", ["run", "worker:discord"]);
+  if (env.DISCORD_BOT_TOKEN && env.DISCORD_GUILD_ID && env.DISCORD_CHANNEL_ID && env.DISCORD_USER_ID) startPersistent("discord", "worker:discord");
   const timers = [
     schedule("discovery", "worker:discovery:scheduled", discoveryEveryMs),
     schedule("application tracker", "worker:applications:once", trackerEveryMs),
@@ -128,6 +148,8 @@ async function main(): Promise<void> {
     stopping = true;
     console.log(`\n[runtime] ${signal} received — stopping child services…`);
     timers.forEach(clearInterval);
+    restartTimers.forEach(clearTimeout);
+    restartTimers.clear();
     for (const child of children) child.kill("SIGTERM");
     setTimeout(() => { for (const child of children) child.kill("SIGKILL"); releaseLock(); process.exit(0); }, 8_000).unref();
     if (children.size === 0) { releaseLock(); process.exit(0); }
