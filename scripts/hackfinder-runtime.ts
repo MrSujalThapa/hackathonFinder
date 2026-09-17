@@ -12,6 +12,7 @@ import { getServerEnv, resetServerEnvCacheForTests } from "@/config/env";
 
 const root = process.cwd();
 const lockPath = join(root, ".data", "hackfinder-runtime.json");
+const statePath = join(root, ".data", "hackfinder-runtime-state.json");
 let webPort = 3000;
 let discoveryEveryMs = 6 * 60 * 60 * 1000;
 let trackerEveryMs = 60 * 60 * 1000;
@@ -21,6 +22,19 @@ let stopping = false;
 const HEALTH_TIMEOUT_MS = 10_000;
 
 type RuntimeLock = { pid: number; startedAt: string };
+type ServiceStatus = "starting" | "running" | "completed" | "failed" | "retrying" | "stopped";
+type RuntimeState = {
+  pid: number;
+  startedAt: string;
+  services: Record<string, { status: ServiceStatus; updatedAt: string; detail?: string }>;
+};
+let runtimeState: RuntimeState | null = null;
+
+function recordService(name: string, status: ServiceStatus, detail?: string): void {
+  if (!runtimeState) return;
+  runtimeState.services[name] = { status, updatedAt: new Date().toISOString(), ...(detail ? { detail } : {}) };
+  writeFileSync(statePath, JSON.stringify(runtimeState));
+}
 
 function processExists(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
@@ -93,9 +107,12 @@ function start(name: string, args: string[]): ChildProcess {
 function startPersistent(name: string, script: string): void {
   const launch = () => {
     if (stopping) return;
+    recordService(name, "starting");
     const child = start(name, ["run", script]);
-    child.once("exit", () => {
+    child.once("exit", (code, signal) => {
       if (stopping) return;
+      const detail = `exit ${signal ?? code ?? "unknown"}`;
+      recordService(name, "retrying", detail);
       console.warn(`[runtime] ${name} will retry in 10 seconds`);
       const retry = setTimeout(() => {
         restartTimers.delete(retry);
@@ -109,11 +126,13 @@ function startPersistent(name: string, script: string): void {
 
 async function runOnce(name: string, script: string): Promise<void> {
   if (stopping) return;
+  recordService(name, "running");
   console.log(`[runtime] ${name} started`);
-  await new Promise<void>((resolve) => {
+  const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     const child = start(name, ["run", script]);
-    child.once("exit", () => resolve());
+    child.once("exit", (code, signal) => resolve({ code, signal }));
   });
+  recordService(name, result.code === 0 ? "completed" : "failed", result.code === 0 ? undefined : `exit ${result.signal ?? result.code ?? "unknown"}`);
 }
 
 function schedule(name: string, script: string, interval: number): NodeJS.Timeout {
@@ -128,6 +147,7 @@ async function main(): Promise<void> {
   trackerEveryMs = Number(process.env.HACKFINDER_TRACKER_INTERVAL_MS ?? 60 * 60 * 1000);
   const env = getServerEnv();
   acquireLock();
+  runtimeState = { pid: process.pid, startedAt: new Date().toISOString(), services: {} };
   const [alreadyRunning, portInUse] = await Promise.all([isWebRunning(), isPortInUse()]);
   console.log("\nHackFinder Local Runtime\n");
   console.log(`${alreadyRunning ? "✓" : portInUse ? "!" : "…"} Web ${alreadyRunning ? `healthy on :${webPort}` : portInUse ? `port :${webPort} is already in use; not starting a duplicate` : `starting on :${webPort}`}`);
@@ -137,6 +157,7 @@ async function main(): Promise<void> {
   console.log(`${env.NEXT_PUBLIC_SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY ? "✓" : "!"} Supabase ${env.NEXT_PUBLIC_SUPABASE_URL ? "configured" : "not configured"}`);
   console.log(`${env.APP_BASE_URL ? "✓" : "!"} Tailscale URL/config ${env.APP_BASE_URL ?? "APP_BASE_URL not configured"}\n`);
 
+  recordService("web", alreadyRunning ? "running" : portInUse ? "failed" : "starting", alreadyRunning ? `healthy on :${webPort}` : portInUse ? `port :${webPort} occupied without health` : `starting on :${webPort}`);
   if (!portInUse) start("web", ["run", "dev"]);
   if (env.DISCORD_BOT_TOKEN && env.DISCORD_GUILD_ID && env.DISCORD_CHANNEL_ID && env.DISCORD_USER_ID) startPersistent("discord", "worker:discord");
   const timers = [
@@ -150,6 +171,10 @@ async function main(): Promise<void> {
     timers.forEach(clearInterval);
     restartTimers.forEach(clearTimeout);
     restartTimers.clear();
+    recordService("web", "stopped");
+    recordService("discord", "stopped");
+    recordService("discovery", "stopped");
+    recordService("application tracker", "stopped");
     for (const child of children) child.kill("SIGTERM");
     setTimeout(() => { for (const child of children) child.kill("SIGKILL"); releaseLock(); process.exit(0); }, 8_000).unref();
     if (children.size === 0) { releaseLock(); process.exit(0); }
