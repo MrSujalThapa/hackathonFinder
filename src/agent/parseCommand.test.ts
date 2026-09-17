@@ -30,6 +30,23 @@ describe("parseCommand", () => {
     assert.equal(prefs.remotePolicy, "exclude");
   });
 
+  it("parses city-region phrases with date tails without leaking tail words", () => {
+    const ottawa = parseCommand(
+      "find hackathons in Ottawa, Ontario happening in the next 3 months",
+    );
+    assert.ok(ottawa.locations.includes("Ottawa"), JSON.stringify(ottawa.locations));
+    assert.ok(ottawa.locations.includes("Ontario"), JSON.stringify(ottawa.locations));
+    assert.equal(ottawa.locationConstraint, "event_location");
+    assert.ok(ottawa.dateFrom && ottawa.dateTo);
+
+    const toronto = parseCommand(
+      "find hackathons in Toronto, Ontario happening in the next 3 months",
+    );
+    assert.ok(toronto.locations.includes("Toronto"));
+    assert.ok(toronto.locations.includes("Ontario"));
+    assert.equal(toronto.locationConstraint, "event_location");
+  });
+
   it("parses SF aliases and San Francisco or remote inclusion", () => {
     const sf = parseCommand("find upcoming hackathons in SF");
     assert.ok(sf.locations.includes("San Francisco"));
