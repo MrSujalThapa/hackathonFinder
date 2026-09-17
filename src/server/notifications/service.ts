@@ -66,9 +66,15 @@ export async function sendDiscord(input: NotifyInput): Promise<DiscordMessageRes
   const content = `**HackFinder Agent — ${input.priority === 1 ? "ACTION REQUIRED" : "IMPORTANT"}**\n${input.title}\n${input.body}${actionUrl ? `\n${actionUrl}` : ""}`;
   const applicationId = input.applicationId;
   const readyToSubmit = input.type === "APPLICATION_READY_TO_SUBMIT";
+  const needsFile = input.type === "APPLICATION_NEEDS_FILE";
+  const assetUrl = absoluteActionUrl("/assets");
   const components = applicationId ? [{ type: 1, components: readyToSubmit ? [
     ...(actionUrl ? [{ type: 2, style: 5, label: "Review Draft", url: actionUrl }] : []),
     { type: 2, style: 1, label: "Submit", custom_id: `hf:submit:${applicationId}` },
+  ] : needsFile ? [
+    ...(assetUrl ? [{ type: 2, style: 5, label: "Open Assets", url: assetUrl }] : []),
+    ...(actionUrl ? [{ type: 2, style: 5, label: "Open Draft", url: actionUrl }] : []),
+    { type: 2, style: 2, label: "Pause", custom_id: `hf:pause:${applicationId}` },
   ] : [
     ...(actionUrl ? [{ type: 2, style: 5, label: "Answer questions", url: actionUrl }] : []),
     { type: 2, style: 2, label: "Pause", custom_id: `hf:pause:${applicationId}` },
