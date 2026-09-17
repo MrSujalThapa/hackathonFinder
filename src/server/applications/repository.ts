@@ -85,11 +85,21 @@ export async function upsertAssetBank(entry: Omit<AssetBankEntry, "updatedAt">):
 }
 export async function deleteAssetBank(id: string): Promise<void> { const db = createServiceSupabaseClient(); const { error } = await db.from("asset_bank").delete().eq("id", id).eq("user_id", OWNER_ID); if (error) throw new Error(`Could not delete Asset Bank entry: ${error.message}`); }
 export async function deleteApplication(id: string): Promise<void> { const db = createServiceSupabaseClient(); const { error } = await db.from("applications").delete().eq("id", id); if (error) throw new Error(`Could not delete application: ${error.message}`); }
-export async function findApplicationByOpportunityName(query: string): Promise<ApplicationDraft | null> {
+export type ApplicationNameMatch = { candidateName: string; draft: ApplicationDraft };
+export async function findApplicationsByOpportunityName(query: string): Promise<ApplicationNameMatch[]> {
   const db = createServiceSupabaseClient(); const { data: candidates, error } = await db.from("candidates").select("id,name").ilike("name", `%${query.trim()}%`).limit(2); if (error) throw new Error(`Could not find opportunity: ${error.message}`);
-  if (!candidates?.length) return null;
+  if (!candidates?.length) return [];
   const { data: applications, error: appError } = await db.from("applications").select("id,candidate_id").in("candidate_id", candidates.map((candidate) => candidate.id)); if (appError) throw new Error(`Could not load application: ${appError.message}`);
-  if (!applications?.length) return null;
-  if (applications.length > 1) throw new Error("More than one active application draft matches that name.");
-  return getDraft(applications[0]!.id);
+  if (!applications?.length) return [];
+  const names = new Map(candidates.map((candidate) => [candidate.id, candidate.name]));
+  const drafts = await Promise.all(applications.map(async (application) => {
+    const draft = await getDraft(application.id);
+    return draft ? { candidateName: names.get(application.candidate_id) ?? "Unnamed opportunity", draft } : null;
+  }));
+  return drafts.filter((match): match is ApplicationNameMatch => Boolean(match));
+}
+export async function findApplicationByOpportunityName(query: string): Promise<ApplicationDraft | null> {
+  const matches = await findApplicationsByOpportunityName(query);
+  if (matches.length > 1) throw new Error("More than one active application draft matches that name.");
+  return matches[0]?.draft ?? null;
 }

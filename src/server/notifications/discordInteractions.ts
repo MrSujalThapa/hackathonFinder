@@ -1,12 +1,13 @@
-import { createPublicKey, verify } from "node:crypto";
+import { createPublicKey, randomUUID, verify } from "node:crypto";
 import { getServerEnv } from "@/config/env";
 import { editAnswer, pauseDraft, resumeDraft, userManageDraft } from "@/core/applications/workflow";
-import { findApplicationByOpportunityName, getApplication, listApplications, saveDraft } from "@/server/applications/repository";
+import { findApplicationByOpportunityName, findApplicationsByOpportunityName, getApplication, listApplications, listQuestionBank, saveDraft, upsertQuestionBank } from "@/server/applications/repository";
 import { resumeApplication } from "@/server/applications/resume";
 import { submitAuthorizedDraft } from "@/server/applications/submissionService";
 import { parseDiscordCommand } from "@/server/notifications/discordCommands";
 import { enqueueDiscoveryJob } from "@/jobs/enqueue";
 import { getDiscoveryJobStore } from "@/jobs/store";
+import { matchQuestionBank } from "@/core/applications/questionBank";
 
 const SPKI_ED25519_PREFIX = "302a300506032b6570032100";
 export function verifyDiscordRequest(signature: string | null, timestamp: string | null, body: string, publicKey: string | undefined): boolean {
@@ -46,8 +47,11 @@ function renderQuestions(draft: Awaited<ReturnType<typeof findApplicationByOppor
   if (!draft) return "No matching application draft was found.";
   const questions = unansweredOnly ? draft.questions.filter((q) => !q.answer) : draft.questions;
   const answered = draft.questions.filter((q) => q.answer).length;
-  const lines = questions.slice(0, 6).map((q, index) => `${index + 1}. ${q.label}\n${q.answer ?? "UNANSWERED"}${q.answer ? `\nSource: ${q.answerSource}` : ""}`);
-  return `${draft.applicationUrl ? "Draft" : "Application"} — Draft\n${answered}/${draft.questions.length} answered\n\n${lines.join("\n\n")}\n\n${questions.length > 6 ? `Showing 6/${questions.length}. ` : ""}${draftLink(draft.id)}`;
+  const lines = questions.slice(0, 4).map((q, index) => {
+    const answer = q.answer && q.answer.length > 360 ? `${q.answer.slice(0, 357)}…` : q.answer;
+    return `${index + 1}. ${q.label}\n${answer ?? "UNANSWERED"}${answer ? `\nSource: ${q.answerSource}` : ""}`;
+  });
+  return `${draft.applicationUrl ? "Draft" : "Application"} — Draft\n${answered}/${draft.questions.length} answered\n\n${lines.join("\n\n")}\n\n${questions.length > 4 ? `Showing 4/${questions.length}. Ask \`show question N for <draft>\` for another answer. ` : ""}${draftLink(draft.id)}`;
 }
 async function waitForDiscovery(id: string): Promise<string> {
   const store = getDiscoveryJobStore();
@@ -69,17 +73,30 @@ export async function handleDiscordTextCommand(userId: string, content: string):
     if (pendingDrafts.length !== 1 || !content.trim()) return { content: "I only save a reply after `show question N for <draft>` establishes a pending question." };
     const draft = pendingDrafts[0]!;
     const question = draft.questions.find((item) => item.id === draft.checkpoint.discordPendingQuestionId)!;
-    await saveDraft({ ...editAnswer(draft, question.id, content.trim()), checkpoint: { ...draft.checkpoint, discordPendingQuestionId: undefined } });
-    return { content: `Saved to this draft: ${question.label}\n${draftLink(draft.id)}` };
+    const saved = await resumeApplication(await saveDraft({ ...editAnswer(draft, question.id, content.trim()), checkpoint: { ...draft.checkpoint, discordPendingQuestionId: undefined, discordLastAnsweredQuestionId: question.id } }));
+    return { content: `Saved to this draft: ${question.label}\nDraft is now ${saved.status.toUpperCase()}.\nReply \`use this answer for future applications\` to add it to Question Bank, or continue in HackFinder.\n${draftLink(draft.id)}` };
   }
   if (command.action === "discover") {
     const { job } = await enqueueDiscoveryJob({ command: command.command ?? content, mode: "auto" });
     return { content: "Searching…", followUp: waitForDiscovery(job.id) };
   }
   const all = await listApplications();
+  if (command.action === "save_to_question_bank") {
+    const candidates = all.map((draft) => ({ draft, question: draft.questions.find((question) => question.id === draft.checkpoint.discordLastAnsweredQuestionId) })).filter((entry): entry is { draft: typeof all[number]; question: NonNullable<typeof entry.question> } => Boolean(entry.question?.answer));
+    if (candidates.length !== 1) return { content: "I could not identify one recent draft answer. Use `show question N for <draft>`, reply with the answer, then ask again." };
+    const { draft, question } = candidates[0]!;
+    const bank = await listQuestionBank();
+    const existing = matchQuestionBank(question.label, bank);
+    await upsertQuestionBank({ id: existing?.id ?? randomUUID(), folderId: existing?.folderId ?? null, canonicalQuestion: existing?.canonicalQuestion ?? question.label, answer: question.answer!, aliases: existing?.aliases ?? [], tags: existing?.tags ?? [] });
+    await saveDraft({ ...draft, checkpoint: { ...draft.checkpoint, discordLastAnsweredQuestionId: undefined } });
+    return { content: `Saved “${question.label}” to Question Bank for future applications. ${draftLink(draft.id)}` };
+  }
   if (command.action === "status" && !command.target) return { content: `HackFinder\n\nApplications: ${all.filter((draft) => draft.status === "drafting").length} drafting, ${all.filter((draft) => ["needs_input", "needs_file"].includes(draft.status)).length} need input, ${all.filter((draft) => draft.status === "ready_to_submit").length} ready to submit.\n\n${draftLink()}` };
   if (command.action === "show_drafts") return { content: all.length ? all.slice(0, 8).map((draft) => `• ${draft.status} — ${draftLink(draft.id)}`).join("\n") : "No application drafts are tracked." };
-  const draft = await findApplicationByOpportunityName(command.target ?? ""); if (!draft) return { content: "No matching application draft was found." };
+  const matches = await findApplicationsByOpportunityName(command.target ?? "");
+  if (!matches.length) return { content: "No matching application draft was found." };
+  if (matches.length > 1) return { content: `More than one draft matches. Choose one:\n${matches.map((match) => `• ${match.candidateName}`).join("\n")}` };
+  const draft = matches[0]!.draft;
   if (command.action === "status") return { content: `Draft\n${draft.status.toUpperCase()}\n${draft.questions.filter((q) => q.answer).length}/${draft.questions.length} known\n${draft.questions.filter((q) => q.required && !q.answer).length} blockers\n${draftLink(draft.id)}` };
   if (command.action === "show_qa") return { content: renderQuestions(draft) };
   if (command.action === "show_unanswered") return { content: renderQuestions(draft, true) };
@@ -93,8 +110,8 @@ export async function handleDiscordTextCommand(userId: string, content: string):
     const pendingId = typeof draft.checkpoint.discordPendingQuestionId === "string" ? draft.checkpoint.discordPendingQuestionId : undefined;
     const pending = draft.questions.find((q) => q.id === pendingId);
     if (pending && content.trim()) {
-      await saveDraft({ ...editAnswer(draft, pending.id, content.trim()), checkpoint: { ...draft.checkpoint, discordPendingQuestionId: undefined } });
-      return { content: `Saved to this draft: ${pending.label}\n${draftLink(draft.id)}` };
+      const saved = await resumeApplication(await saveDraft({ ...editAnswer(draft, pending.id, content.trim()), checkpoint: { ...draft.checkpoint, discordPendingQuestionId: undefined, discordLastAnsweredQuestionId: pending.id } }));
+      return { content: `Saved to this draft: ${pending.label}\nDraft is now ${saved.status.toUpperCase()}.\nReply \`use this answer for future applications\` to add it to Question Bank.\n${draftLink(draft.id)}` };
     }
     return { content: "Use `show question N for <draft>` before replying with an application answer." };
   }

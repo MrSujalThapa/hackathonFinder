@@ -1,5 +1,5 @@
 export type DiscordCommand = {
-  action: "pause" | "continue" | "status" | "show_drafts" | "do_myself" | "show_qa" | "show_unanswered" | "show_question" | "discover";
+  action: "pause" | "continue" | "status" | "show_drafts" | "do_myself" | "show_qa" | "show_unanswered" | "show_question" | "discover" | "save_to_question_bank";
   target?: string;
   questionNumber?: number;
   command?: string;
@@ -11,6 +11,7 @@ export function parseDiscordCommand(authorId: string, content: string, ownerId: 
   const normalized = content.trim().toLowerCase().replace(/\s+/g, " ");
   if (normalized === "status") return { action: "status" };
   if (normalized === "show drafts") return { action: "show_drafts" };
+  if (normalized === "use this answer for future applications" || normalized === "save this answer to question bank") return { action: "save_to_question_bank" };
   if (/^(find|search for|look for)\b/.test(normalized) && /\b(hackathons?|events?|fellowships?|competitions?|startup)\b/.test(normalized)) return { action: "discover", command: content.trim() };
   const question = /^show question (\d+) for (.+)$/.exec(normalized);
   if (question) return { action: "show_question", target: question[2], questionNumber: Number(question[1]) };
