@@ -6,6 +6,6 @@ export async function POST(request: Request) {
   const payload = JSON.parse(raw) as { type?: number; member?: { user?: { id?: string } }; user?: { id?: string }; data?: { custom_id?: string; name?: string; options?: Array<{ value?: string }> } };
   if (payload.type === 1) return NextResponse.json({ type: 1 });
   const userId = payload.member?.user?.id ?? payload.user?.id ?? "";
-  const content = payload.type === 3 && payload.data?.custom_id ? await handleDiscordComponent(userId, payload.data.custom_id) : await handleDiscordTextCommand(userId, [payload.data?.name, payload.data?.options?.[0]?.value].filter(Boolean).join(" "));
-  return NextResponse.json({ type: 4, data: { content, flags: 64 } });
+  const reply = payload.type === 3 && payload.data?.custom_id ? await handleDiscordComponent(userId, payload.data.custom_id) : await handleDiscordTextCommand(userId, [payload.data?.name, payload.data?.options?.[0]?.value].filter(Boolean).join(" "));
+  return NextResponse.json({ type: 4, data: { content: reply.content, components: reply.components, flags: 64 } });
 }
