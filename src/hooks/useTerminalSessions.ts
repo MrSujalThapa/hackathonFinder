@@ -155,6 +155,14 @@ export function useTerminalSessions(): UseTerminalSessionsResult {
   const [activeId, setActiveId] = useState(() => boot.activeId);
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  /**
+   * Histories already hydrated from the server. Switching only fetches a
+   * session history when it is uncached so A → B → A never fans out.
+   */
+  const historyLoadedRef = useRef<Set<string>>(new Set());
+  const historyInflightRef = useRef<Set<string>>(new Set());
 
   const active = useMemo(() => {
     return (
@@ -212,6 +220,7 @@ export function useTerminalSessions(): UseTerminalSessionsResult {
               lastCommand: restoredLines.activeJob?.command ?? restoredLines.lastCompletedJob?.command ?? null,
               showRunActions: Boolean(restoredLines.lastCompletedJob),
             };
+            historyLoadedRef.current.add(selectedId);
           } catch {
             // Session metadata remains usable if history is temporarily unavailable.
           }
@@ -285,6 +294,41 @@ export function useTerminalSessions(): UseTerminalSessionsResult {
     [patchSession],
   );
 
+  /**
+   * Hydrate a session history only when it is uncached. Results are merged
+   * by session id so concurrent activations never fan out or clobber lines.
+   */
+  const loadHistoryIfNeeded = useCallback((sessionId: string) => {
+    if (historyLoadedRef.current.has(sessionId)) return;
+    if (historyInflightRef.current.has(sessionId)) return;
+    historyInflightRef.current.add(sessionId);
+    void fetchTerminalSessionHistory(sessionId)
+      .then((history) => {
+        const restoredLines = restoreLinesForJobs(history.jobs, history.events);
+        historyLoadedRef.current.add(sessionId);
+        setSessions((previous) => previous.map((session) => {
+          if (session.id !== sessionId) return session;
+          return {
+            ...session,
+            lines: restoredLines.lines.length > 0 ? restoredLines.lines : session.lines,
+            history: history.commandHistory.map((entry) => entry.command),
+            lastSequence: restoredLines.lastSequence,
+            seenEventIds: restoredLines.seenEventIds,
+            activeJob: restoredLines.activeJob,
+            activeJobId: restoredLines.activeJob?.id ?? history.session.activeJobId,
+            selectedJobId: history.session.selectedJobId,
+            lastCompletedJob: restoredLines.lastCompletedJob,
+            lastCommand: restoredLines.activeJob?.command ?? restoredLines.lastCompletedJob?.command ?? null,
+            showRunActions: Boolean(restoredLines.lastCompletedJob),
+          };
+        }));
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        historyInflightRef.current.delete(sessionId);
+      });
+  }, []);
+
   const createSession = useCallback(
     (title?: string) => {
       const session = createClientSession(
@@ -292,12 +336,25 @@ export function useTerminalSessions(): UseTerminalSessionsResult {
       );
       setSessions((prev) => [...prev, session]);
       setActiveId(session.id);
+      // A brand-new session has no server history; treat it as hydrated so
+      // revisiting it never triggers a history fetch.
+      historyLoadedRef.current.add(session.id);
       persistSessionDraft(session.id, session.draft);
       void createTerminalSession({
         id: session.id,
         title: session.title,
         select: true,
-      }).catch(() => undefined);
+      }).catch(() => {
+        // Never leave a ghost tab: if the server rejects the create (auth,
+        // origin, rate limit), roll the optimistic session back.
+        historyLoadedRef.current.delete(session.id);
+        removeSessionDraft(session.id);
+        const remaining = sessionsRef.current.filter((s) => s.id !== session.id);
+        setSessions(remaining);
+        if (activeIdRef.current === session.id && remaining.length > 0) {
+          setActiveId(remaining[remaining.length - 1]!.id);
+        }
+      });
       return session;
     },
     [],
@@ -311,32 +368,12 @@ export function useTerminalSessions(): UseTerminalSessionsResult {
       void updateTerminalSession(found.id, { action: "select" }).catch(
         () => undefined,
       );
-      // History is loaded only when a session becomes active. AbortController
-      // is unnecessary here because this result is keyed and merged by id.
-      void fetchTerminalSessionHistory(found.id)
-        .then((history) => {
-          const restoredLines = restoreLinesForJobs(history.jobs, history.events);
-          setSessions((previous) => previous.map((session) => {
-            if (session.id !== found.id) return session;
-            return {
-              ...session,
-              lines: restoredLines.lines.length > 0 ? restoredLines.lines : session.lines,
-              history: history.commandHistory.map((entry) => entry.command),
-              lastSequence: restoredLines.lastSequence,
-              seenEventIds: restoredLines.seenEventIds,
-              activeJob: restoredLines.activeJob,
-              activeJobId: restoredLines.activeJob?.id ?? history.session.activeJobId,
-              selectedJobId: history.session.selectedJobId,
-              lastCompletedJob: restoredLines.lastCompletedJob,
-              lastCommand: restoredLines.activeJob?.command ?? restoredLines.lastCompletedJob?.command ?? null,
-              showRunActions: Boolean(restoredLines.lastCompletedJob),
-            };
-          }));
-        })
-        .catch(() => undefined);
+      // History is loaded only when a session becomes active and only when
+      // uncached — switching back never refetches.
+      loadHistoryIfNeeded(found.id);
       return found;
     },
-    [sessions],
+    [loadHistoryIfNeeded, sessions],
   );
 
   const renameActive = useCallback(
@@ -371,6 +408,7 @@ export function useTerminalSessions(): UseTerminalSessionsResult {
         next = createClientSession({ title: DEFAULT_TERMINAL_SESSION_NAME });
         setSessions([next]);
           setActiveId(next.id);
+          historyLoadedRef.current.add(next.id);
           persistSessionDraft(next.id, next.draft);
           void createTerminalSession({
             id: next.id,
@@ -390,11 +428,14 @@ export function useTerminalSessions(): UseTerminalSessionsResult {
         void updateTerminalSession(next.id, { action: "select" }).catch(
           () => undefined,
         );
+        // The newly activated session may never have been visited; hydrate
+        // it only when uncached so close never triggers a history fan-out.
+        loadHistoryIfNeeded(next.id);
       }
 
       return { closed: toClose, next };
     },
-    [sessions],
+    [loadHistoryIfNeeded, sessions],
   );
 
   const appendCommandHistory = useCallback(
