@@ -1,5 +1,5 @@
 export type DiscordCommand = {
-  action: "pause" | "continue" | "status" | "show_drafts" | "do_myself" | "show_qa" | "show_unanswered" | "show_question" | "discover" | "save_to_question_bank";
+  action: "pause" | "continue" | "status" | "show_drafts" | "show_draft" | "delete_draft" | "do_myself" | "show_qa" | "show_unanswered" | "show_question" | "discover" | "save_to_question_bank";
   target?: string;
   questionNumber?: number;
   command?: string;
@@ -15,6 +15,10 @@ export function parseDiscordCommand(authorId: string, content: string, ownerId: 
   if (/^(find|search for|look for)\b/.test(normalized) && /\b(hackathons?|events?|fellowships?|competitions?|startup)\b/.test(normalized)) return { action: "discover", command: content.trim() };
   const question = /^show question (\d+) for (.+)$/.exec(normalized);
   if (question) return { action: "show_question", target: question[2], questionNumber: Number(question[1]) };
+  const deleteDraft = /^delete (.+?) draft$/.exec(normalized);
+  if (deleteDraft) return { action: "delete_draft", target: deleteDraft[1] };
+  const showDraft = /^show (.+?) draft$/.exec(normalized);
+  if (showDraft) return { action: "show_draft", target: showDraft[1] };
   const show = /^show (.+?) (q&a|questions and answers|unanswered)$/.exec(normalized);
   if (show) return { action: show[2] === "unanswered" ? "show_unanswered" : "show_qa", target: show[1] };
   const targetStatus = /^status (.+)$/.exec(normalized);

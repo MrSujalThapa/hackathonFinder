@@ -1,7 +1,7 @@
 import { createPublicKey, randomUUID, verify } from "node:crypto";
 import { getServerEnv } from "@/config/env";
 import { editAnswer, pauseDraft, resumeDraft, userManageDraft } from "@/core/applications/workflow";
-import { findApplicationByOpportunityName, findApplicationsByOpportunityName, getApplication, listApplications, listQuestionBank, saveDraft, upsertQuestionBank } from "@/server/applications/repository";
+import { deleteApplication, findApplicationByOpportunityName, findApplicationsByOpportunityName, getApplication, listApplications, listQuestionBank, saveDraft, upsertQuestionBank } from "@/server/applications/repository";
 import { resumeApplication } from "@/server/applications/resume";
 import { submitAuthorizedDraft } from "@/server/applications/submissionService";
 import { parseDiscordCommand } from "@/server/notifications/discordCommands";
@@ -29,8 +29,9 @@ export type DiscordComponentReply = { content: string; components?: unknown[] };
 export type DiscordTextReply = DiscordComponentReply & { followUp?: Promise<string> };
 export async function handleDiscordComponent(userId: string, customId: string): Promise<DiscordComponentReply> {
   const env = getServerEnv(); if (!env.DISCORD_USER_ID || userId !== env.DISCORD_USER_ID) return { content: "This control is only available to the configured HackFinder owner." };
-  const match = /^hf:(pause|continue|do_myself|submit|submit_now|cancel):([0-9a-f-]{36})$/i.exec(customId); if (!match) return { content: "Unknown HackFinder control." };
+  const match = /^hf:(pause|continue|do_myself|submit|submit_now|cancel|delete):([0-9a-f-]{36})$/i.exec(customId); if (!match) return { content: "Unknown HackFinder control." };
   const draft = await getApplication(match[2]!); if (!draft) return { content: "That draft no longer exists." };
+  if (match[1] === "delete") { await deleteApplication(draft.id); return { content: "Draft deleted. No application was submitted." }; }
   if (match[1] === "submit") { if (draft.status !== "ready_to_submit") return { content: "This draft is not ready to submit." }; return { content: `Draft v${draft.draftVersion} is complete. No unresolved required fields.`, components: [{ type: 1, components: [{ type: 2, style: 5, label: "View real form", url: draft.applicationUrl }, { type: 2, style: 4, label: "Submit now", custom_id: `hf:submit_now:${draft.id}` }, { type: 2, style: 2, label: "Cancel", custom_id: `hf:cancel:${draft.id}` }] }] }; }
   if (match[1] === "cancel") return { content: "Submission cancelled. No action was taken." };
   if (match[1] === "submit_now") { const submitted = await submitAuthorizedDraft(draft.id); return { content: submitted.status === "submitted" ? "Fixture application submitted and snapshot saved." : "Submission blocked by final reconciliation." }; }
@@ -97,6 +98,8 @@ export async function handleDiscordTextCommand(userId: string, content: string):
   if (!matches.length) return { content: "No matching application draft was found." };
   if (matches.length > 1) return { content: `More than one draft matches. Choose one:\n${matches.map((match) => `• ${match.candidateName}`).join("\n")}` };
   const draft = matches[0]!.draft;
+  if (command.action === "show_draft") return { content: `Draft\n${draft.status.toUpperCase()}\n${draft.questions.filter((q) => q.answer).length}/${draft.questions.length} answered\n${draft.questions.filter((q) => q.required && !q.answer).length} unresolved required answers\n${draftLink(draft.id)}` };
+  if (command.action === "delete_draft") return { content: "Delete this draft? This cannot be undone and does not submit anything.", components: [{ type: 1, components: [{ type: 2, style: 4, label: "Delete draft", custom_id: `hf:delete:${draft.id}` }, { type: 2, style: 5, label: "Open draft", url: draftLink(draft.id) }] }] };
   if (command.action === "status") return { content: `Draft\n${draft.status.toUpperCase()}\n${draft.questions.filter((q) => q.answer).length}/${draft.questions.length} known\n${draft.questions.filter((q) => q.required && !q.answer).length} blockers\n${draftLink(draft.id)}` };
   if (command.action === "show_qa") return { content: renderQuestions(draft) };
   if (command.action === "show_unanswered") return { content: renderQuestions(draft, true) };
