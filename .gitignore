@@ -95,3 +95,12 @@ artifacts/design/corrective-before/
 artifacts/design/corrective-after/
 artifacts/design/proposed/
 artifacts/design/failed-redesign/
+
+
+.agents/
+.claude/
+.codex/
+.cursor/
+artifacts/
+docs/
+AGENTS.md
