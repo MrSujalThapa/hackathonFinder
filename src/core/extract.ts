@@ -5,6 +5,7 @@ import type {
   HackathonEvidence,
   RawLead,
 } from "@/core/discovery/types";
+import { classifyOpportunityType } from "@/core/opportunities/classify";
 import {
   applicationDeadlineFor,
   parseDateEvidenceFromText,
@@ -336,6 +337,7 @@ export function extractHackathonEvent(
 
   const event: HackathonEvent = {
     name,
+    opportunityType: classifyOpportunityType(name, lead.text),
     source: lead.source,
     officialUrl,
     applyUrl,

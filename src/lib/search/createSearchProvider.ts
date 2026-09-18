@@ -9,6 +9,7 @@ import {
   createSerpApiSearchProvider,
 } from "@/lib/search/providers/stubs";
 import { createTavilySearchProvider } from "@/lib/search/providers/tavily";
+import { createTinyFishSearchProvider } from "@/lib/search/providers/tinyfish";
 import type { SearchProvider } from "@/lib/search/types";
 import { MissingSearchConfigError } from "@/lib/search/types";
 
@@ -25,6 +26,8 @@ function buildFromConfig(config: NonNullable<ReturnType<typeof readSearchConfig>
       return createMockSearchProvider();
     case "tavily":
       return createTavilySearchProvider(config.apiKey!);
+    case "tinyfish":
+      return createTinyFishSearchProvider(config.apiKey!);
     case "brave":
       return createBraveSearchProvider(config.apiKey!);
     case "exa":

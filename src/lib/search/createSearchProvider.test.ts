@@ -34,6 +34,13 @@ describe("search config", () => {
       MissingSearchConfigError,
     );
   });
+
+  it("recognizes TinyFish as a live Monid-backed provider", () => {
+    assert.deepEqual(readSearchConfig(envPartial({ SEARCH_PROVIDER: "tinyfish", SEARCH_API_KEY: "test-key" })), {
+      provider: "tinyfish",
+      apiKey: "test-key",
+    });
+  });
 });
 
 describe("createSearchProvider", () => {

@@ -119,37 +119,49 @@ export function createWebSearchCollector(deps: WebSearchCollectorDeps = {}): Col
 
         const queries = planSearchQueries(input.preferences);
         const combined: Array<SearchResult & { query: string }> = [];
+        // TinyFish is browser-rendered (its live p50 is above the former
+        // 1.5–1.9s slice). Run a small bounded fan-out instead of starving
+        // every focused query with an impossible sequential timeout.
+        const queryConcurrency = 3;
         const perQueryBudget = Math.max(
-          1_500,
-          Math.floor(input.timeoutMs / Math.max(1, queries.length)),
+          5_000,
+          Math.floor(input.timeoutMs / Math.ceil(Math.max(1, queries.length) / queryConcurrency)),
         );
 
-        for (const query of queries) {
+        for (let start = 0; start < queries.length; start += queryConcurrency) {
           if (Date.now() - startedAt > input.timeoutMs) {
             result.warnings.push("Web search stopped early after timeout budget.");
             break;
           }
-
-          try {
-            const page = await provider.search({
-              query,
-              maxResults: Math.min(10, input.maxResults),
-              dateFrom: input.preferences.dateFrom,
-              dateTo: input.preferences.dateTo,
-              timeoutMs: perQueryBudget,
-            });
-            for (const item of page) {
-              combined.push({ ...item, query });
+          const batch = queries.slice(start, start + queryConcurrency);
+          const pages = await Promise.all(batch.map(async (query) => {
+            try {
+              const page = await provider.search({
+                query,
+                maxResults: Math.min(10, input.maxResults),
+                dateFrom: input.preferences.dateFrom,
+                dateTo: input.preferences.dateTo,
+                location: input.preferences.locationConstraint === "event_location" ? input.preferences.locations[0] : undefined,
+                timeoutMs: perQueryBudget,
+              });
+              return { query, page };
+            } catch (error) {
+              return { query, error };
             }
-          } catch (error) {
-            if (error instanceof MissingSearchConfigError) {
-              result.warnings.push(error.message);
-              break;
+          }));
+          for (const entry of pages) {
+            if (entry.page !== undefined) {
+              for (const item of entry.page) combined.push({ ...item, query: entry.query });
+              continue;
+            }
+            if (entry.error instanceof MissingSearchConfigError) {
+              result.warnings.push(entry.error.message);
+              return result;
             }
             result.warnings.push(
-              error instanceof Error
-                ? `Search query failed (${query}): ${error.message}`
-                : `Search query failed (${query})`,
+              entry.error instanceof Error
+                ? `Search query failed (${entry.query}): ${entry.error.message}`
+                : `Search query failed (${entry.query})`,
             );
           }
         }

@@ -1,0 +1,2 @@
+import { ApplicationsList } from "@/components/applications/ApplicationsList";
+export default function DraftsPage() { return <section className="mx-auto max-w-3xl space-y-5"><header><p className="font-mono text-xs text-muted">DURABLE APPLICATIONS</p><h1 className="hf-doc-title text-3xl">Drafts</h1><p className="mt-2 text-muted">Your canonical, editable copies of every application. Save &amp; Continue never submits a form.</p></header><ApplicationsList /></section>; }

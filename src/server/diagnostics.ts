@@ -1,4 +1,4 @@
-import { getServerEnv, hasGoogleSheetsConfig, hasLlmConfig, hasSupabaseConfig, hasXConfig } from "@/config/env";
+import { getServerEnv, hasGoogleSheetsConfig, hasLlmConfig, hasSupabaseConfig, hasXConfig, isFixtureCandidatesMode } from "@/config/env";
 import { createServiceSupabaseClient } from "@/lib/supabase/createServiceClient";
 
 export type OwnerDiagnostics = {
@@ -8,6 +8,7 @@ export type OwnerDiagnostics = {
     llm: "configured" | "missing";
     x: "configured" | "not_configured";
     mockCandidates: "enabled" | "disabled";
+    demoMode: "enabled" | "disabled";
     providerModel: string;
   };
   latestAgentRun: {
@@ -33,7 +34,8 @@ export async function getOwnerDiagnostics(): Promise<OwnerDiagnostics> {
       sheets: hasGoogleSheetsConfig(env) ? "configured" : "missing",
       llm: hasLlmConfig(env) ? "configured" : "missing",
       x: hasXConfig(env) ? "configured" : "not_configured",
-      mockCandidates: env.USE_MOCK_CANDIDATES ? "enabled" : "disabled",
+      mockCandidates: isFixtureCandidatesMode(env) ? "enabled" : "disabled",
+      demoMode: env.DEMO_MODE ? "enabled" : "disabled",
       providerModel: [env.LLM_PROVIDER ?? "deterministic", env.LLM_MODEL]
         .filter(Boolean)
         .join("/"),
@@ -42,7 +44,7 @@ export async function getOwnerDiagnostics(): Promise<OwnerDiagnostics> {
     lastSheetSync: null,
   };
 
-  if (!hasSupabaseConfig(env)) return diagnostics;
+  if (!hasSupabaseConfig(env) || env.DEMO_MODE) return diagnostics;
 
   const supabase = createServiceSupabaseClient();
   const [{ data: run }, { data: sheetCandidate }] = await Promise.all([

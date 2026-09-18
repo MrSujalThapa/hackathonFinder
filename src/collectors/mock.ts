@@ -2,7 +2,19 @@ import type { DiscoveryPreferences, RawLead } from "@/core/discovery/types";
 import type { Collector, CollectorInput, CollectorResult } from "@/collectors/types";
 import { emptyCollectorResult } from "@/collectors/types";
 
-const MOCK_POSTED_AT = "2026-07-01T12:00:00Z";
+function isoDateFromNow(days: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+const MOCK_POSTED_AT = new Date().toISOString();
+const MOCK_DATES = {
+  hackDeadline: isoDateFromNow(30), hackStart: isoDateFromNow(60), hackEnd: isoDateFromNow(62),
+  buildersDeadline: isoDateFromNow(45), buildersStart: isoDateFromNow(70), buildersEnd: isoDateFromNow(72),
+  remoteDeadline: isoDateFromNow(20), remoteStart: isoDateFromNow(35), remoteEnd: isoDateFromNow(37),
+  tokyoDeadline: isoDateFromNow(75), tokyoStart: isoDateFromNow(90), tokyoEnd: isoDateFromNow(92),
+} as const;
 
 const MOCK_LEADS: RawLead[] = [
   {
@@ -21,9 +33,9 @@ const MOCK_LEADS: RawLead[] = [
       country: "Canada",
       mode: "in-person",
       themes: ["AI", "agents", "cloud"],
-      deadline: "2026-08-15",
-      startDate: "2026-09-13",
-      endDate: "2026-09-15",
+      deadline: MOCK_DATES.hackDeadline,
+      startDate: MOCK_DATES.hackStart,
+      endDate: MOCK_DATES.hackEnd,
       prize: "$10,000 in prizes",
       eligibility: "Open to students and professionals in Canada",
       officialUrl: "https://hackto.example.com/ai-challenge",
@@ -47,9 +59,9 @@ const MOCK_LEADS: RawLead[] = [
       country: "Canada",
       mode: "in-person",
       themes: ["developer tools", "cloud"],
-      deadline: "2026-09-01",
-      startDate: "2026-09-20",
-      endDate: "2026-09-22",
+      deadline: MOCK_DATES.buildersDeadline,
+      startDate: MOCK_DATES.buildersStart,
+      endDate: MOCK_DATES.buildersEnd,
       prize: "Sponsor prizes",
       eligibility: "Students only",
       officialUrl: "https://uwaterloo.example.com/builders-hack",
@@ -73,9 +85,9 @@ const MOCK_LEADS: RawLead[] = [
       country: "Online",
       mode: "online",
       themes: ["agents", "cloud", "AI"],
-      deadline: "2026-07-30",
-      startDate: "2026-08-05",
-      endDate: "2026-08-07",
+      deadline: MOCK_DATES.remoteDeadline,
+      startDate: MOCK_DATES.remoteStart,
+      endDate: MOCK_DATES.remoteEnd,
       prize: "$7,500",
       eligibility: "Open worldwide",
       officialUrl: "https://remoteagents.example.com/hack",
@@ -132,9 +144,9 @@ const MOCK_LEADS: RawLead[] = [
       country: "Canada",
       mode: "in-person",
       themes: ["AI", "agents"],
-      deadline: "2026-08-15",
-      startDate: "2026-09-13",
-      endDate: "2026-09-15",
+      deadline: MOCK_DATES.hackDeadline,
+      startDate: MOCK_DATES.hackStart,
+      endDate: MOCK_DATES.hackEnd,
       prize: "$10,000 in prizes",
       eligibility: "Open to students",
       officialUrl: "https://www.hackto.example.com/ai-challenge/?utm_source=mock",
@@ -159,9 +171,9 @@ const MOCK_LEADS: RawLead[] = [
       country: "Japan",
       mode: "in-person",
       themes: ["robotics"],
-      deadline: "2026-10-01",
-      startDate: "2026-10-15",
-      endDate: "2026-10-17",
+      deadline: MOCK_DATES.tokyoDeadline,
+      startDate: MOCK_DATES.tokyoStart,
+      endDate: MOCK_DATES.tokyoEnd,
       officialUrl: "https://tokyo-robotics.example.com/fair",
       applyUrl: "https://tokyo-robotics.example.com/fair/register",
     },

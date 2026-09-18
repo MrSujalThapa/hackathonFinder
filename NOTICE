@@ -1,0 +1,28 @@
+Hackathon Finder
+Copyright 2026 Sujal Thapa
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full license text.
+
+---
+
+Third-party notices
+
+Fonts (loaded via next/font/google; not bundled as project source):
+- Geist / Geist Mono — SIL Open Font License 1.1 (Vercel)
+- Source Serif 4 — SIL Open Font License 1.1 (Adobe)
+
+Runtime libraries are licensed by their respective package maintainers.
+See package.json / package-lock.json for dependency versions. Notable packages
+include Next.js, React, Supabase JS, Playwright, Cheerio, Google APIs, Zod,
+and GSAP (GreenSock). Review each package’s license before redistribution
+in constrained commercial contexts.
+
+Agent skill copies under `.agents/skills/`, `.claude/skills/`, `.codex/skills/`,
+and `.cursor/skills/` retain their upstream LICENSE / LICENSE.txt files and are
+not claimed as original Hackathon Finder authorship.
+
+UI screenshots under `docs/images/` (if present) and selected `artifacts/design/after/`
+captures are project-owned documentation assets of this application’s UI.
+Historical design iteration captures may be noisy; they do not grant rights to
+third-party site content that may appear in live discovery results.

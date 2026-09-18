@@ -119,6 +119,16 @@ function extractLocations(command: string): string[] {
     found.add("Waterloo");
   }
 
+  // Aliases improve normalization, but are deliberately not a geography whitelist.
+  // Capture ordinary place phrases after location prepositions (and the concise
+  // "hackathons Ottawa" form) while stripping mode/date tails.
+  const dynamic = command.match(/\b(?:in|near|around|at)\s+(?:the\s+)?([A-Za-z][A-Za-z .'-]{1,60}?)(?=\s+(?:or\s+remote|remote|online|virtual|in[- ]?person|hybrid|from|between|next|upcoming|--\w+)|$)/i)
+    ?? command.match(/\bhackathons?\s+([A-Za-z][A-Za-z .'-]{1,60}?)(?=\s+(?:or\s+remote|remote|online|virtual|in[- ]?person|hybrid|from|between|next|upcoming|--\w+)|$)/i);
+  const candidate = dynamic?.[1]?.replace(/\s+/g, " ").trim();
+  if (candidate && !/^(?:the|a|an|upcoming|ai|remote|online|in person|hybrid)$/i.test(candidate)) {
+    found.add(candidate.replace(/\b\w/g, (letter) => letter.toUpperCase()));
+  }
+
   return [...found];
 }
 
@@ -196,9 +206,7 @@ function locationConstraintFor(
   }
   if (
     locations.length > 0 &&
-    /\b(?:in|near|around|at)\s+(toronto|gta|greater toronto|waterloo|mississauga|san francisco|sf|bay area|canada)\b/i.test(
-      command,
-    )
+    /\b(?:in|near|around|at)\s+/i.test(command)
   ) {
     return "event_location";
   }

@@ -111,7 +111,9 @@ export type LumaDiscoveryFeed =
   | "luma_ai_hackathon"
   | "luma_artificial_intelligence"
   | "luma_remote"
-  | "luma_search";
+  | "luma_search"
+  | "luma_location_ai"
+  | "luma_location_tech";
 
 export type LumaFailureHint =
   | "network"
@@ -149,6 +151,8 @@ type LumaFeedConfig = {
   label: string;
   url: string;
   type: "location" | "topic";
+  /** A derived discover route is only retained when its cards corroborate this place. */
+  validateLocation?: string;
 };
 
 export type LumaFeedResolution = {
@@ -470,14 +474,9 @@ const TECH_FEED: LumaFeedConfig = {
 };
 
 function requestedLumaLocation(input: CollectorInput): string | undefined {
-  const command = input.preferences.rawCommand.toLowerCase();
-  for (const city of Object.keys(VERIFIED_LOCATION_FEEDS)) {
-    if (new RegExp(`\\b(?:in|near|around|for)\\s+${city}\\b|\\b${city}\\b`, "i").test(command)) {
-      return city;
-    }
-  }
-  if (/\bontario\b/i.test(command)) return "ontario";
-  return undefined;
+  return input.preferences.locationConstraint === "event_location"
+    ? input.preferences.locations[0]
+    : undefined;
 }
 
 function wantsAiTopic(topics: string[] | undefined, command = ""): boolean {
@@ -539,6 +538,30 @@ export function leadContentMatchesTheme(lead: RawLead, themes: string[]): boolea
   });
 }
 
+/**
+ * Apply the user's event-location/mode constraints after broad public feeds and
+ * detail enrichment. This deliberately uses event metadata, never eligibility
+ * text, so "open to Canadian students" cannot become a Canada event filter.
+ */
+export function leadMatchesLumaLocation(
+  lead: RawLead,
+  requestedLocation: string | undefined,
+  remotePolicy: string | undefined,
+): boolean {
+  const metadata = lead.metadata ?? {};
+  const mode = String(metadata.mode ?? "").toLowerCase();
+  const location = [metadata.location, metadata.city, metadata.region, metadata.country]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+  const remote = mode === "online" || mode === "remote" || /\b(online|remote|virtual)\b/i.test(location);
+  if (remotePolicy === "only") return remote;
+  if (!requestedLocation) return remotePolicy !== "exclude" || !remote;
+  if (remote && remotePolicy === "include") return true;
+  if (remote) return false;
+  return location.includes(requestedLocation.toLowerCase());
+}
+
 export function resolveLumaFeeds(input: {
   requestedLocation?: string;
   requestedTopics?: string[];
@@ -555,25 +578,35 @@ export function resolveLumaFeeds(input: {
     input.remotePolicy === "only" ||
     /\b(remote|online|virtual)\b/i.test(command);
 
-  if (key === "ontario") {
-    feeds.push(VERIFIED_LOCATION_FEEDS.toronto, VERIFIED_LOCATION_FEEDS.waterloo);
-  } else if (key && VERIFIED_LOCATION_FEEDS[key]) {
+  if (key && VERIFIED_LOCATION_FEEDS[key]) {
     feeds.push(VERIFIED_LOCATION_FEEDS[key]);
+  } else if (key && input.remotePolicy !== "only") {
+    const citySlug = slugify(requestedLocation!);
+    feeds.push(
+      {
+        mode: "luma_location_ai",
+        label: `${requestedLocation} AI`,
+        url: `${LUMA_BASE}/discover/${citySlug}/ai`,
+        type: "location",
+        validateLocation: requestedLocation,
+      },
+      {
+        mode: "luma_location_tech",
+        label: `${requestedLocation} Tech`,
+        url: `${LUMA_BASE}/discover/${citySlug}/tech`,
+        type: "location",
+        validateLocation: requestedLocation,
+      },
+    );
   }
 
   // Primary search/feed routes with independent reserved budgets later.
   // Tech is last so it cannot starve hackathon/AI discovery.
-  if (aiFirst) {
-    feeds.push(
-      HACKATHON_FEED,
-      AI_HACKATHON_FEED,
-      ARTIFICIAL_INTELLIGENCE_FEED,
-      AI_FEED,
-      TECH_FEED,
-    );
-  } else {
-    feeds.push(HACKATHON_FEED, AI_FEED, TECH_FEED);
-  }
+  // Broad public category feeds are first-class recall surfaces. Classification
+  // remains downstream, preventing unrelated meetups from becoming candidates.
+  feeds.push(AI_FEED, TECH_FEED);
+  if (aiFirst) feeds.push(AI_HACKATHON_FEED, ARTIFICIAL_INTELLIGENCE_FEED);
+  feeds.push(HACKATHON_FEED);
   if (wantsRemote) feeds.push(REMOTE_FEED);
 
   const unique = new Map<string, LumaFeedConfig>();
@@ -583,8 +616,8 @@ export function resolveLumaFeeds(input: {
     requestedLocation,
     feeds: [...unique.values()],
     fallbackReason:
-      key && key !== "ontario" && !VERIFIED_LOCATION_FEEDS[key]
-        ? `No verified ${requestedLocation} city feed available`
+      key && !VERIFIED_LOCATION_FEEDS[key]
+        ? `No verified ${requestedLocation} city feed; derived routes will be validated and global AI/Tech feeds remain available as fallback`
         : undefined,
   };
 }
@@ -1331,8 +1364,27 @@ export const lumaCollector: Collector = {
     );
 
     const feedBudgets = allocateLumaFeedBudgets(budget, feeds.length);
+    const perFeedTimeout = Math.max(
+      6_000,
+      Math.floor(budgetMs / Math.max(1, feeds.length)),
+    );
 
     try {
+      // Render the location AI/Tech routes and the global AI/Tech routes in
+      // the first wave.  A city page is allowed to be slow or unverified, but
+      // it must never prevent the independent global recall feeds from running.
+      const firstWave = feeds.slice(0, Math.min(4, feeds.length));
+      const precollected = new Map(await mapLimit(firstWave, firstWave.length, async (feed, feedIndex) => {
+        const originalIndex = feeds.indexOf(feed);
+        const remaining = Math.min(
+          perFeedTimeout,
+          Math.max(1_000, budgetMs - (Date.now() - startedAt)),
+        );
+        return [
+          feed.url,
+          await collectRenderedLumaFeed(feed, remaining, feedBudgets[originalIndex]!, input.logger),
+        ] as const;
+      }));
       // Phase 1: collect event cards from every primary route before classification.
       for (let feedIndex = 0; feedIndex < feeds.length; feedIndex += 1) {
         const feed = feeds[feedIndex]!;
@@ -1341,11 +1393,6 @@ export const lumaCollector: Collector = {
           stopReasons.push(`${feed.mode}:timeout_before_start`);
           break;
         }
-        // Independent reserved timeout slice — Tech cannot consume the whole deadline.
-        const perFeedTimeout = Math.max(
-          6_000,
-          Math.floor(budgetMs / Math.max(1, feeds.length)),
-        );
         const remaining = Math.min(
           perFeedTimeout,
           Math.max(1_000, budgetMs - (Date.now() - startedAt)),
@@ -1354,7 +1401,7 @@ export const lumaCollector: Collector = {
         input.logger?.(
           `[${feed.label}] reserved budget ${feedBudget.maxScrolls} scrolls / ${feedBudget.maxEvents} events (${remaining}ms)`,
         );
-        const feedResult = await collectRenderedLumaFeed(feed, remaining, feedBudget, input.logger);
+        const feedResult = precollected.get(feed.url) ?? await collectRenderedLumaFeed(feed, remaining, feedBudget, input.logger);
         pagesFetched += 1;
         result.warnings.push(...feedResult.warnings);
         scrollAttempts += feedResult.scrollAttempts;
@@ -1368,6 +1415,24 @@ export const lumaCollector: Collector = {
         input.logger?.(
           `[${feed.label}] collected ${feedResult.uniqueCount} unique event cards (classification deferred)`,
         );
+
+        // Luma does not guarantee every plausible /discover/<city>/<topic>
+        // path is a city route. Do not silently treat a generic/invalid page as
+        // local discovery: retain it only if its rendered cards corroborate the
+        // requested location; global feeds below provide the safe fallback.
+        if (feed.validateLocation) {
+          const needle = feed.validateLocation.toLowerCase();
+          const corroborated = feedResult.leads.some((lead) => {
+            const location = typeof lead.metadata?.location === "string" ? lead.metadata.location : "";
+            return `${lead.title ?? ""} ${lead.text ?? ""} ${location}`.toLowerCase().includes(needle);
+          });
+          if (!corroborated) {
+            result.warnings.push(`luma_location_route_unverified=${feed.url}`);
+            input.logger?.(`[${feed.label}] route did not corroborate ${feed.validateLocation}; using global fallback.`);
+            continue;
+          }
+          result.warnings.push(`luma_location_route_verified=${feed.url}`);
+        }
 
         for (const lead of feedResult.leads) {
           if (!lead.url) continue;
@@ -1485,11 +1550,23 @@ export const lumaCollector: Collector = {
         );
       }
 
+      // A broad AI/Tech feed can have a superficially complete card while still
+      // omitting the venue. For an explicit event-location request, that is not
+      // enough evidence to discard the card: inspect a bounded set of promising
+      // detail pages before applying the location filter.
+      const needsLocationVerification = (lead: RawLead): boolean => Boolean(
+        input.preferences.locationConstraint === "event_location" &&
+        input.preferences.locations[0] &&
+        !leadMatchesLumaLocation(lead, input.preferences.locations[0], input.preferences.remotePolicy),
+      );
+      const shouldEnrich = (lead: RawLead): boolean =>
+        !lumaListingDataIsSufficient(lead) || needsLocationVerification(lead);
+
       let detailPagesOpened = 0;
       let detailFailures = 0;
       if (enrichable.length > 0) {
         const detailTargetCount = enrichable
-          .filter((lead) => !lumaListingDataIsSufficient(lead))
+          .filter(shouldEnrich)
           .slice(0, budget.detailLimit).length;
         input.logger?.(
           detailTargetCount > 0
@@ -1501,7 +1578,7 @@ export const lumaCollector: Collector = {
           budgetMs,
           startedAt,
           budget.detailLimit,
-          (lead) => !lumaListingDataIsSufficient(lead),
+          shouldEnrich,
         );
         const byId = new Map(enriched.leads.map((lead) => [lead.id, lead]));
         result.leads = provisionalLeads
@@ -1512,6 +1589,26 @@ export const lumaCollector: Collector = {
         detailFailures = enriched.failures;
       } else {
         result.leads = provisionalLeads.slice(0, budget.maxEvents);
+      }
+
+      const requestedEventLocation =
+        input.preferences.locationConstraint === "event_location"
+          ? input.preferences.locations[0]
+          : undefined;
+      if (requestedEventLocation || input.preferences.remotePolicy === "only") {
+        const beforeLocationFilter = result.leads.length;
+        result.leads = result.leads.filter((lead) =>
+          leadMatchesLumaLocation(
+            lead,
+            requestedEventLocation,
+            input.preferences.remotePolicy,
+          ),
+        );
+        const droppedForLocation = beforeLocationFilter - result.leads.length;
+        result.warnings.push(`location_filtered=${droppedForLocation}`);
+        input.logger?.(
+          `Location filter retained ${result.leads.length}/${beforeLocationFilter} public Luma events`,
+        );
       }
 
       for (const lead of result.leads) {

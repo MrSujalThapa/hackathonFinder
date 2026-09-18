@@ -5,12 +5,18 @@ import type {
   EvidenceType,
   Json,
 } from "@/lib/supabase/database.types";
+import type { OpportunityType } from "@/core/applications/types";
 
 export type CandidateCard = {
   id: string;
   status: CandidateStatus;
   score: number;
   name: string;
+  opportunityType?: OpportunityType;
+  organizer?: string | null;
+  applicationOpensAt?: string | null;
+  cost?: string | null;
+  travelSupport?: string | null;
   summary: string | null;
   source: string;
   sourceIds?: Record<string, unknown>;
@@ -98,6 +104,11 @@ export type ListCandidatesResult = {
 export type UpsertCandidateInput = {
   fingerprint: string;
   name: string;
+  opportunityType?: OpportunityType;
+  organizer?: string | null;
+  applicationOpensAt?: string | null;
+  cost?: string | null;
+  travelSupport?: string | null;
   source: string;
   status?: CandidateStatus;
   score?: number;

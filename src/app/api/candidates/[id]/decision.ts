@@ -10,6 +10,8 @@ import { getCandidateRepository } from "@/server/candidates/service";
 import { timedAsync } from "@/lib/perf/timing";
 import { protectApiRequest } from "@/server/api/protection";
 import { withRequestLogging } from "@/server/observability/logger";
+import { startInterestedApplication } from "@/server/applications/interested";
+import { prepareApplication } from "@/server/applications/prepare";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -67,12 +69,16 @@ async function applyDecision(
         metadata: { via: "api", action },
       }),
     );
+    // Persist the swipe decision first. A transient form-inspection failure must not undo interest.
+    const interested = action === "approve" ? await startInterestedApplication(candidate, prepareApplication).catch((): { state: "unavailable"; application?: undefined } => ({ state: "unavailable" })) : null;
 
     return ok({
       candidate,
       previousStatus: existing.status,
       newStatus: candidate.status,
       action,
+      application: interested?.application ?? null,
+      applicationState: interested?.state ?? null,
       // Sheet sync is a separate client follow-up via /sync-sheet.
       sheetSync: null,
     });

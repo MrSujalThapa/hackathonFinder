@@ -35,7 +35,7 @@ export function planSearchQueries(preferences: DiscoveryPreferences): string[] {
   const queries: string[] = [];
   const locations = preferences.locations.filter((loc) => !/^(remote|online)$/i.test(loc));
   const themes = preferences.themes.slice(0, 3);
-  const primaryLocation = locations[0] ?? "Canada";
+  const primaryLocation = locations[0];
   const monthFrom = monthYearLabel(preferences.dateFrom);
   const year =
     preferences.dateFrom?.slice(0, 4) ??
@@ -43,13 +43,13 @@ export function planSearchQueries(preferences: DiscoveryPreferences): string[] {
     String(new Date().getUTCFullYear());
 
   // Location + apply intent
-  queries.push(`hackathon ${primaryLocation} ${monthFrom ?? year} apply`);
+  queries.push(`hackathon${primaryLocation ? ` ${primaryLocation}` : ""} ${monthFrom ?? year} apply`);
 
   // Theme-focused
   if (themes[0]) {
-    queries.push(`${themes[0]} hackathon Canada registration`);
+    queries.push(`${themes[0]} hackathon${primaryLocation ? ` ${primaryLocation}` : ""} registration`);
   } else {
-    queries.push("AI hackathon Canada registration");
+    queries.push(`hackathon${primaryLocation ? ` ${primaryLocation}` : ""} registration`);
   }
 
   if (themes.includes("agents") || themes.includes("AI")) {
@@ -62,17 +62,17 @@ export function planSearchQueries(preferences: DiscoveryPreferences): string[] {
   }
 
   // Source-specific site constraints
-  queries.push(`site:lu.ma hackathon ${locations[0] ?? "Toronto"}`);
-  queries.push(`site:mlh.io events ${locations.includes("Canada") ? "Canada" : primaryLocation}`);
+  queries.push(`site:lu.ma hackathon${primaryLocation ? ` ${primaryLocation}` : ""}`);
+  queries.push(`site:mlh.io events${primaryLocation ? ` ${primaryLocation}` : ""}`);
   if (locations.includes("Waterloo") || /waterloo/i.test(primaryLocation)) {
     queries.push("site:devpost.com hackathon Waterloo");
   } else {
-    queries.push(`site:devpost.com hackathon ${primaryLocation}`);
+    queries.push(`site:devpost.com hackathon${primaryLocation ? ` ${primaryLocation}` : ""}`);
   }
 
   // Student / generic fallbacks
-  queries.push(`student hackathon ${primaryLocation} ${year}`);
-  queries.push("hackathon applications open Canada");
+  queries.push(`student hackathon${primaryLocation ? ` ${primaryLocation}` : ""} ${year}`);
+  queries.push(`hackathon applications open${primaryLocation ? ` ${primaryLocation}` : ""}`);
 
   // Second location if present and room remains
   if (locations[1]) {

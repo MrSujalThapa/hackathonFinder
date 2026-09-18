@@ -1,5 +1,10 @@
 # Final discovery architecture (post-overhaul)
 
+**Status:** canonical production model (current).
+
+Historical phase reports under `docs/discovery/*_REPORT.md` and lettered phase
+notes (`A0_*`, `B1_*`…`C4_*`) are audits only — not the onboarding path.
+
 This is the **canonical production model**. Historical phase reports under
 `docs/discovery/*_REPORT.md` are audits only.
 

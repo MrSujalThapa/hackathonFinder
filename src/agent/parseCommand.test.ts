@@ -44,6 +44,22 @@ describe("parseCommand", () => {
     assert.equal(withRemote.remotePolicy, "include");
   });
 
+  it("accepts arbitrary city, region, format, and local-or-remote requests", () => {
+    for (const [request, location] of [
+      ["find hackathons in Ottawa", "Ottawa"],
+      ["find hackathons in California", "California"],
+      ["find hackathons in Ontario", "Ontario"],
+      ["find hackathons near Reykjavik", "Reykjavik"],
+    ]) {
+      const prefs = parseCommand(request);
+      assert.ok(prefs.locations.includes(location), request);
+      assert.equal(prefs.locationConstraint, "event_location", request);
+    }
+    assert.equal(parseCommand("find remote hackathons").remotePolicy, "only");
+    assert.equal(parseCommand("find hackathons in Ottawa in person").remotePolicy, "exclude");
+    assert.equal(parseCommand("find AI hackathons in Toronto or remote").remotePolicy, "include");
+  });
+
   it("parses next-N-months ranges before the generic upcoming horizon", () => {
     const three = parseCommand("find upcoming hackathons in the next 3 months");
     assert.ok(three.dateFrom);

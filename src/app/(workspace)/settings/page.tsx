@@ -52,8 +52,10 @@ export default async function SettingsPage() {
             <p className="mt-2 text-sm text-amber-200">{mockError}</p>
           ) : null}
           <p className="mt-2 text-xs text-muted">
-            Set <code className="text-foreground/80">USE_MOCK_CANDIDATES=true</code> in
-            `.env.local` only for development.
+            Set <code className="text-foreground/80">DEMO_MODE=true</code> or{" "}
+            <code className="text-foreground/80">USE_MOCK_CANDIDATES=true</code> in
+            `.env.local` for fixture Queue data. Demo mode also forces dry-run
+            discovery persistence.
           </p>
         </section>
 

@@ -8,6 +8,7 @@ import {
 } from "@/lib/llm/provider";
 import { createFakeLlmProvider } from "@/lib/llm/providers/fake";
 import { createOpenAiLlmProvider } from "@/lib/llm/providers/openai";
+import { createOpenAiCompatibleProvider } from "@/lib/llm/providers/openaiCompatible";
 import type { LlmProvider } from "@/lib/llm/types";
 
 export type CreateLlmProviderOptions = WithLlmRetryOptions & {
@@ -26,6 +27,13 @@ function buildFromConfig(
       return createOpenAiLlmProvider({
         apiKey: config.apiKey!,
         model: config.model,
+      });
+    case "spur":
+      return createOpenAiCompatibleProvider({
+        apiKey: config.apiKey!,
+        model: config.model ?? "spur-auto",
+        baseUrl: "https://ai.spuric.com/v1",
+        name: "spur",
       });
     case "anthropic":
       throw new LlmError(

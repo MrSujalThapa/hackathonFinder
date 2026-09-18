@@ -292,9 +292,10 @@ export function CandidateDetailView({ id }: { id: string }) {
         description={headerSummary}
         titleClassName="hf-doc-title"
         actions={
-          <Link href="/queue" className="hf-btn hf-btn-ghost hf-touch">
-            Back to queue
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/applications" className="hf-btn hf-btn-save hf-touch">Prepare application</Link>
+            <Link href="/queue" className="hf-btn hf-btn-ghost hf-touch">Back to queue</Link>
+          </div>
         }
       />
 

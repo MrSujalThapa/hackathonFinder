@@ -143,7 +143,7 @@ function assertMockWritesAllowed(
   if (!preferences.sources.includes("mock")) return;
 
   const env = getServerEnv();
-  if (env.USE_MOCK_CANDIDATES) return;
+  if (env.USE_MOCK_CANDIDATES || env.DEMO_MODE) return;
 
   throw new Error(MOCK_WRITE_REFUSED_MESSAGE);
 }
@@ -254,7 +254,16 @@ export async function executeDiscoveryPipeline(
   const startedAt = Date.now();
   const runId = options.runId ?? randomUUID();
   const emitter = createEventEmitter(runId, options.eventSink);
+  const demoMode = getServerEnv().DEMO_MODE === true;
+  if (demoMode && !dryRun) {
+    dryRun = true;
+  }
   const summary = emptySummary(preferences.rawCommand, preferences, dryRun);
+  if (demoMode) {
+    summary.warnings.push(
+      "DEMO_MODE=true forces dry-run persistence (no Supabase candidate writes).",
+    );
+  }
   const customSourceIds = (options.customSources ?? []).map(
     (source) => `custom:${source.slug}` as const,
   );
@@ -540,14 +549,32 @@ export async function executeDiscoveryPipeline(
         result.errors.some((error) =>
           /auth|login|sign[\s-]?in|session/i.test(error),
         );
-      const degraded =
-        result.status === "degraded" ||
-        result.status === "failed" ||
-        result.errors.length > 0 ||
+      const hasMeaningfulLumaFailure =
+        result.source === "luma" &&
         result.warnings.some((warning) =>
-          /degraded|timeout|rate|parser|ui may have changed|zero matching|no matching/i.test(
+          /selector|parser|ui may have changed|timeout|rate|anti-?bot|blocked|render failed/i.test(
             warning,
           ),
+        );
+      // Luma emits bounded-stop and feed telemetry as warnings. Those records
+      // (including max_items/no_growth) are normal public discovery outcomes,
+      // not a degraded source when usable leads were returned.
+      const successfulLumaPublicDiscovery =
+        result.source === "luma" &&
+        result.leads.length > 0 &&
+        result.errors.length === 0 &&
+        !hasMeaningfulLumaFailure;
+      const degraded =
+        !successfulLumaPublicDiscovery &&
+        (
+          result.status === "degraded" ||
+          result.status === "failed" ||
+          result.errors.length > 0 ||
+          result.warnings.some((warning) =>
+            /degraded|timeout|rate|parser|ui may have changed|zero matching|no matching/i.test(
+              warning,
+            ),
+          )
         );
 
       if (authRequired) {

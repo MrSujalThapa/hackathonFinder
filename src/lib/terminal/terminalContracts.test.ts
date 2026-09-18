@@ -42,8 +42,9 @@ describe("terminal production contracts", () => {
     assert.match(interpretation.budgets.luma, /target ≥100/);
     assert.match(interpretation.budgets.luma, /max 400 events/);
     const lines = formatQueryInterpretationLines(interpretation);
-    assert.ok(lines.some((line) => line.includes("Profile: deep")));
-    assert.ok(lines.some((line) => line.includes("Remote: excluded")));
+    assert.ok(lines.some((line) => line.includes("Depth: deep")));
+    assert.ok(lines.some((line) => line.includes("Format: in-person")));
+    assert.equal(lines.some((line) => line.includes("budget")), false);
   });
 
   it("does not silently reinterpret a city-only query as including remote", () => {

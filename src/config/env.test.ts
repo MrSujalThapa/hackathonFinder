@@ -1,14 +1,50 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { serverEnvSchema, validateProductionConfig } from "@/config/env";
+import {
+  assertNoSecretInClientBundleSample,
+  isDemoMode,
+  isFixtureCandidatesMode,
+  isServerOnlyEnvName,
+  serverEnvSchema,
+  validateProductionConfig,
+} from "@/config/env";
 
 describe("production env validation", () => {
-  it("rejects production mock mode", () => {
+  it("rejects production mock mode without demo", () => {
     const parsed = serverEnvSchema.safeParse({
       NODE_ENV: "production",
       USE_MOCK_CANDIDATES: "true",
     });
 
+    assert.equal(parsed.success, false);
+  });
+
+  it("allows production DEMO_MODE with owner auth requirements", () => {
+    const parsed = serverEnvSchema.parse({
+      NODE_ENV: "production",
+      DEMO_MODE: "true",
+      USE_MOCK_CANDIDATES: "false",
+      APP_PASSWORD: "demo-password",
+      APP_SESSION_SECRET: "x".repeat(32),
+    });
+
+    assert.equal(isDemoMode(parsed), true);
+    assert.equal(isFixtureCandidatesMode(parsed), true);
+    assert.deepEqual(validateProductionConfig(parsed), []);
+  });
+
+  it("rejects emergency persistence rollback in production", () => {
+    const parsed = serverEnvSchema.safeParse({
+      NODE_ENV: "production",
+      PERSISTENCE_ROLLBACK_V1: "true",
+    });
+    assert.equal(parsed.success, false);
+  });
+
+  it("rejects malformed numeric discovery budgets", () => {
+    const parsed = serverEnvSchema.safeParse({
+      DISCOVERY_MAX_ACTIVE_JOBS: "0",
+    });
     assert.equal(parsed.success, false);
   });
 
@@ -28,5 +64,17 @@ describe("production env validation", () => {
         issue.includes("Owner auth is incomplete"),
       ),
     );
+  });
+
+  it("classifies server-only secret names", () => {
+    assert.equal(isServerOnlyEnvName("SUPABASE_SERVICE_ROLE_KEY"), true);
+    assert.equal(isServerOnlyEnvName("NEXT_PUBLIC_SUPABASE_URL"), false);
+  });
+
+  it("detects secret-like client bundle samples", () => {
+    const hits = assertNoSecretInClientBundleSample(
+      'const x = process.env.SUPABASE_SERVICE_ROLE_KEY',
+    );
+    assert.ok(hits.includes("SUPABASE_SERVICE_ROLE_KEY"));
   });
 });

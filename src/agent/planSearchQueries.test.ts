@@ -47,6 +47,12 @@ describe("planSearchQueries", () => {
     assert.equal(new Set(lower).size, lower.length);
   });
 
+  it("does not inject Canada or Toronto into an unrelated location plan", () => {
+    const queries = planSearchQueries(prefs({ locations: ["San Francisco"] })).join("\n");
+    assert.match(queries, /San Francisco/i);
+    assert.doesNotMatch(queries, /Toronto|Canada/i);
+  });
+
   it("formats a readable plan", () => {
     const plan = formatSearchPlan(["hackathon Toronto apply", "site:mlh.io events Canada"]);
     assert.match(plan, /^1\. hackathon Toronto apply/);

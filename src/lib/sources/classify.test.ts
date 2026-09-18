@@ -36,6 +36,22 @@ describe("classifyCollectorResult", () => {
     assert.equal(classified.failureCategory, undefined);
   });
 
+  it("keeps successful bounded Luma collection healthy despite telemetry", () => {
+    const result = emptyCollectorResult("luma");
+    result.leads = [{
+      id: "luma-1",
+      source: "luma",
+      links: ["https://luma.com/example"],
+      postedAt: "2027-01-01T00:00:00Z",
+    }];
+    result.warnings.push("stop_reason=luma_ai:max_items");
+    result.warnings.push("unique_cards=50");
+    result.warnings.push("scrolls=8");
+    const classified = classifyCollectorResult("luma", result);
+    assert.equal(classified.status, "healthy");
+    assert.equal(classified.failureCategory, undefined);
+  });
+
   it("does not treat blank zero-result as healthy", () => {
     const result = emptyCollectorResult("hacklist");
     const classified = classifyCollectorResult("hacklist", result);

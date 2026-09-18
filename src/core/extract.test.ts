@@ -29,15 +29,15 @@ describe("extractHackathonEvents", () => {
 describe("extract X lead official vs social", () => {
   it("keeps outbound official URL and always emits x_post evidence", () => {
     const postUrl = "https://x.com/hackorg/status/99";
-    const official = "https://hack.utoronto.edu/ai-2026";
+    const official = "https://hack.utoronto.edu/ai-2027";
     const lead: RawLead = {
       id: "x-99",
       source: "x",
-      title: "UofT AI Hackathon 2026",
+      title: "UofT AI Hackathon 2027",
       url: postUrl,
-      text: `Apply at ${official}. Deadline 2026-08-01. Toronto in-person.`,
+      text: `Apply at ${official}. Deadline 2027-08-01. Toronto in-person.`,
       links: [postUrl, official, `${official}/apply`],
-      postedAt: "2026-07-01T00:00:00Z",
+      postedAt: "2027-07-01T00:00:00Z",
       metadata: {
         socialUrl: postUrl,
         officialUrl: official,
@@ -45,8 +45,8 @@ describe("extract X lead official vs social", () => {
         mode: "in-person",
         city: "Toronto",
         country: "Canada",
-        deadline: "2026-08-01",
-        startDate: "2026-09-12",
+        deadline: "2027-08-01",
+        startDate: "2027-09-12",
       },
     };
 

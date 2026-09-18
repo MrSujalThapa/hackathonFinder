@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  ALLOWED_SLASH,
   parseTerminalCommand,
   REJECTION_MESSAGE,
   suggestSlashCommand,
@@ -209,6 +210,14 @@ describe("parseTerminalCommand", () => {
     }
   });
 
+  it("parses short slash source-management aliases", () => {
+    for (const action of ["check", "enable", "disable", "connect", "disconnect"] as const) {
+      const parsed = parseTerminalCommand(`/${action} luma`);
+      assert.equal(parsed.kind, "source");
+      if (parsed.kind === "source") assert.equal(parsed.action, action);
+    }
+  });
+
   it("parses custom site commands", () => {
     const saved = parseTerminalCommand(
       "/site save hacker-calendar --url=https://example.com/hackathons --mode=playwright --location=waterloo --topics=hackathon,ai --max-items=75",
@@ -383,5 +392,12 @@ describe("formatHelpText", () => {
     assert.match(formatHelpText("find"), /\/find <request>/);
     assert.match(formatHelpText("source"), /\/source status/);
     assert.match(formatHelpText("terminals"), /\/switch/);
+  });
+
+  it("enumerates every parser-supported slash command in bare help", () => {
+    const text = formatHelpText();
+    for (const command of ALLOWED_SLASH) {
+      assert.match(text, new RegExp(`/${command}(?:[,\\s]|$)`));
+    }
   });
 });
