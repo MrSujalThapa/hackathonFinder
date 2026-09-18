@@ -36,6 +36,16 @@ describe("classifyAcceptedLifecycle", () => {
     assert.equal(classifyAcceptedLifecycle(accepted(event), NOW), "ACTIONABLE");
   });
 
+  it("is ACTIONABLE when a source explicitly exposes a future event date, currently-open registration, and a future application deadline", () => {
+    const event = baseEvent({
+      eventStartDate: "2026-11-14",
+      eventEndDate: "2026-11-16",
+      registrationOpenDate: "2026-09-01", // registration already opened (in the past relative to NOW)
+      registrationDeadline: "2026-10-20", // application deadline still in the future
+    });
+    assert.equal(classifyAcceptedLifecycle(accepted(event), NOW), "ACTIONABLE");
+  });
+
   it("is LIKELY_ACTIONABLE when the application deadline is unknown but the event is upcoming", () => {
     const event = baseEvent({
       eventStartDate: "2026-12-05",

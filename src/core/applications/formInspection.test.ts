@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { inspectApplicationForm } from "@/core/applications/formInspection";
+import { ARIA_CHOICE_SELECTOR, VISIBLE_INPUT_SELECTOR, inspectApplicationForm } from "@/core/applications/formInspection";
 
 describe("inspectApplicationForm", () => {
   it("resolves aria-labelledby into the question label (Google Forms pattern)", () => {
@@ -62,13 +62,13 @@ describe("inspectApplicationForm", () => {
     assert.equal(new Set(selectors).size, selectors.length, "every selector must be unique");
     for (const selector of selectors) assert.doesNotMatch(selector, /\[name=""\]/);
     assert.deepEqual(selectors, [
-      ":nth-match(input, textarea, select, 1)",
-      ":nth-match(input, textarea, select, 2)",
-      ":nth-match(input, textarea, select, 3)",
+      `:nth-match(${VISIBLE_INPUT_SELECTOR}, 1)`,
+      `:nth-match(${VISIBLE_INPUT_SELECTOR}, 2)`,
+      `:nth-match(${VISIBLE_INPUT_SELECTOR}, 3)`,
     ]);
   });
 
-  it("keeps positional selector numbering aligned with the live DOM query (hidden fields still counted)", () => {
+  it("excludes hidden/submit/button fields from the positional count, since a real form can lazily insert new hidden fields after interaction", () => {
     const html = `
       <input type="hidden" name="csrf" />
       <input type="text" />
@@ -76,11 +76,103 @@ describe("inspectApplicationForm", () => {
       <textarea></textarea>
     `;
     const questions = inspectApplicationForm(html);
-    // Position 1 is the hidden csrf field (excluded from questions, but still
-    // present in the live "input, textarea, select" query Playwright runs),
-    // so the visible text input must be position 2, not 1.
-    assert.equal(questions[0]!.selector, ":nth-match(input, textarea, select, 2)");
-    assert.equal(questions[1]!.selector, ":nth-match(input, textarea, select, 4)");
+    // If hidden fields were counted, the visible text input would be
+    // position 2 — but a real form (verified on Google Forms) can insert a
+    // brand-new hidden mirror <input> ahead of the visible fields the first
+    // time ANY field is interacted with, which would silently renumber every
+    // later visible field. Counting only the same visible set used to build
+    // selectors keeps positions stable across such interactions.
+    assert.equal(questions[0]!.selector, `:nth-match(${VISIBLE_INPUT_SELECTOR}, 1)`);
+    assert.equal(questions[1]!.selector, `:nth-match(${VISIBLE_INPUT_SELECTOR}, 2)`);
+  });
+
+  it("groups an ARIA radio widget by the nearest preceding heading, in reading order", () => {
+    const html = `
+      <div role="heading">What is your availability? *</div>
+      <div role="radio" aria-label="Full Hackathon" aria-checked="false"></div>
+      <div role="radio" aria-label="Half day" aria-checked="false"></div>
+    `;
+    const questions = inspectApplicationForm(html);
+    const group = questions.find((q) => q.label === "What is your availability? *");
+    assert.ok(group);
+    assert.equal(group!.fieldType, "radio");
+    assert.equal(group!.required, true);
+    assert.deepEqual(group!.options, ["Full Hackathon", "Half day"]);
+    assert.equal(
+      group!.selector,
+      `:nth-match(${ARIA_CHOICE_SELECTOR}, 1), :nth-match(${ARIA_CHOICE_SELECTOR}, 2)`,
+    );
+  });
+
+  it("groups an ARIA checkbox widget separately from a following ARIA radio widget", () => {
+    const html = `
+      <div role="heading">Pick your skills</div>
+      <div role="checkbox" aria-label="Writing code" aria-checked="false"></div>
+      <div role="checkbox" aria-label="Design" aria-checked="false"></div>
+      <div role="heading">Availability</div>
+      <div role="radio" aria-label="Morning" aria-checked="false"></div>
+    `;
+    const questions = inspectApplicationForm(html);
+    const skills = questions.find((q) => q.label === "Pick your skills");
+    const availability = questions.find((q) => q.label === "Availability");
+    assert.equal(skills!.fieldType, "checkbox");
+    assert.deepEqual(skills!.options, ["Writing code", "Design"]);
+    assert.equal(availability!.fieldType, "radio");
+    assert.deepEqual(availability!.options, ["Morning"]);
+  });
+
+  it("treats an ARIA choice group as optional when neither aria-required nor a trailing asterisk is present", () => {
+    const html = `
+      <div role="heading">Anything you would like to add</div>
+      <div role="checkbox" aria-label="Yes" aria-checked="false"></div>
+    `;
+    const questions = inspectApplicationForm(html);
+    assert.equal(questions[0]!.required, false);
+  });
+
+  it("respects aria-required on the heading even without a trailing asterisk", () => {
+    const html = `
+      <div role="heading" aria-required="true">Pick one</div>
+      <div role="radio" aria-label="A" aria-checked="false"></div>
+    `;
+    const questions = inspectApplicationForm(html);
+    assert.equal(questions[0]!.required, true);
+  });
+
+  it("normalizes an empty/sentinel ARIA option value to a human 'Other' label", () => {
+    const html = `
+      <div role="heading">Pick one</div>
+      <div role="radio" data-answer-value="Frontend" aria-checked="false"></div>
+      <div role="radio" data-answer-value="__other_option__" aria-checked="false"></div>
+    `;
+    const questions = inspectApplicationForm(html);
+    assert.deepEqual(questions[0]!.options, ["Frontend", "Other"]);
+  });
+
+  it("does not double-count a native input that redundantly sets an ARIA choice role", () => {
+    const html = `
+      <div role="heading">Pick one</div>
+      <input type="radio" role="radio" name="x" value="A" />
+    `;
+    const questions = inspectApplicationForm(html);
+    assert.equal(questions.length, 1);
+    assert.equal(questions[0]!.fieldType, "radio");
+    assert.equal(questions[0]!.selector, '[name="x"]');
+  });
+
+  it("keeps native and ARIA questions independent in a mixed form", () => {
+    const html = `
+      <label for="name">Name</label>
+      <input id="name" type="text" />
+      <div role="heading">Track</div>
+      <div role="radio" aria-label="AI" aria-checked="false"></div>
+      <div role="radio" aria-label="Web" aria-checked="false"></div>
+    `;
+    const questions = inspectApplicationForm(html);
+    assert.equal(questions.length, 2);
+    assert.equal(questions[0]!.label, "Name");
+    assert.equal(questions[1]!.label, "Track");
+    assert.deepEqual(questions[1]!.options, ["AI", "Web"]);
   });
 
   it("excludes hidden/submit/button inputs from extracted questions", () => {

@@ -1,7 +1,13 @@
 import { authorizeSubmission, completeSubmission } from "@/core/applications/workflow";
 import type { ApplicationDraft } from "@/core/applications/types";
 import { getApplication, saveDraft } from "@/server/applications/repository";
-import { fillAndPreviewRealForm, submitControlledRealForm, type RealFormRun } from "@/server/applications/realForm";
+import {
+  fillAndPreviewRealForm,
+  isControlledApplicationFixture,
+  submitControlledRealForm,
+  submitRealExternalForm,
+  type RealFormRun,
+} from "@/server/applications/realForm";
 import { notify } from "@/server/notifications/service";
 
 export async function previewSubmission(id: string): Promise<ApplicationDraft> {
@@ -17,7 +23,9 @@ export async function submitAuthorizedDraft(id: string): Promise<ApplicationDraf
   let authorized = await saveDraft(authorizeSubmission(draft));
   let result: RealFormRun;
   try {
-    result = await submitControlledRealForm(authorized);
+    result = isControlledApplicationFixture(authorized.applicationUrl)
+      ? await submitControlledRealForm(authorized)
+      : await submitRealExternalForm(authorized);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Controlled submission failed.";
     authorized = await saveDraft({ ...authorized, status: "ready_to_submit", checkpoint: { ...authorized.checkpoint, submissionError: { at: new Date().toISOString(), message } } });
