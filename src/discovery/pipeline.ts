@@ -162,7 +162,7 @@ function isBroadReview(preferences: DiscoveryPreferences): boolean {
 }
 
 function isHardInvalidVerificationReason(reason: string): boolean {
-  return /deadline has passed|registration closed|event already ended|stale title year|title year is in the past/i.test(
+  return /deadline has passed|registration closed|event already ended|stale title year|title year is in the past|location mismatch|remote-only event was not requested/i.test(
     reason,
   );
 }

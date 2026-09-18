@@ -30,6 +30,38 @@ export function eventEndFor(event: Pick<HackathonEvent, "eventEndDate" | "endDat
   return event.eventEndDate ?? event.endDate ?? event.eventStartDate ?? event.startDate;
 }
 
+export function applicationOpenDateFor(event: Pick<HackathonEvent, "registrationOpenDate">): string | undefined {
+  return event.registrationOpenDate;
+}
+
+export type ApplicationStatus = "open" | "not_yet_open" | "closed" | "unknown";
+
+/**
+ * Application-specific status, distinct from the event's own temporal status:
+ * an event can be far in the future while its application is already closed,
+ * or upcoming while applications have not opened yet. Never inferred from
+ * event dates — only from application/registration evidence.
+ */
+export function applicationStatusFor(
+  event: Pick<
+    HackathonEvent,
+    "registrationOpenDate" | "registrationDeadline" | "applicationDeadline" | "deadline"
+  >,
+  now: Date = new Date(),
+): ApplicationStatus {
+  const deadline = applicationDeadlineFor(event);
+  if (isDeadlineClosed(deadline, now)) return "closed";
+
+  const openDate = normalizeDatePart(applicationOpenDateFor(event));
+  if (openDate && /^\d{4}-\d{2}-\d{2}$/.test(openDate) && openDate > todayIso(now)) {
+    return "not_yet_open";
+  }
+
+  if (deadline) return "open";
+  if (openDate) return "open";
+  return "unknown";
+}
+
 function todayInTimeZone(now: Date, timezone = "UTC"): string {
   try {
     const parts = new Intl.DateTimeFormat("en-CA", {
