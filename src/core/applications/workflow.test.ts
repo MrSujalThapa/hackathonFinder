@@ -12,10 +12,41 @@ import type { ApplicationDraft, QuestionBankEntry } from "@/core/applications/ty
 const bank: QuestionBankEntry[] = [{ id: "bio", canonicalQuestion: "Tell us about yourself", answer: "Builder and student.", aliases: ["Introduce yourself", "Short bio"], tags: [], updatedAt: "2026-01-01" }];
 const base = (): ApplicationDraft => ({ id: "a", opportunityId: "o", applicationUrl: "https://example.test/apply", status: "drafting", draftVersion: 1, approvedAt: null, approvedDraftVersion: null, currentPage: 1, totalPages: 4, checkpoint: {}, questions: [{ id: "name", label: "Name", fieldType: "text", required: true, options: [], selector: "#name", answer: null, answerSource: "unresolved", needsUserInput: false }, { id: "bio", label: "Introduce yourself", fieldType: "textarea", required: true, options: [], selector: "#bio", answer: null, answerSource: "unresolved", needsUserInput: false }, { id: "why", label: "Why this event?", fieldType: "textarea", required: true, options: [], selector: "#why", answer: null, answerSource: "unresolved", needsUserInput: false }, { id: "attend", label: "Can you attend October 5–7?", fieldType: "radio", required: true, options: ["Yes", "No"], selector: "#attend", answer: null, answerSource: "unresolved", needsUserInput: false }] });
 test("resolves profile and bank, batches AI, then preserves unresolved input", async () => { let calls = 0; const llm = createFakeLlmProvider({ handler: () => { calls++; return JSON.stringify({ answers: [{ id: "why", answer: "Relevant to my work." }] }); } }); const result = await draftApplication(base(), { name: "Ada" }, bank, llm); assert.equal(calls, 1); assert.equal(result.draft.status, "needs_input"); assert.equal(result.draft.questions[0].answerSource, "profile"); assert.equal(result.draft.questions[1].answerSource, "question_bank"); assert.equal(result.draft.questions[2].answerSource, "ai"); assert.equal(result.metrics.user, 1); });
+
+test("clears a stale needsUserInput flag once a later pass resolves the answer from profile/bank/asset", async () => {
+  const flaggedDraft: ApplicationDraft = { ...base(), questions: base().questions.map((q) => q.id === "name" ? { ...q, needsUserInput: true } : q) };
+  const llm = createFakeLlmProvider({ handler: () => JSON.stringify({ answers: [{ id: "why", answer: "x" }] }) });
+  const result = await draftApplication(flaggedDraft, { name: "Ada" }, bank, llm);
+  const name = result.draft.questions.find((q) => q.id === "name");
+  assert.equal(name?.answer, "Ada");
+  assert.equal(name?.needsUserInput, false);
+});
+
+test("a malformed or off-schema AI JSON response never crashes draft creation — falls back to unresolved input", async () => {
+  const malformed = createFakeLlmProvider({ handler: () => "not valid json at all" });
+  const result = await draftApplication(base(), { name: "Ada" }, bank, malformed);
+  const why = result.draft.questions.find((q) => q.id === "why");
+  assert.equal(why?.answerSource, "unresolved");
+  assert.equal(why?.needsUserInput, true);
+  assert.equal(result.draft.status, "needs_input");
+
+  const offSchema = createFakeLlmProvider({ handler: () => JSON.stringify({ unexpected: "shape" }) });
+  const result2 = await draftApplication(base(), { name: "Ada" }, bank, offSchema);
+  const why2 = result2.draft.questions.find((q) => q.id === "why");
+  assert.equal(why2?.answerSource, "unresolved");
+  assert.equal(why2?.needsUserInput, true);
+});
 test("approval is explicit and edits invalidate it", () => { const ready = { ...base(), status: "ready_for_review" as const, questions: base().questions.map((q) => ({ ...q, answer: "x" })) }; assert.throws(() => beginSubmission(ready)); const approved = approveDraft(ready); assert.equal(beginSubmission(approved).status, "submitting"); assert.throws(() => beginSubmission(editAnswer(approved, "why", "changed"))); });
 test("the final required user answer creates a resumable drafting checkpoint", () => { const draft = { ...base(), status: "needs_input" as const, questions: base().questions.map((q) => q.id === "attend" ? q : { ...q, answer: "x" }) }; const updated = editAnswer(draft, "attend", "Yes"); assert.equal(updated.status, "drafting"); assert.equal(updated.questions.find((q) => q.id === "attend")?.answerSource, "user"); });
 test("safe fill plans require the exact approved draft", () => { const ready = { ...base(), status: "ready_for_review" as const, questions: base().questions.map((q) => ({ ...q, answer: "x" })) }; assert.throws(() => createApprovedFillPlan(ready)); assert.equal(createApprovedFillPlan(approveDraft(ready)).length, 4); });
 test("question matching, inspection, and tracker are deterministic", () => { assert.equal(matchQuestionBank("Short bio", bank)?.id, "bio"); assert.equal(matchQuestionBank("What is your tax number?", bank), null); assert.equal(inspectApplicationForm('<label for="x">Bio</label><textarea id="x" required maxlength="500"></textarea>')[0]?.maxLength, 500); assert.deepEqual(trackOpportunities([{ id: "o", title: "Open", applicationOpensAt: "2026-01-01", applicationDeadline: "2026-01-02" }], new Date("2026-01-01T12:00:00Z")), [{ type: "APPLICATION_OPEN", opportunityId: "o" }, { type: "DEADLINE_SOON", opportunityId: "o" }]); });
+test("radio groups inspect as one field with options and no phantom answer", () => {
+  const questions = inspectApplicationForm('<fieldset><legend>Can you attend all days?</legend><label><input type="radio" name="attendance" value="Yes" aria-label="Can you attend all days?" required />Yes</label><label><input type="radio" name="attendance" value="No" aria-label="Can you attend all days?" />No</label></fieldset><label><input id="consent" name="consent" type="checkbox" value="Yes" required />I consent</label>');
+  assert.equal(questions.length, 2);
+  assert.deepEqual(questions[0], { id: "attendance", label: "Can you attend all days?", fieldType: "radio", required: true, options: ["Yes", "No"], selector: '[name="attendance"]', helpText: undefined, maxLength: undefined, answer: null, answerSource: "unresolved", needsUserInput: false });
+  assert.equal(questions[1]?.id, "consent");
+  assert.deepEqual(questions[1]?.options, ["Yes"]);
+});
 test("asset bank fills a required resume and missing asset never receives a fake value", async () => { const q = { ...base(), questions: [{ ...base().questions[0], id: "resume", label: "Upload your resume", fieldType: "file", answer: null }] }; const llm = createFakeLlmProvider({ handler: () => "{\"answers\":[]}" }); const missing = await draftApplication(q, {}, [], llm); assert.equal(missing.draft.status, "needs_file"); assert.equal(missing.draft.questions[0]?.answer, null); const matched = await draftApplication(q, {}, [], llm, [{ id: "r", label: "Resume", kind: "file", assetType: "resume", value: "storage/resume.pdf", filename: "resume.pdf", notes: null, isDefault: true, updatedAt: "2026-01-01" }]); assert.equal(matched.draft.questions[0]?.answerSource, "asset_bank"); });
 test("unsafe navigation is never inferred from its label and user-managed drafts do not resume", () => { assert.equal(classifyFormAction({ tagName: "button", type: "button", text: "Next", currentPage: 1, totalPages: 4 }), "SAFE_NAVIGATION"); assert.equal(classifyFormAction({ tagName: "button", type: "button", text: "Next" }), "POSSIBLE_SUBMIT"); assert.equal(classifyFormAction({ tagName: "button", type: "submit", text: "Next", currentPage: 1, totalPages: 4 }), "CONFIRMED_SUBMIT"); assert.throws(() => resumeDraft(userManageDraft(base()))); assert.equal(pauseDraft(base()).status, "paused"); });
 test("Submit now authorizes only the current complete draft and saves an immutable snapshot", () => { const ready = { ...base(), status: "ready_to_submit" as const, questions: base().questions.map((question) => ({ ...question, answer: "Yes" })) }; const authorized = authorizeSubmission(ready, "2026-09-16T00:00:00.000Z"); assert.equal(beginSubmission(authorized).status, "submitting"); assert.throws(() => beginSubmission(editAnswer(authorized, "why", "Changed"))); const submitted = completeSubmission(authorized, "CONF-123", "2026-09-16T00:01:00.000Z"); assert.equal(submitted.status, "submitted"); assert.equal((submitted.checkpoint.submittedSnapshot as { confirmation: string }).confirmation, "CONF-123"); });

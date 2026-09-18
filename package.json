@@ -45,6 +45,7 @@
     "smoke:queue": "tsx scripts/smoke-queue.ts",
     "smoke:prod": "tsx scripts/smoke-production-auth.ts",
     "candidates:audit-sources": "tsx scripts/audit-candidate-sources.ts",
+    "report:discovery-quality": "tsx scripts/live-discovery-quality-report.ts",
     "skills:sync": "tsx scripts/sync-agent-skills.ts",
     "skills:check": "tsx scripts/check-agent-skills.ts",
     "test": "npm run test:fast",

@@ -14,8 +14,11 @@ import {
   timezoneForLocation,
 } from "@/core/dates";
 import {
+  classifyDynamicLocationQuery,
   classifyExplicitCityLocation,
   hasExplicitCityConstraint,
+  isVerifiedInPersonEvent,
+  locationMatchNote,
 } from "@/core/locationConstraints";
 
 const THEME_BONUS_CAP = 30;
@@ -256,6 +259,11 @@ export function evaluateEligibility(
 ): EligibilityResult {
   const now = options.now ?? new Date();
   const reasons: string[] = [];
+  let needsReviewFlag = false;
+  const flagReview = (reason: string) => {
+    reasons.push(reason);
+    needsReviewFlag = true;
+  };
   const broad = preferences.reviewPolicy !== "strict";
 
   const applicationDeadline = applicationDeadlineFor(event);
@@ -274,7 +282,7 @@ export function evaluateEligibility(
     return reject("Event already ended");
   }
   if (temporalStatus === "UNKNOWN") {
-    reasons.push("Event date unclear");
+    flagReview("Event date unclear");
   }
 
   if (isStaleTitleYear(event.name, event, now)) {
@@ -308,7 +316,7 @@ export function evaluateEligibility(
     return reject(participantEligibility.reason ?? "Participant eligibility mismatch");
   }
   if (participantEligibility.needsReview && participantEligibility.reason) {
-    reasons.push(participantEligibility.reason);
+    flagReview(participantEligibility.reason);
   }
 
   if (preferences.onsiteOnly && !isInPersonEvent(event)) {
@@ -320,28 +328,54 @@ export function evaluateEligibility(
   const remotePolicy = preferences.remotePolicy ?? (preferences.includeRemote ? "include" : "exclude");
   if (locationConstraint === "event_location") {
     const remoteOk = isRemoteEvent(event) && remotePolicy === "include";
+    let hybridCityReview = false;
     if (isRemoteEvent(event) && remotePolicy === "exclude") {
-      return reject("Remote-only event was not requested for this city query");
+      // Remote-capable events that verify as the requested city (hybrid
+      // listings) stay for review; pure remote events are rejected.
+      const cityOk = classifyDynamicLocationQuery(event, preferences);
+      if (cityOk?.eligible) {
+        hybridCityReview = true;
+        flagReview("Remote-capable event in requested city needs review for onsite attendance");
+      } else {
+        return reject("Remote-only event was not requested for this city query");
+      }
     }
     if (hasExplicitCityConstraint(preferences)) {
-      if (!explicitLocation.eligible && !remoteOk) {
+      if (!explicitLocation.eligible && !remoteOk && !hybridCityReview) {
         return reject(explicitLocation.reason);
       }
       if (explicitLocation.needsReview && !remoteOk) {
-        reasons.push(explicitLocation.reason);
+        flagReview(explicitLocation.reason);
       }
     } else {
-      const locationOk = matchesPreferredLocation(event, preferences);
-      if (!remoteOk && !locationOk) {
-        if (!event.location && !event.city && !event.country) {
-          reasons.push("Location unclear for requested event-location query");
-        } else {
-          return reject("Location does not match requested regions and event is not remote");
+      const dynamicLocation = classifyDynamicLocationQuery(event, preferences);
+      if (dynamicLocation) {
+        if (!dynamicLocation.eligible && !remoteOk) {
+          return reject(dynamicLocation.reason);
+        }
+        if (dynamicLocation.needsReview && !remoteOk) {
+          flagReview(dynamicLocation.reason);
+        }
+      } else {
+        const locationOk = matchesPreferredLocation(event, preferences);
+        if (!remoteOk && !locationOk) {
+          if (!event.location && !event.city && !event.country) {
+            flagReview("Location unclear for requested event-location query");
+          } else {
+            return reject("Location does not match requested regions and event is not remote");
+          }
         }
       }
     }
   } else if (remotePolicy === "only" && !isRemoteEvent(event)) {
-    return reject("Remote-only query requires remote participation");
+    if (isVerifiedInPersonEvent(event)) {
+      return reject(
+        `Location mismatch: verified in-person event for remote-only query`,
+      );
+    }
+    // Mode is neither verified remote nor verified in-person — retain for
+    // review instead of rejecting on unresolved participation mode.
+    flagReview("Participation mode unclear for remote-only query");
   } else if (locationConstraint === "none" && remotePolicy === "exclude" && isRemoteEvent(event)) {
     return reject("Remote events excluded by onsite-only policy");
   } else if (locationConstraint !== "participant_eligibility") {
@@ -364,13 +398,13 @@ export function evaluateEligibility(
     return reject(dateRange.reason ?? "Event date falls outside the requested range");
   }
   if (dateRange.needsReview && dateRange.reason) {
-    reasons.push(dateRange.reason);
+    flagReview(dateRange.reason);
   }
 
   reasons.push("Passed hard eligibility");
   return {
     eligible: true,
-    needsReview: reasons.some((reason) => /unclear|unknown|review/i.test(reason)),
+    needsReview: needsReviewFlag,
     reasons,
   };
 }
@@ -386,6 +420,12 @@ function rankPreferences(
   if (preferences.locations.length > 0 && matchesPreferredLocation(event, preferences)) {
     score += 25;
     whyMatch.push("Matches preferred location");
+  } else if (preferences.locations.length > 0) {
+    const note = locationMatchNote(event, preferences);
+    if (note) {
+      score += 25;
+      whyMatch.push(note);
+    }
   }
 
   if (isRemoteEvent(event) && preferences.includeRemote) {

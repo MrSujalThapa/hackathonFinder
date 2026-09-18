@@ -1,4 +1,5 @@
 import { fail } from "@/server/api/envelope";
+import { isSameOriginRequest } from "@/server/api/sameOrigin";
 
 type RateLimitOptions = {
   key: string;
@@ -41,9 +42,7 @@ export function checkRateLimit({
 }
 
 function isSameOrigin(request: Request): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return false;
-  return origin === new URL(request.url).origin;
+  return isSameOriginRequest(request);
 }
 
 function contentLengthOk(request: Request, maxBodyBytes: number): boolean {

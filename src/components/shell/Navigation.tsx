@@ -106,16 +106,16 @@ export function MobileNavigation({ queueCount }: { queueCount?: number }) {
       className="hf-nav-mobile fixed inset-x-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)] lg:hidden"
       aria-label="Primary mobile"
     >
-      <ul className="mx-auto flex max-w-lg items-stretch justify-between px-1">
+      <ul className="mx-auto flex max-w-lg items-stretch justify-start gap-0.5 overflow-x-auto px-2">
         {NAV_ITEMS.map((item) => {
           const active =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
-            <li key={item.href} className="flex-1">
+            <li key={item.href} className="min-w-14 shrink-0 flex-1">
               <Link
                 href={item.href}
                 className={[
-                  "hf-focus flex flex-col items-center gap-0.5 px-1 py-2.5 text-[10px] font-medium",
+                  "hf-focus flex min-h-11 flex-col items-center justify-center gap-0.5 px-2 py-2 text-[10px] font-medium",
                   active ? "text-foreground" : "text-muted",
                 ].join(" ")}
                 aria-current={active ? "page" : undefined}
@@ -135,8 +135,8 @@ export function MobileNavigation({ queueCount }: { queueCount?: number }) {
             </li>
           );
         })}
-        <li className="flex-1">
-          <LogoutButton className="hf-focus flex w-full flex-col items-center gap-0.5 px-1 py-2.5 text-[10px] font-medium text-muted" />
+        <li className="min-w-14 shrink-0 flex-1">
+          <LogoutButton className="hf-focus flex min-h-11 w-full flex-col items-center justify-center gap-0.5 px-2 py-2 text-[10px] font-medium text-muted" />
         </li>
       </ul>
     </nav>

@@ -4,6 +4,7 @@ import {
   SESSION_COOKIE_NAME,
   verifySessionToken,
 } from "@/lib/auth/session";
+import { isSameOriginRequest } from "@/server/api/sameOrigin";
 
 const PROTECTED_PAGE_PREFIXES = [
   "/queue",
@@ -51,8 +52,9 @@ function sameOriginMutation(request: NextRequest): boolean {
   if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") {
     return true;
   }
-  const origin = request.headers.get("origin");
-  return Boolean(origin && origin === request.nextUrl.origin);
+  // The app is served on loopback and through the configured public base URL
+  // (Tailscale Serve); both are same-app. See `@/server/api/sameOrigin`.
+  return isSameOriginRequest(request);
 }
 
 function unauthorizedApi(status = 401, message = "Authentication required."): Response {

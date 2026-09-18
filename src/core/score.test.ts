@@ -299,17 +299,16 @@ describe("eligibility vs ranking", () => {
     assert.equal(scored.rejected, false);
   });
 
-  it("does not treat GTA as Toronto unless the query requested GTA", () => {
+  it("sends GTA-adjacent cities to review instead of rejecting unless the query requested GTA", () => {
     const mississauga = event({
       city: "Mississauga",
       country: "Canada",
       location: "Mississauga, Ontario",
       mode: "in-person",
     });
-    assert.equal(
-      scoreHackathonEvent(mississauga, torontoPreferences, { now: NOW }).rejected,
-      true,
-    );
+    const scoredToronto = scoreHackathonEvent(mississauga, torontoPreferences, { now: NOW });
+    assert.equal(scoredToronto.rejected, false);
+    assert.ok(scoredToronto.redFlags.some((flag) => /Greater Toronto Area/i.test(flag)));
     assert.equal(
       scoreHackathonEvent(mississauga, gtaPreferences, { now: NOW }).rejected,
       false,
@@ -339,7 +338,7 @@ describe("eligibility vs ranking", () => {
     assert.match(scored.rejectionReason ?? "", /Waterloo/i);
   });
 
-  it("rejects unknown locations for explicit Waterloo queries", () => {
+  it("sends unknown locations to review instead of rejecting for explicit Waterloo queries", () => {
     const unknown = event({
       city: undefined,
       country: undefined,
@@ -347,8 +346,8 @@ describe("eligibility vs ranking", () => {
       mode: "unknown",
     });
     const scored = scoreHackathonEvent(unknown, waterlooPreferences, { now: NOW });
-    assert.equal(scored.rejected, true);
-    assert.match(scored.rejectionReason ?? "", /Location unclear/i);
+    assert.equal(scored.rejected, false);
+    assert.ok(scored.redFlags.some((flag) => /Location unclear/i.test(flag)));
   });
 
   it("distinguishes participant eligibility from event location", () => {
@@ -443,5 +442,128 @@ describe("eligibility vs ranking", () => {
     const scored = scoreHackathonEvent(high, basePreferences, { now: NOW });
     assert.equal(scored.rejected, false);
     assert.ok(scored.score <= 100);
+  });
+});
+
+describe("dynamic location verification", () => {
+  const ottawaPreferences: DiscoveryPreferences = {
+    ...parseCommand("find hackathons in Ottawa, Ontario happening in the next 3 months"),
+    dateFrom: "2026-07-01",
+    dateTo: "2026-12-31",
+  };
+  const ontarioPreferences: DiscoveryPreferences = {
+    ...parseCommand("find hackathons in Ontario happening in the next 3 months"),
+    dateFrom: "2026-07-01",
+    dateTo: "2026-12-31",
+  };
+  const quebecPreferences: DiscoveryPreferences = {
+    ...parseCommand("find hackathons in Quebec happening in the next 3 months"),
+    dateFrom: "2026-07-01",
+    dateTo: "2026-12-31",
+  };
+  const remotePreferences: DiscoveryPreferences = {
+    ...parseCommand("find remote hackathons happening in the next 3 months"),
+    dateFrom: "2026-07-01",
+    dateTo: "2026-12-31",
+  };
+
+  it("accepts verified Ottawa, rejects conflicting Toronto, reviews unknown", () => {
+    const verified = event({ city: "Ottawa", country: "Canada", location: "Ottawa, Ontario", mode: "in-person" });
+    assert.equal(scoreHackathonEvent(verified, ottawaPreferences, { now: NOW }).rejected, false);
+    const conflicting = event({ city: "Toronto", country: "Canada", location: "Toronto, Ontario", mode: "in-person" });
+    const scoredConflict = scoreHackathonEvent(conflicting, ottawaPreferences, { now: NOW });
+    assert.equal(scoredConflict.rejected, true);
+    assert.match(scoredConflict.rejectionReason ?? "", /Location mismatch/i);
+    const unknown = event({ city: undefined, country: undefined, location: undefined, mode: "unknown" });
+    const scoredUnknown = scoreHackathonEvent(unknown, ottawaPreferences, { now: NOW });
+    assert.equal(scoredUnknown.rejected, false);
+    assert.ok(scoredUnknown.redFlags.some((flag) => /Location unclear/i.test(flag)));
+  });
+
+  it("accepts Ontario cities and regions, rejects conflicting regions, reviews unknown", () => {
+    const toronto = event({ city: "Toronto", country: "Canada", location: "Toronto, Canada", mode: "in-person" });
+    assert.equal(scoreHackathonEvent(toronto, ontarioPreferences, { now: NOW }).rejected, false);
+    const region = event({ city: undefined, country: "Canada", region: "Ontario", location: "Ontario", mode: "in-person" });
+    assert.equal(scoreHackathonEvent(region, ontarioPreferences, { now: NOW }).rejected, false);
+    const montreal = event({ city: "Montreal", country: "Canada", location: "Montreal, Quebec", mode: "in-person" });
+    const scoredConflict = scoreHackathonEvent(montreal, ontarioPreferences, { now: NOW });
+    assert.equal(scoredConflict.rejected, true);
+    assert.match(scoredConflict.rejectionReason ?? "", /Location mismatch/i);
+    const unknown = event({ city: undefined, country: undefined, location: undefined, mode: "unknown" });
+    const scoredUnknown = scoreHackathonEvent(unknown, ontarioPreferences, { now: NOW });
+    assert.equal(scoredUnknown.rejected, false);
+    assert.ok(scoredUnknown.redFlags.some((flag) => /Location unclear/i.test(flag)));
+  });
+
+  it("reviews country-only locations but rejects incompatible countries", () => {
+    const canadaOnly = event({ city: undefined, country: "Canada", location: "Canada", mode: "unknown" });
+    const scoredReview = scoreHackathonEvent(canadaOnly, ottawaPreferences, { now: NOW });
+    assert.equal(scoredReview.rejected, false);
+    assert.ok(scoredReview.redFlags.some((flag) => /Location unclear/i.test(flag)));
+    const france = event({ city: "Paris", country: "France", location: "Paris, France", mode: "in-person" });
+    const scoredConflict = scoreHackathonEvent(france, ontarioPreferences, { now: NOW });
+    assert.equal(scoredConflict.rejected, true);
+    assert.match(scoredConflict.rejectionReason ?? "", /Location mismatch/i);
+  });
+
+  it("accepts Quebec cities, rejects Ontario cities for Quebec queries", () => {
+    const montreal = event({ city: "Montreal", country: "Canada", location: "Montreal, Quebec", mode: "in-person" });
+    assert.equal(scoreHackathonEvent(montreal, quebecPreferences, { now: NOW }).rejected, false);
+    const toronto = event({ city: "Toronto", country: "Canada", location: "Toronto, Ontario", mode: "in-person" });
+    const scored = scoreHackathonEvent(toronto, quebecPreferences, { now: NOW });
+    assert.equal(scored.rejected, true);
+    assert.match(scored.rejectionReason ?? "", /Location mismatch/i);
+  });
+
+  it("accepts explicit remote, rejects verified in-person, reviews unknown for remote queries", () => {
+    const online = event({ city: "Remote", country: "Online", location: "Online", mode: "online" });
+    assert.equal(scoreHackathonEvent(online, remotePreferences, { now: NOW }).rejected, false);
+    const physical = event({ city: "Toronto", country: "Canada", location: "Toronto, Ontario", mode: "in-person" });
+    const scoredConflict = scoreHackathonEvent(physical, remotePreferences, { now: NOW });
+    assert.equal(scoredConflict.rejected, true);
+    assert.match(scoredConflict.rejectionReason ?? "", /Location mismatch/i);
+    const unknown = event({ city: undefined, country: undefined, location: undefined, mode: "unknown" });
+    const scoredUnknown = scoreHackathonEvent(unknown, remotePreferences, { now: NOW });
+    assert.equal(scoredUnknown.rejected, false);
+    assert.ok(scoredUnknown.redFlags.some((flag) => /participation mode unclear/i.test(flag)));
+  });
+
+  it("infers location from explicit source evidence instead of leaving it unknown", () => {
+    const inferred = event({
+      city: undefined,
+      country: undefined,
+      location: undefined,
+      mode: "unknown",
+      description: "Join us in Ottawa for a weekend of building. Venue: Bayview Yards, Ottawa.",
+    });
+    const scored = scoreHackathonEvent(inferred, ottawaPreferences, { now: NOW });
+    assert.equal(scored.rejected, false);
+    assert.ok(scored.whyMatch.some((reason) => /source evidence/i.test(reason)));
+  });
+
+  it("sends hybrid Toronto listings to review instead of rejecting for strict Toronto queries", () => {
+    const torontoPreferences: DiscoveryPreferences = {
+      ...parseCommand("find hackathons in Toronto happening in the next 3 months"),
+      dateFrom: "2026-07-01",
+      dateTo: "2026-12-31",
+    };
+    const hybrid = event({ city: "Toronto", country: "Canada", location: "Toronto and online", mode: "online" });
+    const scored = scoreHackathonEvent(hybrid, torontoPreferences, { now: NOW });
+    assert.equal(scored.rejected, false);
+    assert.ok(scored.redFlags.some((flag) => /onsite attendance/i.test(flag)));
+    const pureRemote = event({ city: "Remote", country: "Online", location: "Online", mode: "online" });
+    const scoredRemote = scoreHackathonEvent(pureRemote, torontoPreferences, { now: NOW });
+    assert.equal(scoredRemote.rejected, true);
+  });
+
+  it("accepts either verified Toronto or explicit remote for flexible queries", () => {    const flexible: DiscoveryPreferences = {
+      ...parseCommand("find hackathons in Toronto or remote happening in the next 3 months"),
+      dateFrom: "2026-07-01",
+      dateTo: "2026-12-31",
+    };
+    const toronto = event({ city: "Toronto", country: "Canada", location: "Toronto, Ontario", mode: "in-person" });
+    assert.equal(scoreHackathonEvent(toronto, flexible, { now: NOW }).rejected, false);
+    const remote = event({ city: "Remote", country: "Online", location: "Online", mode: "online" });
+    assert.equal(scoreHackathonEvent(remote, flexible, { now: NOW }).rejected, false);
   });
 });

@@ -8,6 +8,25 @@ export type ReconciliationResult = { ok: boolean; mismatches: ReconciliationMism
 const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 const fileName = (value: string) => path.basename(value.replace(/\\/g, "/"));
 
+/**
+ * A grouped checkbox question (native or ARIA `role="checkbox"`) can have
+ * more than one selected option. The answer is a delimited list of the
+ * selected options' own values, order-independent — both fill and
+ * reconciliation treat it as a set, not a literal string.
+ */
+export const MULTI_VALUE_DELIMITER = ", ";
+export function splitMultiValue(answer: string): string[] {
+  return answer.split(",").map((value) => value.trim()).filter(Boolean);
+}
+function isGroupedCheckbox(question: ApplicationQuestion): boolean {
+  return question.fieldType === "checkbox" && question.options.length > 1;
+}
+function sameValueSet(a: string[], b: string[]): boolean {
+  const setA = new Set(a);
+  const setB = new Set(b);
+  return setA.size === setB.size && [...setA].every((value) => setB.has(value));
+}
+
 /** Compares persisted answers against the live DOM without using an LLM. */
 export function reconcileExternalForm(questions: ApplicationQuestion[], controls: ExternalFormControl[]): ReconciliationResult {
   const mismatches: ReconciliationMismatch[] = [];
@@ -20,8 +39,11 @@ export function reconcileExternalForm(questions: ApplicationQuestion[], controls
       if (!(control.files ?? []).some((file) => fileName(file) === fileName(question.answer!))) mismatches.push({ questionId: question.id, label: question.label, reason: "wrong_file", expected: question.answer, actual: control.files?.join(", ") ?? null, selector: control.selector });
       continue;
     }
-    if (["select", "radio", "checkbox"].includes(question.fieldType) && control.options.length && !control.options.includes(question.answer!)) { mismatches.push({ questionId: question.id, label: question.label, reason: "wrong_option", expected: question.answer, actual: control.value, selector: control.selector }); continue; }
-    if (control.value !== question.answer) mismatches.push({ questionId: question.id, label: question.label, reason: "wrong_value", expected: question.answer, actual: control.value, selector: control.selector });
+    const grouped = isGroupedCheckbox(question);
+    const requestedValues = grouped ? splitMultiValue(question.answer!) : [question.answer!];
+    if (["select", "radio", "checkbox"].includes(question.fieldType) && control.options.length && requestedValues.some((value) => !control.options.includes(value))) { mismatches.push({ questionId: question.id, label: question.label, reason: "wrong_option", expected: question.answer, actual: control.value, selector: control.selector }); continue; }
+    const valueMatches = grouped ? sameValueSet(requestedValues, splitMultiValue(control.value ?? "")) : control.value === question.answer;
+    if (!valueMatches) mismatches.push({ questionId: question.id, label: question.label, reason: "wrong_value", expected: question.answer, actual: control.value, selector: control.selector });
   }
   return { ok: mismatches.length === 0, mismatches };
 }

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  applicationStatusFor,
   deriveEventTemporalStatus,
+  isEventEnded,
   parseDateEvidenceFromText,
   parseDatesFromText,
 } from "@/core/dates";
@@ -76,6 +78,98 @@ describe("deriveEventTemporalStatus", () => {
         now: boundary,
       }),
       "ONGOING",
+    );
+  });
+});
+
+describe("applicationStatusFor", () => {
+  // Anchored to the day this regression suite was written (see task notes).
+  const now = new Date("2026-09-18T12:00:00Z");
+
+  it("stays open until the application deadline even when the event is much later", () => {
+    // Event: Nov 14-16. Application deadline: Oct 20.
+    assert.equal(
+      applicationStatusFor(
+        {
+          registrationOpenDate: undefined,
+          registrationDeadline: "2026-10-20",
+          applicationDeadline: undefined,
+          deadline: undefined,
+        },
+        now,
+      ),
+      "open",
+    );
+  });
+
+  it("does not report closed merely because the application deadline is unknown", () => {
+    // Event: Dec 5. Application deadline: unknown.
+    assert.equal(
+      applicationStatusFor(
+        {
+          registrationOpenDate: undefined,
+          registrationDeadline: undefined,
+          applicationDeadline: undefined,
+          deadline: undefined,
+        },
+        now,
+      ),
+      "unknown",
+    );
+  });
+
+  it("reports closed once an explicit deadline has passed even for an upcoming event", () => {
+    // Event upcoming in November; application deadline explicitly Sept 1 (already passed).
+    assert.equal(
+      applicationStatusFor(
+        {
+          registrationOpenDate: undefined,
+          registrationDeadline: "2026-09-01",
+          applicationDeadline: undefined,
+          deadline: undefined,
+        },
+        now,
+      ),
+      "closed",
+    );
+  });
+
+  it("reports not_yet_open when registration opens in the future", () => {
+    assert.equal(
+      applicationStatusFor(
+        {
+          registrationOpenDate: "2026-10-01",
+          registrationDeadline: "2026-11-01",
+          applicationDeadline: undefined,
+          deadline: undefined,
+        },
+        now,
+      ),
+      "not_yet_open",
+    );
+  });
+});
+
+describe("isEventEnded distinguishes event dates from application state", () => {
+  const now = new Date("2026-09-18T12:00:00Z");
+
+  it("treats a July event as ended in September regardless of application data", () => {
+    assert.equal(
+      isEventEnded(
+        { startDate: "2026-07-18", endDate: "2026-07-20", eventStartDate: undefined, eventEndDate: undefined },
+        now,
+      ),
+      true,
+    );
+  });
+
+  it("does not treat an upcoming event as ended just because its deadline already passed", () => {
+    assert.equal(
+      isEventEnded(
+        { startDate: "2026-11-14", endDate: "2026-11-16", eventStartDate: undefined, eventEndDate: undefined },
+        now,
+      ),
+      false,
     );
   });
 });

@@ -121,12 +121,18 @@ function extractLocations(command: string): string[] {
 
   // Aliases improve normalization, but are deliberately not a geography whitelist.
   // Capture ordinary place phrases after location prepositions (and the concise
-  // "hackathons Ottawa" form) while stripping mode/date tails.
-  const dynamic = command.match(/\b(?:in|near|around|at)\s+(?:the\s+)?([A-Za-z][A-Za-z .'-]{1,60}?)(?=\s+(?:or\s+remote|remote|online|virtual|in[- ]?person|hybrid|from|between|next|upcoming|--\w+)|$)/i)
-    ?? command.match(/\bhackathons?\s+([A-Za-z][A-Za-z .'-]{1,60}?)(?=\s+(?:or\s+remote|remote|online|virtual|in[- ]?person|hybrid|from|between|next|upcoming|--\w+)|$)/i);
-  const candidate = dynamic?.[1]?.replace(/\s+/g, " ").trim();
-  if (candidate && !/^(?:the|a|an|upcoming|ai|remote|online|in person|hybrid)$/i.test(candidate)) {
-    found.add(candidate.replace(/\b\w/g, (letter) => letter.toUpperCase()));
+  // "hackathons Ottawa" form) while stripping mode/date tails. Comma-separated
+  // "City, Region" phrases are split so both parts stay usable; event tails
+  // such as "happening ..." terminate the capture instead of polluting it.
+  const tail = "or\\s+remote|remote|online|virtual|in[- ]?person|hybrid|from|between|next|this|month|months|upcoming|happening|taking|held|starting|running|scheduled|--\\w+";
+  const dynamic = command.match(new RegExp(`\\b(?:in|near|around|at)\\s+(?:the\\s+)?([A-Za-z][A-Za-z .,'-]{1,60}?)(?=\\s+(?:${tail})|$)`, "i"))
+    ?? command.match(new RegExp(`\\bhackathons?\\s+([A-Za-z][A-Za-z .,'-]{1,60}?)(?=\\s+(?:${tail})|$)`, "i"));
+  const candidate = dynamic?.[1]?.replace(/\s+/g, " ").trim() ?? "";
+  const STOPWORDS = /^(?:the|a|an|upcoming|ai|remote|online|in person|hybrid)$/i;
+  for (const part of candidate.split(",").map((piece) => piece.trim()).filter(Boolean)) {
+    if (part.length > 40 || STOPWORDS.test(part)) continue;
+    if (!/^[A-Za-z][A-Za-z .'-]*$/.test(part)) continue;
+    found.add(part.replace(/\b\w/g, (letter) => letter.toUpperCase()));
   }
 
   return [...found];
