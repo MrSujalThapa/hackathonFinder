@@ -22,7 +22,17 @@ async function controlsFor(page: Page, questions: ApplicationQuestion[]): Promis
       const labels = input.labels ? Array.from(input.labels).map((label) => label.textContent?.trim() ?? "").filter(Boolean) : [];
       const group = input.name && (input.type === "radio" || input.type === "checkbox") ? Array.from(document.querySelectorAll<HTMLInputElement>(`input[name="${CSS.escape(input.name)}"]`)) : [input as HTMLInputElement];
       const selected = group.find((item) => item.checked);
-      return { selector, label: input.getAttribute("aria-label") ?? labels[0] ?? input.closest("fieldset")?.querySelector("legend")?.textContent?.trim() ?? input.name ?? input.id, name: input.name, id: input.id, fieldType: input.tagName.toLowerCase() === "select" ? "select" : input.type, required: input.required, options: input instanceof HTMLSelectElement ? Array.from(input.options).map((option) => option.text) : group.map((item) => item.value), value: input.type === "file" ? null : (selected?.value ?? input.value ?? null), checked: selected?.checked, files: input instanceof HTMLInputElement && input.type === "file" ? Array.from(input.files ?? []).map((file) => file.name) : [] };
+      // Standard aria-labelledby="id1 id2" accessible-name pattern (e.g. Google
+      // Forms) — takes priority per the ARIA accname spec, same as native labels.
+      const labelledById = input.getAttribute("aria-labelledby");
+      const labelledByText = labelledById
+        ? labelledById
+            .split(/\s+/)
+            .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
+            .filter(Boolean)
+            .join(" ")
+        : "";
+      return { selector, label: labelledByText || input.getAttribute("aria-label") || labels[0] || input.closest("fieldset")?.querySelector("legend")?.textContent?.trim() || input.name || input.id, name: input.name, id: input.id, fieldType: input.tagName.toLowerCase() === "select" ? "select" : input.type, required: input.required, options: input instanceof HTMLSelectElement ? Array.from(input.options).map((option) => option.text) : group.map((item) => item.value), value: input.type === "file" ? null : (selected?.value ?? input.value ?? null), checked: selected?.checked, files: input instanceof HTMLInputElement && input.type === "file" ? Array.from(input.files ?? []).map((file) => file.name) : [] };
     }, question.selector);
   }));
 }
@@ -55,7 +65,20 @@ export async function fillAndPreviewRealForm(draft: ApplicationDraft): Promise<R
   if (!controlled) await assertSafeCustomSourceUrl(draft.applicationUrl);
   return withPersistentPlaywright(resolveSourceProfileDir(`application-${draft.id}`), async ({ page }) => {
     await page.goto(draft.applicationUrl, { waitUntil: "domcontentloaded" });
-    if (controlled) await page.getByTestId("fixture-ready").waitFor({ state: "attached" });
+    if (controlled) {
+      await page.getByTestId("fixture-ready").waitFor({ state: "attached" });
+    } else {
+      // Same real-world timing gap as inspectApplicationUrl: many real forms
+      // (Google Forms, custom SPAs) render their fields client-side after
+      // domcontentloaded. Filling before that finishes silently mis-targets
+      // (or misses) fields, since `:nth-match`/positional selectors depend on
+      // the full live element set already being present.
+      await page
+        .locator("input, textarea, select")
+        .first()
+        .waitFor({ state: "attached", timeout: 8_000 })
+        .catch(() => undefined);
+    }
     const totalPages = controlled ? Number((await page.getByTestId("fixture-page").innerText()).match(/of\s+(\d+)/)?.[1] ?? 1) : 1;
     for (let current = 1; current <= totalPages; current += 1) {
       for (const question of draft.questions) if (await page.locator(question.selector).first().isVisible().catch(() => false)) await fillQuestion(page, question);

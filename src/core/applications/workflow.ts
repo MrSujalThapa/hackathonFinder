@@ -20,21 +20,36 @@ export async function draftApplication(draft: ApplicationDraft, profile: Profile
   const questions = draft.questions.map((question) => {
     if (question.answer) return question;
     const value = profile[profileKey(question.label)] ?? profile[question.label.toLowerCase()];
-    if (value) { metrics.profile++; return { ...question, answer: value, answerSource: "profile" as const }; }
+    if (value) { metrics.profile++; return { ...question, answer: value, answerSource: "profile" as const, needsUserInput: false }; }
     const entry = matchQuestionBank(question.label, bank);
-    if (entry) { metrics.questionBank++; return { ...question, answer: entry.answer, answerSource: "question_bank" as const }; }
+    if (entry) { metrics.questionBank++; return { ...question, answer: entry.answer, answerSource: "question_bank" as const, needsUserInput: false }; }
     const asset = assets.find((candidate) => assetMatches(question, candidate));
-    if (asset) { metrics.assetBank++; return { ...question, answer: asset.value, answerSource: "asset_bank" as const }; }
+    if (asset) { metrics.assetBank++; return { ...question, answer: asset.value, answerSource: "asset_bank" as const, needsUserInput: false }; }
     if (wantsAsset(question)) { metrics.user++; return { ...question, needsUserInput: question.required, answerSource: "unresolved" as const }; }
     if (isUserOnly(question.label) || !isText(question)) { metrics.user++; return { ...question, needsUserInput: question.required, answerSource: "unresolved" as const }; }
     return question;
   });
   const aiQuestions = questions.filter((question) => !question.answer && isText(question) && !question.needsUserInput);
   if (aiQuestions.length) {
-    const response = await generateJson<{ answers: Array<{ id: string; answer: string }> }>(llm, { messages: [{ role: "system", content: "Draft concise application answers. Return JSON only." }, { role: "user", content: JSON.stringify({ questions: aiQuestions.map(({ id, label, maxLength }) => ({ id, question: label, maxLength })) }) }], maxOutputTokens: 1200 });
-    metrics.modelCalls = 1; metrics.inputTokens = response.response.usage?.inputTokens ?? 0; metrics.outputTokens = response.response.usage?.outputTokens ?? 0;
-    const answers = new Map(response.value.answers.map((answer) => [answer.id, answer.answer]));
-    for (const question of questions) if (answers.has(question.id)) { question.answer = answers.get(question.id) ?? null; question.answerSource = "ai"; metrics.ai++; }
+    // The LLM is not schema-enforced here (plain JSON object, not
+    // jsonSchemaResponseFormat), so a malformed or off-shape response is a
+    // real, expected failure mode — never let it crash draft creation for an
+    // otherwise-resolvable application. Fall back to unresolved/user input.
+    let answers = new Map<string, string>();
+    try {
+      const response = await generateJson<{ answers: Array<{ id: string; answer: string }> }>(llm, { messages: [{ role: "system", content: "Draft concise application answers. Return JSON only." }, { role: "user", content: JSON.stringify({ questions: aiQuestions.map(({ id, label, maxLength }) => ({ id, question: label, maxLength })) }) }], maxOutputTokens: 1200 });
+      metrics.modelCalls = 1; metrics.inputTokens = response.response.usage?.inputTokens ?? 0; metrics.outputTokens = response.response.usage?.outputTokens ?? 0;
+      if (Array.isArray(response.value?.answers)) {
+        answers = new Map(response.value.answers.map((answer) => [answer.id, answer.answer]));
+      }
+    } catch {
+      // Provider/network/malformed-JSON failure — treated the same as "the
+      // model produced no usable answers" below.
+    }
+    for (const question of questions) {
+      if (answers.has(question.id)) { question.answer = answers.get(question.id) ?? null; question.answerSource = "ai"; question.needsUserInput = false; metrics.ai++; }
+      else if (aiQuestions.includes(question)) { question.needsUserInput = question.required; metrics.user++; }
+    }
   }
   const needsInput = questions.some((question) => question.required && !question.answer);
   const needsFile = questions.some((question) => question.required && !question.answer && wantsAsset(question));

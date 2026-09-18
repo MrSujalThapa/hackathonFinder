@@ -12,6 +12,30 @@ import type { ApplicationDraft, QuestionBankEntry } from "@/core/applications/ty
 const bank: QuestionBankEntry[] = [{ id: "bio", canonicalQuestion: "Tell us about yourself", answer: "Builder and student.", aliases: ["Introduce yourself", "Short bio"], tags: [], updatedAt: "2026-01-01" }];
 const base = (): ApplicationDraft => ({ id: "a", opportunityId: "o", applicationUrl: "https://example.test/apply", status: "drafting", draftVersion: 1, approvedAt: null, approvedDraftVersion: null, currentPage: 1, totalPages: 4, checkpoint: {}, questions: [{ id: "name", label: "Name", fieldType: "text", required: true, options: [], selector: "#name", answer: null, answerSource: "unresolved", needsUserInput: false }, { id: "bio", label: "Introduce yourself", fieldType: "textarea", required: true, options: [], selector: "#bio", answer: null, answerSource: "unresolved", needsUserInput: false }, { id: "why", label: "Why this event?", fieldType: "textarea", required: true, options: [], selector: "#why", answer: null, answerSource: "unresolved", needsUserInput: false }, { id: "attend", label: "Can you attend October 5–7?", fieldType: "radio", required: true, options: ["Yes", "No"], selector: "#attend", answer: null, answerSource: "unresolved", needsUserInput: false }] });
 test("resolves profile and bank, batches AI, then preserves unresolved input", async () => { let calls = 0; const llm = createFakeLlmProvider({ handler: () => { calls++; return JSON.stringify({ answers: [{ id: "why", answer: "Relevant to my work." }] }); } }); const result = await draftApplication(base(), { name: "Ada" }, bank, llm); assert.equal(calls, 1); assert.equal(result.draft.status, "needs_input"); assert.equal(result.draft.questions[0].answerSource, "profile"); assert.equal(result.draft.questions[1].answerSource, "question_bank"); assert.equal(result.draft.questions[2].answerSource, "ai"); assert.equal(result.metrics.user, 1); });
+
+test("clears a stale needsUserInput flag once a later pass resolves the answer from profile/bank/asset", async () => {
+  const flaggedDraft: ApplicationDraft = { ...base(), questions: base().questions.map((q) => q.id === "name" ? { ...q, needsUserInput: true } : q) };
+  const llm = createFakeLlmProvider({ handler: () => JSON.stringify({ answers: [{ id: "why", answer: "x" }] }) });
+  const result = await draftApplication(flaggedDraft, { name: "Ada" }, bank, llm);
+  const name = result.draft.questions.find((q) => q.id === "name");
+  assert.equal(name?.answer, "Ada");
+  assert.equal(name?.needsUserInput, false);
+});
+
+test("a malformed or off-schema AI JSON response never crashes draft creation — falls back to unresolved input", async () => {
+  const malformed = createFakeLlmProvider({ handler: () => "not valid json at all" });
+  const result = await draftApplication(base(), { name: "Ada" }, bank, malformed);
+  const why = result.draft.questions.find((q) => q.id === "why");
+  assert.equal(why?.answerSource, "unresolved");
+  assert.equal(why?.needsUserInput, true);
+  assert.equal(result.draft.status, "needs_input");
+
+  const offSchema = createFakeLlmProvider({ handler: () => JSON.stringify({ unexpected: "shape" }) });
+  const result2 = await draftApplication(base(), { name: "Ada" }, bank, offSchema);
+  const why2 = result2.draft.questions.find((q) => q.id === "why");
+  assert.equal(why2?.answerSource, "unresolved");
+  assert.equal(why2?.needsUserInput, true);
+});
 test("approval is explicit and edits invalidate it", () => { const ready = { ...base(), status: "ready_for_review" as const, questions: base().questions.map((q) => ({ ...q, answer: "x" })) }; assert.throws(() => beginSubmission(ready)); const approved = approveDraft(ready); assert.equal(beginSubmission(approved).status, "submitting"); assert.throws(() => beginSubmission(editAnswer(approved, "why", "changed"))); });
 test("the final required user answer creates a resumable drafting checkpoint", () => { const draft = { ...base(), status: "needs_input" as const, questions: base().questions.map((q) => q.id === "attend" ? q : { ...q, answer: "x" }) }; const updated = editAnswer(draft, "attend", "Yes"); assert.equal(updated.status, "drafting"); assert.equal(updated.questions.find((q) => q.id === "attend")?.answerSource, "user"); });
 test("safe fill plans require the exact approved draft", () => { const ready = { ...base(), status: "ready_for_review" as const, questions: base().questions.map((q) => ({ ...q, answer: "x" })) }; assert.throws(() => createApprovedFillPlan(ready)); assert.equal(createApprovedFillPlan(approveDraft(ready)).length, 4); });
