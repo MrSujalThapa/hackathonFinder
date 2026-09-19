@@ -1,64 +1,77 @@
-# Hackathon Finder
+# HackFinder
 
-Self-hosted workspace that discovers hackathons from public directories, reviews them in a Queue, and optionally syncs approvals to Google Sheets.
+An agentic opportunity discovery + application system: it finds hackathons and events from a natural-language query, then takes an application from discovery through a ready-to-submit real form — with you holding the final Submit button.
 
-Curated UI captures: `artifacts/design/after/` (Queue, login, Settings). Optional demo GIF: add under `docs/images/`.
+## What HackFinder does
 
-## What it does
+Finding the opportunity is only half the work. HackFinder finds it *and* gets the application ready:
 
-Finding relevant hackathons across Devpost, Luma, HackList, MLH, Hakku, and custom directories is slow. Hackathon Finder turns a natural-language query into a structured discovery run with strict date, location, and remote semantics, then lets you approve, reject, save, or investigate candidates with evidence.
-
-## Key capabilities
-
-- Natural-language Terminal discovery (`light` / `deep` profiles)
-- Native adapters for **Devpost** and **Luma**, plus HackList / MLH / Hakku / web search
-- **Custom directory adapter** + shared `DirectoryCrawlKernel` for uploaded listing sites
-- Listing → triage → enrichment → constraints, then **batch persistence**
-- Queue review UI with Ask, history, and restore flows
-- Optional explicit Google Sheets sync for approved rows
-- Dry-run mode (no candidate writes)
-- Deterministic **demo mode** with fixture candidates
-
-## Architecture overview
-
-```text
-Terminal / CLI query
-  → interpret (dates, location, remote, sources, profile)
-  → native adapters (Devpost / Luma / …)
-  → custom sources → CustomDirectoryAdapter → DirectoryCrawlKernel
-  → normalize / verify / classify / score / dedupe
-  → BatchPersistenceStrategy (sole normal writer)
-  → Queue review → optional Sheets sync
+```
+Natural-language search
+  → live discovery
+  → verification / ranking
+  → Queue
+  → Apply
+  → inspect the real application
+  → resolve answers (Profile / Question Bank / Asset Bank)
+  → AI drafts unresolved text
+  → Discord / in-app blockers when something is missing
+  → resume
+  → deterministic reconciliation against the real form
+  → explicit, version-bound Submit-now authorization
 ```
 
-Canonical detail: [`docs/discovery/FINAL_ARCHITECTURE.md`](docs/discovery/FINAL_ARCHITECTURE.md).  
-Ops: [`docs/discovery/OPERATIONS_RUNBOOK.md`](docs/discovery/OPERATIONS_RUNBOOK.md).
+This loop has been validated end-to-end against a real external hackathon application form — not just a fixture.
 
-## Supported sources
+## Demo
 
-| Source | Role |
-| --- | --- |
-| Devpost | Native directory adapter + API / browser growth |
-| Luma | Native multi-feed adapter with theme telemetry |
-| HackList / MLH | Directory collectors |
-| Hakku | Browser profile collector (owner machine) |
-| Web search | Optional provider (`tavily` / `brave` / `exa` / `serpapi` / `mock`) |
-| Custom | Generic kernel over uploaded directory URLs |
-| X / Twitter MCP | Optional; not required |
+<!-- Demo video: replace this line with the published demo link once generated. -->
 
-**Blocked-source policy:** authenticated or WAF/CAPTCHA-gated pages fail honestly. This project does **not** bypass CAPTCHAs or WAFs. DoraHacks-style blocked hosts remain blocked without retry bypass.
+## Core features
 
-### Custom source scraping
+- Natural-language discovery via the Terminal, with `light` / `deep` profiles
+- Native adapters for Devpost and Luma, plus HackList / MLH / Hakku / web search / custom directories
+- Dynamic city / province / remote / date-window query parsing (application-deadline vs. event-date semantics)
+- Queue for reviewing, saving, approving, and applying to candidates
+- Application agent that inspects and fills real, multi-page application forms
+- Profile, Question Bank, and Asset Bank resolve known answers and reusable files automatically
+- AI drafts unresolved free-text answers when an LLM provider is configured
+- Discord remote control — reuses the same HackFinder services as the web app, not a separate bot
+- In-app notifications for blockers and status changes
+- Explicit, version-bound "Submit now" authorization — nothing submits silently
+- Local-first runtime (`npm run hackfinder`) with a scheduled discovery worker and application tracker
+- Optional private phone access over Tailscale Serve
+- Optional Google Sheets sync for approved candidates
 
-Custom sources use deterministic-first extraction (structured markup → repeated DOM patterns → at most one bounded AI group selection). Crawl plans cache under `.data/crawl-plans/` (local, gitignored, non-authoritative).
+## Architecture
 
-## Requirements
-
-- Node.js 20+
-- npm 10+
-- Supabase project (full mode)
-- Playwright Chromium for browser collectors: `npx playwright install chromium`
-- Optional: OpenAI-compatible LLM key, search API key, Google service account
+```
+Discord / Terminal / Scheduler
+        │
+        ▼
+ Discovery pipeline
+        │
+        ▼
+ normalize → verify → score → dedupe
+        │
+        ▼
+       Queue
+        │
+        ▼
+ Application engine
+        │
+        ▼
+ Profile + Question Bank + Asset Bank + AI
+        │
+        ▼
+ blockers / Discord
+        │
+        ▼
+ deterministic form reconciliation
+        │
+        ▼
+ explicit "Submit now"
+```
 
 ## Quick start
 
@@ -66,162 +79,87 @@ Custom sources use deterministic-first extraction (structured markup → repeate
 git clone https://github.com/MrSujalThapa/hackathonFinder.git
 cd hackathonFinder
 npm ci
+npx playwright install chromium
 cp .env.example .env.local
 ```
 
-### Default local setup (recommended)
+Fill in the minimum configuration below, then apply the Supabase migrations in `supabase/migrations/` (numeric order, `001`…`014`) through the Supabase SQL editor or CLI.
 
-Configure owner auth and Supabase (required for Queue persistence and normal UI data). Optional: LLM, search, Sheets.
+Run the full local runtime:
 
 ```bash
-# .env.local (minimum)
+npm run hackfinder
+```
+
+Open [http://localhost:3000](http://localhost:3000) and sign in with `APP_PASSWORD`.
+
+`npm run dev` starts only the Next.js dev server. `npm run hackfinder` is the recommended full local runtime — it starts the web app (if not already running), the Discord gateway worker (once fully configured), a scheduled discovery pass, and an hourly application tracker, all supervised together. See [`LOCAL_RUN.md`](LOCAL_RUN.md) for details and `npm run hackfinder:status` to check configuration without printing secrets.
+
+## Minimum configuration
+
+```bash
+# .env.local
 APP_PASSWORD=change-me
 APP_SESSION_SECRET=replace-with-32-plus-random-characters!!
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-# Keep DEMO_MODE and USE_MOCK_CANDIDATES unset or false
 ```
 
-Apply migrations (see Database setup), then:
+Supabase is required for Queue persistence, applications, Profile, Question Bank, and Asset Bank storage. Everything else — LLM, search provider, Discord, Google Sheets, Tailscale — is optional and additive. See `.env.example` for the full, grouped, commented variable list (required vs. optional).
 
-```bash
-npm run env:check
-npm run dev
+## Discord remote control
+
+Discord talks to the same application/discovery services the web app uses — there is no separate bot engine. Once `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_CHANNEL_ID`, and `DISCORD_USER_ID` are set, `npm run hackfinder` starts the gateway automatically (or run it alone with `npm run worker:discord`).
+
+Example commands:
+
+```
+status
+show drafts
+show <draft> q&a
+find hackathons in Toronto next month
 ```
 
-Open [http://localhost:3000](http://localhost:3000), sign in with `APP_PASSWORD`, open Queue / Terminal.
+Only the configured `DISCORD_USER_ID` can run owner commands (answering blockers, pausing/resuming a draft, Submit-now).
 
-Discovery dry-runs (`--dry-run`) do not require Supabase writes. Live Terminal discovery needs network access to public sources.
+## Private phone access
 
-### Optional fixture fallback (not default)
+HackFinder is local-first: your laptop runs it, and Tailscale Serve can expose it privately to your own devices.
 
-For UI-only exploration without Supabase, you may set `DEMO_MODE=true` or `USE_MOCK_CANDIDATES=true`. This is an **explicit opt-in**, not the recommended path, and must stay off for production and release demos that exercise real Terminal collectors.
-
-## Environment setup
-
-1. Copy `.env.example` → `.env.local`
-2. Fill placeholders only — never commit real secrets
-3. Run `npm run env:check` (never prints secret values)
-4. Optional: `npm run secrets:scan`
-
-**Server-only secrets** (never prefix with `NEXT_PUBLIC_`):
-
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `APP_PASSWORD`, `APP_SESSION_SECRET`
-- `LLM_API_KEY`, `SEARCH_API_KEY`
-- `GOOGLE_SERVICE_ACCOUNT_JSON`
-- `X_BEARER_TOKEN`, `WORKER_SHARED_SECRET`
-
-**Browser-safe:** only `NEXT_PUBLIC_*` values.
-
-Google service-account JSON may embed `private_key` with `\n` escapes; they are normalized when parsed.
-
-Variable inventory: [`docs/ENV_VARIABLES.md`](docs/ENV_VARIABLES.md).
-
-## Database setup
-
-Migrations live in `supabase/migrations/` and must be applied in numeric order (`001` … `010`).
-
-1. Create a Supabase project
-2. Apply SQL migrations (Supabase SQL editor or CLI)
-3. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-4. Review `004_production_rls.sql`: RLS is enabled; browser anon access to private tables is denied; server service-role access continues to work
-
-No production data is shipped in this repository. This phase does not alter schema.
-
-## Google Sheets setup (optional)
-
-1. Enable Google Sheets API
-2. Create a service account + JSON key
-3. Share the spreadsheet with the service-account email (Editor)
-4. Set `GOOGLE_SHEET_ID`, `GOOGLE_SHEET_TAB`, `GOOGLE_SERVICE_ACCOUNT_JSON`
-5. Optionally set `NEXT_PUBLIC_GOOGLE_SHEET_URL` for the Open Sheet link
-
-Approve always keeps the candidate `APPROVED` even if Sheets fails. Sync is idempotent by Candidate ID. Demo/mock mode simulates sync and does **not** write to Google.
-
-```bash
-npm run check:sheets
-npm run sync:sheets -- --dry-run
+```
+local laptop  →  private tailnet  →  phone
 ```
 
-## Running the app
+- No Tailscale Funnel and no public hosting required
+- The laptop must stay awake and keep the runtime running for phone access to work
+- Set `APP_BASE_URL` to your private Tailscale Serve HTTPS URL — see [`LOCAL_RUN.md`](LOCAL_RUN.md)
+
+## Application safety
+
+- No silent submission — every submission requires an explicit, version-bound "Submit now" action from you
+- The real external form is reconciled against the draft immediately before that action; a mismatch blocks submission
+- CAPTCHA, MFA, and login walls pause the flow for you to complete manually — they are never bypassed
+
+## Development / Testing
 
 ```bash
-npm run dev          # development
-npm run build && npm run start   # production server
-```
-
-Owner login uses `APP_PASSWORD`. Sessions require `APP_SESSION_SECRET` (≥ 32 chars).
-
-Discovery worker (optional):
-
-```bash
-npm run worker:discovery
-```
-
-## Terminal command examples
-
-Prefer `--profile light` and `--dry-run` while exploring:
-
-```bash
-npm run agent -- "find upcoming hackathons in Toronto" -- --profile light --dry-run
-
-npm run agent -- "find upcoming AI hackathons in Toronto or remote in the next 6 months" -- --profile light --dry-run
-
-npm run agent -- "find upcoming hackathons in San Francisco" -- --profile light --dry-run
-
-npm run agent -- "find upcoming hackathons from Reskilll in the next 12 months" -- --profile deep --dry-run
-
-npm run agent -- "find remote AI hackathons in the next 6 months" -- --profile deep --dry-run
-```
-
-The same commands work from the in-app Terminal. Deep profiles can take tens of seconds; say so honestly in demos.
-
-Query semantics:
-
-- **Remote** is explicit inclusion (`or remote`), not implied by a city
-- Date windows bind event timing / deadlines according to the planner
-- Source restrictions (`from Reskilll`) limit collectors
-
-## Testing
-
-```bash
-npm run env:check
+npm run lint
 npm run typecheck
-npm test
-npm run test:scraper
-npm run test:integration
-npm run test:deterministic
 npm run build
+npm run test:deterministic
 ```
 
-Live source probes are manual (see `npm run test:live:sources`). Do not put live network probes in default CI.
+`npm run check` runs lint + typecheck + build together. `npm run env:check` validates environment variable names/formats without contacting external services or printing secrets. Live source probes are intentionally manual (see `npm run test:live:sources`) and are not part of the default test suite.
 
-## Security / privacy notes
+## Tech stack
 
-- Self-hosted / single-operator by design
-- Secrets stay in `.env.local` (gitignored)
-- Dry-run and `DEMO_MODE` do not persist discovery candidates to Supabase
-- Custom URLs are fetched only for discovery; blocked pages are not bypassed
-- See [`SECURITY.md`](SECURITY.md) and [`docs/PRIVACY.md`](docs/PRIVACY.md)
-
-## Known limitations
-
-- Public source availability, rate limits, and layout changes can degrade collectors
-- Hakku requires an owner-managed browser profile
-- X/Twitter MCP is optional and unused unless configured
-- Demo mode shows fixture Queue data; live Terminal dry-runs still depend on network
-- npm audit may report transitive Next/PostCSS advisories until upstream Next ships a fix
+Next.js · React · TypeScript · Supabase (Postgres + Storage) · Playwright · Discord · a pluggable LLM/search provider abstraction (OpenAI-compatible / mock)
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md), [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md), and [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
 
 ## License
 
 Apache License 2.0 — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
-
-### Contributors
-
-Primary author: **Sujal Thapa**. Git history currently shows a single committer identity. Third-party skill/license files under `.agents/skills` (and mirrors) retain upstream copyrights.
