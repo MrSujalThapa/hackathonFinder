@@ -1,3 +1,7 @@
+# generated demo video (brag)
+/brag-output/
+/brag-output-*/
+
 # dependencies
 /node_modules
 /.pnp
