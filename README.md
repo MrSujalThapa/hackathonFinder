@@ -25,7 +25,16 @@ This loop has been validated end-to-end against a real external hackathon applic
 
 ## Demo
 
-<!-- Demo video: replace this line with the published demo link once generated. -->
+A ~60-second walkthrough of the full loop — natural-language search → Queue → application draft → Profile/Question Bank/Asset Bank/AI resolution → a Discord blocker → real-form reconciliation → the explicit Submit-now boundary — is generated locally with [`brag`](https://github.com/latent-spaces/brag) (a HyperFrames-based video workflow) rather than recorded against a live app with real data.
+
+It renders to `brag-output/brag.mp4`, which is git-ignored (regenerable, not published to the repo). To regenerate it locally:
+
+```bash
+claude plugin marketplace add latent-spaces/brag
+claude plugin install brag@brag
+# then, from a Claude Code session in this repo:
+/brag
+```
 
 ## Core features
 
